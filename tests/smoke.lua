@@ -42,6 +42,7 @@ stub("ui/uimanager", {
     scheduleIn = function(_, _s, f) scheduled = f end,
     unschedule = function(_, f) if scheduled == f then scheduled = nil end end,
     allowStandby = function() standby = standby - 1 end,
+    isWidgetShown = function() return true end,
 })
 local sent
 stub("ui/message/simpletcpserver", class({
@@ -200,6 +201,40 @@ code, body = jam_get("/songs/test.cho")
 check(code == "200" and body:find("Jede", 1, true), "jam song file")
 code = jam_get("/songs/..~settings~x.cho")
 check(code == "404", "jam song file outside songs/")
+
+-- playlist: played songs and guests' requests
+local playlist_item = jam_menu.sub_item_table[4]
+local p = plugin:getPlaylist()
+check(#p.history == 1 and p.history[1].uid == "test" and #p.queue == 0, "played while sharing, transposing not repeated")
+check(playlist_item.text_func() == "Playlist", "playlist label")
+code, body = jam_get("/queue/add?uid=test&by=%20Pavel%0A")
+check(body == '{"ok":true}' and notes[#notes] == "Song request: Žluťoučký kůň (Pavel)", "request added: " .. tostring(body))
+code, body = jam_get("/queue/add?uid=test")
+check(body == '{"error":"queued","ok":false}', "duplicate request: " .. tostring(body))
+code, body = jam_get("/queue/add?uid=nope")
+check(body == '{"error":"missing","ok":false}', "request of a missing song")
+code, body = jam_get("/playlist.json")
+check(body:find('"queue":[{"artist":"Lidová","at":', 1, true) and body:find('"by":"Pavel"', 1, true), "playlist json: " .. tostring(body))
+check(playlist_item.text_func() == "Playlist (1 requested)", "playlist label with requests")
+playlist_item.callback()
+local pl_menu = last_shown()
+check(pl_menu.title == "Playlist" and pl_menu.item_table[3].text == "Up next (1)", "playlist menu")
+local queued_item
+for _, item in ipairs(pl_menu.item_table) do if item.queued then queued_item = item end end
+check(queued_item and queued_item.text == "Žluťoučký kůň" and queued_item.mandatory == "Pavel", "queued song in playlist menu")
+queued_item.callback()
+p = plugin:getPlaylist()
+check(#p.queue == 0 and #p.history == 1, "playing a requested song removes it from the queue")
+input_text = "Jam test"
+pl_menu.item_table[1].callback()
+find_button(last_shown(), "Save").callback()
+check(plugin:isInCollection("Jam test", "test"), "played songs saved as collection")
+pl_menu.item_table[2].callback()
+last_shown().ok_callback()
+p = plugin:getPlaylist()
+check(#p.history == 0 and #p.queue == 0, "playlist cleared")
+plugin:deleteCollection("Jam test")
+
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func(), "jam server stopped")
 
@@ -208,8 +243,8 @@ local host = "http://10.0.0.2:8765/"
 responses[host .. "state.json"] = "S1"
 responses[host .. "song.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
 decoded.S1 = { uid = "repo/song-a", rev = "1", transpose = 2, notation = "cz" }
-local follow_item = jam_menu.sub_item_table[4]
-check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[5].enabled_func() == false, "not following")
+local follow_item = jam_menu.sub_item_table[5]
+check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[6].enabled_func() == false, "not following")
 input_text = " 10.0.0.2 "
 local n_opened = #opened
 follow_item.callback(tmi)

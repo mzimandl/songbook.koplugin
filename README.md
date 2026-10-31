@@ -79,6 +79,13 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
   width. The default port is 8765 (changeable while not sharing). The device
   does not go to standby while sharing. There is no password: share only on
   networks you trust.
+  - *Playlist*: while sharing, every song you open is recorded as played.
+    Guests can ask for songs on the web page (tab *Playlist*: search, tap
+    +, optionally with their name); you get a short notice and the request
+    shows under *Up next*. Tap a song in the playlist to play it (a played
+    request leaves the queue), long-press a request to remove it. *Save played
+    songs as collection…* keeps the evening's set list; *Clear playlist*
+    starts over. The playlist is kept until cleared, at most 30 requests.
   - *Follow another songbook…*: enter the address shown on another reader
     (e.g. `192.168.1.5`, port 8765 is added). Every song it opens opens on
     yours too, in its key; you can still transpose it yourself until it

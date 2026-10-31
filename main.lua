@@ -312,6 +312,7 @@ function Songbook:openSong(uid)
         notify(err)
         return
     end
+    if jam.server then self:jamPlayed(uid) end
     if self.ui.document then
         self.ui:switchDocument(path)
     else
@@ -1249,6 +1250,143 @@ function Songbook:jamSongs()
     return songs
 end
 
+-- Playlist: songs played while sharing and guests' requests, kept in the
+-- settings until cleared.
+function Songbook:getPlaylist()
+    local p = self.settings:readSetting("jam_playlist") or {}
+    p.history, p.queue = p.history or {}, p.queue or {}
+    return p
+end
+
+function Songbook:savePlaylist(p)
+    self:set("jam_playlist", p)
+    if jam.playlist_refresh then jam.playlist_refresh() end
+end
+
+function Songbook:playlistEntry(uid, by)
+    local text = read_file(self:songPath(uid))
+    if not text then return nil end
+    local _key, id = split_uid(uid)
+    local meta = ChordPro.parse_meta(text)
+    return { uid = uid, title = meta.title or id, artist = meta.artist, by = by, at = os.time() }
+end
+
+function Songbook:jamPlayed(uid)
+    local entry = self:playlistEntry(uid)
+    if not entry then return end
+    local p = self:getPlaylist()
+    if Jam.played(p.history, p.queue, entry) then self:savePlaylist(p) end
+end
+
+function Songbook:jamRequest(uid, by)
+    local entry = self:playlistEntry(uid, by)
+    if not entry then return nil, "missing" end
+    local p = self:getPlaylist()
+    local ok, err = Jam.add_request(p.queue, entry)
+    if not ok then return nil, err end
+    self:savePlaylist(p)
+    notify(by and T(_("Song request: %1 (%2)"), entry.title, by) or T(_("Song request: %1"), entry.title))
+    return true
+end
+
+function Songbook:showPlaylist()
+    local menu
+    local function build()
+        local p = self:getPlaylist()
+        local items = {
+            {
+                text = _("Save played songs as collection…"),
+                bold = true,
+                callback = function() self:savePlaylistAsCollection() end,
+            },
+            {
+                text = _("Clear playlist"),
+                bold = true,
+                callback = function()
+                    UIManager:show(ConfirmBox:new{
+                        text = _("Clear the list of played and requested songs?"),
+                        ok_text = _("Clear"),
+                        ok_callback = function() self:savePlaylist({}) end,
+                    })
+                end,
+            },
+            { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false },
+        }
+        local function add(entry, mandatory, queued)
+            table.insert(items, {
+                text = entry.title,
+                mandatory = mandatory,
+                entry = entry,
+                queued = queued,
+                callback = function()
+                    UIManager:close(menu)
+                    self:openSong(entry.uid)
+                end,
+            })
+        end
+        for _i, e in ipairs(p.queue) do add(e, e.by and Render.truncate(e.by, MAX_SOURCE) or "", true) end
+        if #p.queue == 0 then table.insert(items, { text = _("No requests"), dim = true, select_enabled = false }) end
+        table.insert(items, { text = T(_("Played (%1)"), #p.history), bold = true, select_enabled = false })
+        for i = #p.history, 1, -1 do add(p.history[i], os.date("%H:%M", p.history[i].at)) end
+        return items
+    end
+    menu = Menu:new{
+        title = _("Playlist"),
+        item_table = build(),
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        width = Screen:getWidth(),
+        height = Screen:getHeight(),
+        onMenuHold = function(_menu, item)
+            if not item.queued then return true end
+            local dialog
+            dialog = ButtonDialog:new{
+                title = item.entry.title,
+                buttons = {{{ text = _("Remove from queue"), callback = function()
+                    UIManager:close(dialog)
+                    local p = self:getPlaylist()
+                    for i = #p.queue, 1, -1 do
+                        if p.queue[i].uid == item.entry.uid then table.remove(p.queue, i) end
+                    end
+                    self:savePlaylist(p)
+                end }}},
+            }
+            UIManager:show(dialog)
+            return true
+        end,
+    }
+    -- Menu calls close_callback after every tap; song items close the list themselves.
+    menu.close_callback = nil
+    jam.playlist_refresh = function()
+        if UIManager:isWidgetShown(menu) then
+            menu:switchItemTable(_("Playlist"), build())
+        else
+            jam.playlist_refresh = nil
+        end
+    end
+    UIManager:show(menu)
+end
+
+function Songbook:savePlaylistAsCollection()
+    local history = self:getPlaylist().history
+    if #history == 0 then
+        notify(_("No songs have been played yet."))
+        return
+    end
+    self:askCollectionName(_("Save played songs as collection"), os.date(_("Jam %Y-%m-%d")), function(name)
+        local ok, err = self:createCollection(name)
+        if not ok then return notify(err) end
+        local collections = self:getCollections()
+        local c = self:findCollection(name, collections)
+        for _i, e in ipairs(history) do
+            if lfs.attributes(self:songPath(e.uid), "mode") then c.songs[e.uid] = true end
+        end
+        self:saveCollections(collections)
+        notify(T(_("Saved %1 songs to \"%2\"."), count_keys(c.songs), name))
+    end)
+end
+
 function Songbook:jamSongHtml(opts)
     local uid = self:jamSong()
     if not uid then return nil end
@@ -1296,11 +1434,18 @@ function Songbook:startJam()
             return uid and read_file(jam.owner:songPath(uid))
         end,
         songs = function() return jam.owner:jamSongs() end,
+        playlist = function() return jam.owner:getPlaylist() end,
+        request = function(uid, by) return jam.owner:jamRequest(uid, by) end,
         song_file = function(uid) return read_file(jam.owner:songPath(uid)) end,
         name = _("Jam session"),
         labels = {
             title = _("Songbook"), waiting = _("Waiting for a song…"),
             offline = _("Connection lost"), chords = _("Chords"),
+            song = _("Song"), playlist = _("Playlist"), up_next = _("Up next"), played = _("Played"),
+            request = _("Request a song"), your_name = _("Your name"), search = _("Search"),
+            nothing = _("Nothing yet"), requested = _("Requested: %1"),
+            queued = _("This song is already requested."), full = _("Too many requests, try again later."),
+            missing = _("This song is not available."),
         },
         css = Render.css(nil, true),
     }
@@ -1488,6 +1633,15 @@ function Songbook:jamMenu()
                     end,
                 })
             end,
+        },
+        {
+            text_func = function()
+                local n = #self:getPlaylist().queue
+                return n > 0 and T(_("Playlist (%1 requested)"), n) or _("Playlist")
+            end,
+            help_text = _("Songs played while sharing, and songs guests asked for on the web page."),
+            keep_menu_open = true,
+            callback = function() self:showPlaylist() end,
             separator = true,
         },
         {

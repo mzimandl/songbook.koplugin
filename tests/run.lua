@@ -236,8 +236,8 @@ eq(Jam.uid_from_stem("a~..~b"), nil, "jam stem traversal inside")
 eq(Jam.uid_from_stem(".hidden"), nil, "jam stem leading dot")
 local Repo = require("songbook/repo")
 local index = Jam.index({ { uid = "r/x", title = "X", updated = "5" }, { uid = "y", title = "Y" } }, "Jam")
-eq(index, '{"name":"Jam","songs":[{"file":"songs/r~x.cho","id":"r_x","title":"X","updated":"5"},'
-    .. '{"file":"songs/y.cho","id":"y","title":"Y"}],"version":1}', "jam index json")
+eq(index, '{"name":"Jam","songs":[{"file":"songs/r~x.cho","id":"r_x","title":"X","uid":"r/x","updated":"5"},'
+    .. '{"file":"songs/y.cho","id":"y","title":"Y","uid":"y"}],"version":1}', "jam index json")
 local json_like = function(body)  -- the index uses no escapes, a Lua table literal is enough
     return loadstring("return " .. body:gsub('"(%w+)":', "%1="):gsub("%[", "{"):gsub("%]", "}"))()
 end
@@ -262,6 +262,34 @@ eq(resp:match("\r\n\r\n(.*)$"):find('"file":"songs/r~x.cho"', 1, true) ~= nil, t
 eq(handle("/songs/r~x.cho"):match("\r\n\r\n(.*)$"), "{title: X}", "jam serves song file")
 eq(handle("/songs/r~y.cho"):match("^HTTP/1.1 (%d+)"), "404", "jam missing song file")
 eq(handle("/songs/..~r~x.cho"):match("^HTTP/1.1 (%d+)"), "404", "jam song file traversal")
+
+-- Jam: playlist ----------------------------------------------------------------
+eq(Jam.clean_name("  Pavel\n "), "Pavel", "jam name trimmed")
+eq(Jam.clean_name("   "), nil, "jam blank name")
+eq(Jam.clean_name(string.rep("ž", 40)), string.rep("ž", 29) .. "…", "jam long name shortened")
+local queue, history = {}, {}
+eq(Jam.add_request(queue, { uid = "a" }), true, "jam request added")
+eq(select(2, Jam.add_request(queue, { uid = "a" })), "queued", "jam request duplicate")
+for i = 2, Jam.MAX_QUEUE do Jam.add_request(queue, { uid = "s" .. i }) end
+eq(select(2, Jam.add_request(queue, { uid = "z" })), "full", "jam queue full")
+eq(Jam.played(history, queue, { uid = "a" }), true, "jam played changes playlist")
+eq(#queue .. " " .. #history, (Jam.MAX_QUEUE - 1) .. " 1", "jam played leaves queue")
+eq(Jam.played(history, queue, { uid = "a" }), false, "jam same song again not repeated")
+Jam.played(history, queue, { uid = "b" })
+Jam.played(history, queue, { uid = "a" })
+eq(#history, 3, "jam song played again later")
+for i = 1, Jam.MAX_HISTORY do Jam.played(history, queue, { uid = "h" .. i }) end
+eq(#history .. " " .. history[#history].uid, Jam.MAX_HISTORY .. " h" .. Jam.MAX_HISTORY, "jam history capped")
+eq(Jam.json({}), "[]", "jam json empty array")
+ctx.playlist = function() return { history = {}, queue = { { uid = "r/x", title = "X", by = "Eva" } } } end
+local requested_by
+ctx.request = function(uid, by) requested_by = by; return uid == "r/x" or nil, "missing" end
+eq(handle("/playlist.json"):match("\r\n\r\n(.*)$"), '{"history":[],"queue":[{"by":"Eva","title":"X","uid":"r/x"}]}', "jam playlist json")
+eq(handle("/queue/add?uid=r%2Fx&by=%20Eva%20"):match("\r\n\r\n(.*)$"), '{"ok":true}', "jam request ok")
+eq(requested_by, "Eva", "jam request name cleaned")
+eq(handle("/queue/add?uid=q"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}', "jam request error")
+eq(handle("/queue/add"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}', "jam request without uid")
+eq(page:find("%%1", 1, true), nil, "jam page percent signs unescaped")
 
 local web = Render.html(ChordPro.parse("{title: W}\n[C]La"), { web = true })
 eq(web:sub(1, 15), "<!DOCTYPE html>", "web render is html5")
