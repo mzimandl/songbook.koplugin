@@ -1,6 +1,6 @@
 -- Smoke test of main.lua against stubbed KOReader modules.
 -- Run from the repo root:  luajit tests/smoke.lua
-package.path = "songbook.koplugin/?.lua;" .. package.path
+package.path = "./?.lua;" .. package.path
 
 local tmp = os.getenv("TMPDIR") or "/tmp"
 local root = tmp .. "/songbook-smoke-" .. os.time()

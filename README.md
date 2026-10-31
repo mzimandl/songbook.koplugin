@@ -4,32 +4,35 @@ KOReader plugin that downloads songs with guitar chords (ChordPro) from a static
 server, renders them locally (chords above lyrics, transposition, Czech H/B
 notation) and opens them in the reader.
 
+The repository root is the plugin folder (`songbook.koplugin`):
+
 ```
-songbook.koplugin/        ← copy this folder to koreader/plugins/
-  _meta.lua
-  main.lua                UI: menus, lists, download, settings, gestures
-  songbook/chordpro.lua   ChordPro parser          (pure Lua, tested)
-  songbook/transpose.lua  chord transposition      (pure Lua, tested)
-  songbook/render.lua     song → HTML layout       (pure Lua, tested)
-  songbook/repo.lua       index.json + HTTP fetch
-server-template/          ← starting point for your GitHub song repo
-tests/                    off-device tests (LuaJIT)
+_meta.lua
+main.lua                UI: menus, lists, download, settings, gestures
+songbook/chordpro.lua   ChordPro parser          (pure Lua, tested)
+songbook/transpose.lua  chord transposition      (pure Lua, tested)
+songbook/render.lua     song → HTML layout       (pure Lua, tested)
+songbook/repo.lua       index.json + HTTP fetch
+tests/                  off-device tests (LuaJIT, not used by the plugin)
 ```
 
 ## Install
 
-1. Copy `songbook.koplugin` into `koreader/plugins/` on the device
-   (Kindle/Kobo: `/mnt/us/koreader/plugins/` or `.adds/koreader/plugins/`).
+1. Put this repository into `koreader/plugins/` as a folder named
+   `songbook.koplugin` (Kindle: `/mnt/us/koreader/plugins/`,
+   Kobo: `/mnt/onboard/.adds/koreader/plugins/`), e.g.
+   `git clone https://github.com/mzimandl/songbook.koplugin`.
+   `tests/` can be deleted on the device.
 2. Restart KOReader → **Tools → Songbook**.
 3. **Settings → Server** → enter the folder URL that contains `index.json`, e.g.
-   `https://raw.githubusercontent.com/<user>/<repo>/main/`
+   `https://raw.githubusercontent.com/<user>/<repo>/<branch>/`
 
 ## Song server (GitHub)
 
-1. Create a repo from `server-template/`.
-2. Add songs as `songs/<id>.cho`. The file name is the song id.
-3. Push. The GitHub Action runs `tools/build_index.py` and commits `index.json`.
-   You can also run it locally: `python3 tools/build_index.py`.
+The song server lives in its own repository:
+[mzimandl/koreader-songbook-repo](https://github.com/mzimandl/koreader-songbook-repo).
+Use it as a starting point for your own song collection. It has the songs, the
+`index.json` generator and the GitHub Action that keeps it up to date.
 
 `updated` in the index is a content hash, so the plugin re-downloads a song
 only when its file changed.

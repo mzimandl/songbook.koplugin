@@ -1,5 +1,5 @@
 -- Off-device tests. Run from the repo root:  luajit tests/run.lua
-package.path = "songbook.koplugin/?.lua;" .. package.path
+package.path = "./?.lua;" .. package.path
 
 local ChordPro = require("songbook/chordpro")
 local Transpose = require("songbook/transpose")
