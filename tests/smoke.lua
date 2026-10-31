@@ -287,11 +287,13 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
     "host transposition followed without download")
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
-check(jam_song and jam_song.source == "Jam session" and jam_song.title == "Hostova", "followed song in my songs")
--- long-press "Request to play" while following asks the followed songbook
+check(jam_song == nil, "followed song not in my songs")
+check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[6].enabled_func()
+    and not items.songbook.sub_item_table[7].enabled_func(), "followed song can't be favorited or collected")
+-- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
-hold_dialog("jam/repo_song-a").buttons[1][1].callback()
+plugin:requestFromFollowed({ uid = "jam/repo_song-a", title = "Hostova" })
 check(requested[#requested] == host .. "queue/add?id=repo_song-a" and notes[#notes] == "Requested: Hostova",
     "request sent to followed songbook: " .. requested[#requested])
 responses[host .. "queue/add?id=test"] = "R2"
@@ -299,9 +301,39 @@ decoded.R2 = { ok = false, error = "queued" }
 hold_dialog("test").buttons[1][1].callback()
 check(notes[#notes] == "This song is already requested.", "followed songbook refuses request")
 check(plugin:getPlaylist().queue[1] == nil, "request while following does not touch our queue")
+-- the playlist shows the followed songbook's
+responses[host .. "playlist.json"] = "PL1"
+decoded.PL1 = { history = { { uid = "repo/song-a", title = "Hostova", at = 0 } },
+                queue = { { uid = "repo/b", title = "Druhá", by = "Eva" }, "junk" } }
+check(jam_menu.sub_item_table[4].text_func() == "Playlist of the jam session", "playlist label while following")
+jam_menu.sub_item_table[4].callback()
+local remote_pl = last_shown()
+check(remote_pl.title == "Playlist of 10.0.0.2:8765" and remote_pl.item_table[1].text == "Up next (1)"
+    and remote_pl.item_table[2].text == "Druhá" and remote_pl.item_table[2].mandatory == "Eva"
+    and remote_pl.item_table[2].callback == nil and remote_pl.item_table[3].text == "Played (1)",
+    "followed songbook's playlist, read-only")
+local switched = 0
+remote_pl.switchItemTable = function(self, t, items) switched = switched + 1; self.item_table = items end
+scheduled()
+check(switched == 0, "unchanged followed playlist is not redrawn")
+decoded.PL2 = { history = {}, queue = {} }
+responses[host .. "playlist.json"] = "PL2"
+scheduled()
+check(switched == 1 and remote_pl.item_table[1].text == "Up next (0)", "followed playlist refreshed on poll")
 responses[host .. "state.json"] = false
 for _i = 1, 4 do if scheduled then scheduled() end end
 check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lost connection", 1, true), "following stops when host is gone")
+-- opening a song of our own stops following
+responses[host .. "state.json"] = "S3"
+follow_item.callback(tmi)
+find_button(last_shown(), "Follow").callback()
+check(follow_item.checked_func() and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "following again")
+plugin:onSongbookTranspose(1)
+check(follow_item.checked_func(), "transposing the followed song keeps following")
+plugin:onSongbookTranspose(0)
+plugin:openSong("test")
+check(not follow_item.checked_func() and standby == 0 and notes[#notes] == "Stopped following the jam session.",
+    "opening our own song stops following")
 responses[host .. "state.json"] = nil
 plugin.ui.document.file = opened[n_opened]
 plugin:deleteSong("jam/repo_song-a")

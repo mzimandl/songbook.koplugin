@@ -412,6 +412,28 @@ function M.played(history, queue, entry)
     return changed
 end
 
+--- Decode /playlist.json of another songbook into { history, queue }, or nil.
+function M.parse_playlist(body, decode)
+    local ok, data = pcall(decode, body)
+    if not ok or type(data) ~= "table" then return nil end
+    local p = {}
+    for _, name in ipairs({ "history", "queue" }) do
+        p[name] = {}
+        for _, e in ipairs(type(data[name]) == "table" and data[name] or {}) do
+            if type(e) == "table" and type(e.title) == "string" then
+                table.insert(p[name], {
+                    uid = type(e.uid) == "string" and e.uid or nil,
+                    title = e.title,
+                    artist = type(e.artist) == "string" and e.artist or nil,
+                    by = type(e.by) == "string" and e.by or nil,
+                    at = tonumber(e.at),
+                })
+            end
+        end
+    end
+    return p
+end
+
 --- Route a parsed request. Returns the full HTTP response string.
 function M.handle(req, ctx)
     if not req then return M.response(400, "text/plain", "Bad request") end

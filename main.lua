@@ -192,8 +192,7 @@ function Songbook:sourceName(uid)
     local key = split_uid(uid)
     if not key then return nil end
     local server = self:findServer(key)
-    if server then return self:serverName(server) end
-    return key == JAM_KEY and _("Jam session") or key
+    return server and self:serverName(server) or key
 end
 
 --- One-time upgrade from the single `server_url` setting to the `servers` list.
@@ -251,6 +250,13 @@ end
 function Songbook:currentSongId()
     local doc = self.ui and self.ui.document
     return doc and self:idFromRenderedPath(doc.file)
+end
+
+--- Like currentSongId(), but nil for a song received while following a jam
+-- session: those are not listed, so they can't be kept in favorites or collections.
+function Songbook:currentOwnSongId()
+    local uid = self:currentSongId()
+    if uid and split_uid(uid) ~= JAM_KEY then return uid end
 end
 
 function Songbook:removeStaleRenders(uid, keep)
@@ -317,6 +323,10 @@ function Songbook:openSong(uid)
         return
     end
     if jam.server then self:jamPlayed(uid) end
+    if jam.follow and split_uid(uid) ~= JAM_KEY then
+        self:stopFollowing()
+        notify(_("Stopped following the jam session."))
+    end
     if self.ui.document then
         self.ui:switchDocument(path)
     else
@@ -348,7 +358,8 @@ local function song_file_id(name)
 end
 
 --- All songs on the device: local .cho files in songs/ and every songs/<key>/
--- folder (also of servers that were removed with their songs kept).
+-- folder (also of servers that were removed with their songs kept), except
+-- songs received while following a jam session.
 function Songbook:listLocal()
     local songs = {}
     local function add(key, dir, name)
@@ -362,7 +373,9 @@ function Songbook:listLocal()
     for name in lfs.dir(self.songs_dir) do
         local path = self.songs_dir .. "/" .. name
         if name:sub(1, 1) ~= "." and lfs.attributes(path, "mode") == "directory" then
-            for sub in lfs.dir(path) do add(name, path, sub) end
+            if name ~= JAM_KEY then
+                for sub in lfs.dir(path) do add(name, path, sub) end
+            end
         else
             add(nil, self.songs_dir, name)
         end
@@ -495,7 +508,7 @@ function Songbook:setFavorite(uid, on)
 end
 
 function Songbook:onSongbookToggleFavorite()
-    local uid = self:currentSongId()
+    local uid = self:currentOwnSongId()
     if not uid then return end
     local on = not self:isFavorite(uid)
     self:setFavorite(uid, on)
@@ -1333,17 +1346,34 @@ function Songbook:requestButton(song, close, before)
     }
 end
 
+--- Playlist of the followed songbook: p, raw body (nil, nil when unreachable).
+function Songbook:fetchFollowedPlaylist()
+    local body = Repo.fetch(jam.follow.url .. "playlist.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local p = body and Jam.parse_playlist(body, require("json").decode)
+    if p then return p, body end
+end
+
+--- Our playlist, or while following the followed songbook's (read-only).
 function Songbook:showPlaylist()
+    local remote = self:isFollowing()
+    local p, body
+    if remote then
+        p, body = self:fetchFollowedPlaylist()
+        if not p then return notify(_("Cannot reach the other songbook.")) end
+    end
+    local title = remote and T(_("Playlist of %1"), (jam.follow.url:gsub("^%a+://", ""):gsub("/$", "")))
+        or _("Playlist")
     local menu
     local function build()
-        local p = self:getPlaylist()
-        local items = {
-            {
+        if not remote then p = self:getPlaylist() end
+        local items = {}
+        if not remote then
+            table.insert(items, {
                 text = _("Save played songs as collection…"),
                 bold = true,
                 callback = function() self:savePlaylistAsCollection() end,
-            },
-            {
+            })
+            table.insert(items, {
                 text = _("Clear playlist"),
                 bold = true,
                 callback = function()
@@ -1353,29 +1383,31 @@ function Songbook:showPlaylist()
                         ok_callback = function() self:savePlaylist({}) end,
                     })
                 end,
-            },
-            { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false },
-        }
+            })
+        end
+        table.insert(items, { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false })
         local function add(entry, mandatory, queued)
-            table.insert(items, {
-                text = entry.title,
-                mandatory = mandatory,
-                entry = entry,
-                queued = queued,
-                callback = function()
+            local item = { text = entry.title, mandatory = mandatory, entry = entry, queued = queued }
+            -- the other songbook's songs may not be on this device
+            if not remote then
+                item.callback = function()
                     UIManager:close(menu)
                     self:openSong(entry.uid)
-                end,
-            })
+                end
+            end
+            table.insert(items, item)
         end
         for _i, e in ipairs(p.queue) do add(e, e.by and Render.truncate(e.by, MAX_SOURCE) or "", true) end
         if #p.queue == 0 then table.insert(items, { text = _("No requests"), dim = true, select_enabled = false }) end
         table.insert(items, { text = T(_("Played (%1)"), #p.history), bold = true, select_enabled = false })
-        for i = #p.history, 1, -1 do add(p.history[i], os.date("%H:%M", p.history[i].at)) end
+        for i = #p.history, 1, -1 do
+            local at = p.history[i].at
+            add(p.history[i], at and os.date("%H:%M", at) or "")
+        end
         return items
     end
     menu = Menu:new{
-        title = _("Playlist"),
+        title = title,
         item_table = build(),
         covers_fullscreen = true,
         is_borderless = true,
@@ -1383,17 +1415,17 @@ function Songbook:showPlaylist()
         width = Screen:getWidth(),
         height = Screen:getHeight(),
         onMenuHold = function(_menu, item)
-            if not item.queued then return true end
+            if remote or not item.queued then return true end
             local dialog
             dialog = ButtonDialog:new{
                 title = item.entry.title,
                 buttons = {{{ text = _("Remove from queue"), callback = function()
                     UIManager:close(dialog)
-                    local p = self:getPlaylist()
-                    for i = #p.queue, 1, -1 do
-                        if p.queue[i].uid == item.entry.uid then table.remove(p.queue, i) end
+                    local list = self:getPlaylist()
+                    for i = #list.queue, 1, -1 do
+                        if list.queue[i].uid == item.entry.uid then table.remove(list.queue, i) end
                     end
-                    self:savePlaylist(p)
+                    self:savePlaylist(list)
                 end }}},
             }
             UIManager:show(dialog)
@@ -1402,12 +1434,18 @@ function Songbook:showPlaylist()
     }
     -- Menu calls close_callback after every tap; song items close the list themselves.
     menu.close_callback = nil
+    -- Called after our playlist changes, and on every poll while following.
     jam.playlist_refresh = function()
-        if UIManager:isWidgetShown(menu) then
-            menu:switchItemTable(_("Playlist"), build())
-        else
+        if not UIManager:isWidgetShown(menu) or remote ~= self:isFollowing() then
             jam.playlist_refresh = nil
+            return
         end
+        if remote then
+            local new_p, new_body = self:fetchFollowedPlaylist()
+            if not new_p or new_body == body then return end   -- no redraw when nothing changed
+            p, body = new_p, new_body
+        end
+        menu:switchItemTable(title, build())
     end
     UIManager:show(menu)
 end
@@ -1557,11 +1595,22 @@ follow_poll = function()
         logger.warn("Songbook: following failed", err)
         if jam.follow then jam.owner:followFailed() end
     end
-    if jam.follow then UIManager:scheduleIn(FOLLOW_INTERVAL, follow_poll) end
+    if jam.follow then
+        if jam.playlist_refresh then pcall(jam.playlist_refresh) end
+        UIManager:scheduleIn(FOLLOW_INTERVAL, follow_poll)
+    end
 end
 
 function Songbook:startFollowing(url)
     self:stopFollowing()
+    -- songs from an earlier session are not listed anywhere, so drop them
+    local dir = self.songs_dir .. "/" .. JAM_KEY
+    if lfs.attributes(dir, "mode") == "directory" then
+        for name in lfs.dir(dir) do
+            local id = song_file_id(name)
+            if id then self:deleteSong(make_uid(JAM_KEY, id)) end
+        end
+    end
     jam.follow = { url = url, failures = 0 }
     UIManager:preventStandby()
     follow_poll()
@@ -1675,10 +1724,11 @@ function Songbook:jamMenu()
         },
         {
             text_func = function()
+                if self:isFollowing() then return _("Playlist of the jam session") end
                 local n = #self:getPlaylist().queue
                 return n > 0 and T(_("Playlist (%1 requested)"), n) or _("Playlist")
             end,
-            help_text = _("Songs played while sharing, and songs guests asked for on the web page."),
+            help_text = _("Songs played while sharing, and songs guests asked for on the web page. While following another songbook, its playlist."),
             keep_menu_open = true,
             callback = function() self:showPlaylist() end,
             separator = true,
@@ -1755,22 +1805,22 @@ function Songbook:addToMainMenu(menu_items)
             },
             {
                 text = _("Favorite"),
-                enabled_func = function() return self:currentSongId() ~= nil end,
+                enabled_func = function() return self:currentOwnSongId() ~= nil end,
                 checked_func = function()
-                    local uid = self:currentSongId()
+                    local uid = self:currentOwnSongId()
                     return uid ~= nil and self:isFavorite(uid)
                 end,
                 callback = function()
-                    local uid = self:currentSongId()
+                    local uid = self:currentOwnSongId()
                     if uid then self:setFavorite(uid, not self:isFavorite(uid)) end
                 end,
             },
             {
                 text = _("Add to collection…"),
-                enabled_func = function() return self:currentSongId() ~= nil end,
+                enabled_func = function() return self:currentOwnSongId() ~= nil end,
                 keep_menu_open = true,
                 callback = function()
-                    local uid = self:currentSongId()
+                    local uid = self:currentOwnSongId()
                     if not uid then return end
                     local _key, id = split_uid(uid)
                     local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
