@@ -1,0 +1,34 @@
+# Ukázka všech podporovaných prvků ChordPro (text je vymyšlený).
+{title: Ukázka formátu}
+{subtitle: Co všechno zpěvník umí}
+{artist: Songbook}
+{key: Ami}
+{capo: 2}
+
+{start_of_verse: label="1."}
+[Ami]Česká písmena [Dmi]žluťoučký kůň,
+[G]akordy sedí i [C]nad diakritikou.
+Upro[Ami]střed slo[E]va se [Ami]text roztáhne,
+[Fmaj7]akord je vždy [G]nad svou [Ami]slabikou.
+{end_of_verse}
+
+{start_of_chorus}
+[F]Refrén má [G]svůj vlastní [C]okraj,
+[F]a když je řádek moc dlouhý na displej čtečky, zalomí se mezi slovy a [E]akordy zůstanou na svém místě.
+{end_of_chorus}
+
+{c: Mezihra}
+[Ami] [G] [F] [E]
+
+{start_of_verse: label="2."}
+[Ami/G]Basové tóny, [H7]české H a [B]B,
+[Fis]Cis, Es a [Asus4]sus se transponují správně.
+{end_of_verse}
+
+{chorus}
+
+{start_of_tab}
+e|-----0-----|
+B|---1---1---|
+G|-2-------2-|
+{end_of_tab}
