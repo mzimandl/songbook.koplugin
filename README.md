@@ -79,6 +79,14 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
   width. The default port is 8765 (changeable while not sharing). The device
   does not go to standby while sharing. There is no password: share only on
   networks you trust.
+  - *Follow another songbook…*: enter the address shown on another reader
+    (e.g. `192.168.1.5`, port 8765 is added). Every song it opens opens on
+    yours too, in its key; you can still transpose it yourself until it
+    changes song or key. Followed songs are saved to My songs as
+    *Jam session* (`songs/jam/`). Following stops when the other reader is
+    unreachable for a while.
+  - *Browse their songs*: adds the followed reader as a song repository, so
+    you can download any of its songs.
 - **Settings**:
   - Song repositories: add, edit the URL, rename or remove. Removing asks
     whether to delete the songs downloaded from it.

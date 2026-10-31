@@ -6,6 +6,9 @@ ctx = {
   state     = function() -> { uid=, rev=, title=, artist=, notation= } (uid nil = no song)
   song_html = function(opts) -> html or nil      -- opts = { shift=, notation=, show_chords=, max_cols= }
   song_cho  = function() -> ChordPro text or nil
+  songs     = function() -> list of { uid=, title=, artist=, key=, updated= } (all songs on the device)
+  song_file = function(uid) -> ChordPro text or nil
+  name      = repository name for /index.json,
   labels    = { title=, waiting=, offline=, chords= },
   css       = stylesheet for the song inside the page,
 }
@@ -16,6 +19,11 @@ Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
   /state.json   what is being played; "rev" changes with the song or the host's options
   /song.html    current song; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords), ?w= columns
   /song.cho     current song source
+  /index.json   all songs in the song repository format, so the host can be added as a repository
+  /songs/<file> one song of the index ("~" stands for "/" in the uid)
+
+Following another songbook (normalize_url, parse_state, song_id) is also
+here; main.lua does the polling.
 ]]
 
 local M = {}
@@ -62,18 +70,74 @@ local function json_string(s)
     end) .. '"'
 end
 
---- JSON for a flat table of strings, numbers and booleans (keys sorted).
-function M.json(t)
-    local keys = {}
-    for k in pairs(t) do keys[#keys + 1] = k end
-    table.sort(keys)
+--- JSON for strings, numbers, booleans and tables (a table with t[1] is an
+-- array; object keys are sorted).
+function M.json(v)
+    if type(v) == "string" then return json_string(v) end
+    if type(v) ~= "table" then return tostring(v) end
     local out = {}
+    if v[1] ~= nil then
+        for _, item in ipairs(v) do out[#out + 1] = M.json(item) end
+        return "[" .. table.concat(out, ",") .. "]"
+    end
+    local keys = {}
+    for k in pairs(v) do keys[#keys + 1] = k end
+    table.sort(keys)
     for _, k in ipairs(keys) do
-        local v = t[k]
-        local enc = type(v) == "string" and json_string(v) or tostring(v)
-        out[#out + 1] = json_string(k) .. ":" .. enc
+        out[#out + 1] = json_string(k) .. ":" .. M.json(v[k])
     end
     return "{" .. table.concat(out, ",") .. "}"
+end
+
+--- File name stem of a song in /songs/ and its id in /index.json.
+local function file_stem(uid) return (uid:gsub("/", "~")) end
+
+--- Song id (file-name safe) for a uid of another songbook.
+function M.song_id(uid)
+    return (file_stem(uid):gsub("[^%w%-_%.]", "_"):gsub("^%.+", ""))
+end
+
+--- uid for a /songs/<stem>.cho request, or nil if it could leave the songs folder.
+function M.uid_from_stem(stem)
+    if not stem:match("^[%w%-_][%w%-_%.~]*$") or stem:find("..", 1, true) then return nil end
+    return (stem:gsub("~", "/"))
+end
+
+--- index.json for songs as listed by ctx.songs().
+function M.index(songs, name)
+    local list = {}
+    for _, song in ipairs(songs) do
+        list[#list + 1] = {
+            id = M.song_id(song.uid),
+            file = "songs/" .. file_stem(song.uid) .. ".cho",
+            title = song.title, artist = song.artist, key = song.key, updated = song.updated,
+        }
+    end
+    return M.json({ version = 1, name = name, songs = list })
+end
+
+--- Address typed by a guest -> base URL ending with "/" (port added if missing).
+function M.normalize_url(text, default_port)
+    text = (text or ""):match("^%s*(.-)%s*$")
+    if text == "" then return nil end
+    if not text:match("^%a[%w+.-]*://") then text = "http://" .. text end
+    local scheme, authority, path = text:match("^(%a[%w+.-]*://)([^/]*)(.*)$")
+    if authority == "" then return nil end
+    if not authority:match(":%d+$") and default_port then authority = authority .. ":" .. default_port end
+    if path:sub(-1) ~= "/" then path = path .. "/" end
+    return scheme .. authority .. path
+end
+
+--- Decode /state.json of another songbook. Returns { uid, rev, transpose } or nil.
+function M.parse_state(body, decode)
+    local ok, data = pcall(decode, body)
+    if not ok or type(data) ~= "table" then return nil end
+    local state = { transpose = 0 }
+    if type(data.uid) == "string" and data.uid ~= "" and type(data.rev) == "string" then
+        state.uid, state.rev = data.uid, data.rev
+        if type(data.transpose) == "number" then state.transpose = M.add_semitones(data.transpose, 0) end
+    end
+    return state
 end
 
 --- Host transposition plus a guest's own shift, kept within -11..11.
@@ -216,6 +280,14 @@ function M.handle(req, ctx)
     elseif path == "/song.cho" then
         local cho = ctx.song_cho()
         if not cho then return M.response(404, "text/plain", "No song is being played") end
+        return M.response(200, "text/plain; charset=utf-8", cho)
+    elseif path == "/index.json" then
+        return M.response(200, "application/json; charset=utf-8", M.index(ctx.songs(), ctx.name))
+    end
+    local stem = path:match("^/songs/(.+)%.cho$")
+    local uid = stem and M.uid_from_stem(stem)
+    local cho = uid and ctx.song_file(uid)
+    if cho then
         return M.response(200, "text/plain; charset=utf-8", cho)
     end
     return M.response(404, "text/plain", "Not found")

@@ -46,8 +46,12 @@ local DEFAULTS = {
 }
 
 -- KOReader makes a new plugin instance for every reader/file manager, so the
--- jam server lives here and answers through the newest instance (jam.owner).
+-- jam server and following live here and work through the newest instance
+-- (jam.owner).
 local jam = {}
+
+-- Songs received from a followed songbook are kept in songs/<JAM_KEY>/.
+local JAM_KEY = "jam"
 
 -- Helpers -------------------------------------------------------------------
 
@@ -184,7 +188,8 @@ function Songbook:sourceName(uid)
     local key = split_uid(uid)
     if not key then return nil end
     local server = self:findServer(key)
-    return server and self:serverName(server) or key
+    if server then return self:serverName(server) end
+    return key == JAM_KEY and _("Jam session") or key
 end
 
 --- One-time upgrade from the single `server_url` setting to the `servers` list.
@@ -347,7 +352,7 @@ function Songbook:listLocal()
         local meta = ChordPro.parse_meta(read_file(dir .. "/" .. name) or "")
         local uid = make_uid(key, id)
         table.insert(songs, { uid = uid, id = id, title = meta.title or id, artist = meta.artist,
-                              source = self:sourceName(uid) })
+                              key = meta.key, source = self:sourceName(uid) })
     end
     for name in lfs.dir(self.songs_dir) do
         local path = self.songs_dir .. "/" .. name
@@ -1025,6 +1030,7 @@ function Songbook:addServer(url)
     local servers = self:getServers()
     local taken = {}
     for _, server in ipairs(servers) do taken[server.key] = true end
+    taken[JAM_KEY] = true
     -- also avoid folders left behind by removed servers
     for name in lfs.dir(self.songs_dir) do taken[name] = true end
     local server = { key = Repo.server_key(url, taken), url = url }
@@ -1226,8 +1232,21 @@ function Songbook:jamState()
         state.rev = uid .. "@" .. self:renderSignature(uid)
         state.title = meta.title or id
         state.artist = meta.artist
+        state.transpose = self:getMap("transpose")[uid] or 0
     end
     return state
+end
+
+function Songbook:jamSongs()
+    local songs = {}
+    for _i, song in ipairs(self:listLocal()) do
+        local mtime = lfs.attributes(self:songPath(song.uid), "modification")
+        songs[#songs + 1] = {
+            uid = song.uid, title = song.title, artist = song.artist, key = song.key,
+            updated = mtime and tostring(mtime),
+        }
+    end
+    return songs
 end
 
 function Songbook:jamSongHtml(opts)
@@ -1276,6 +1295,9 @@ function Songbook:startJam()
             local uid = jam.owner:jamSong()
             return uid and read_file(jam.owner:songPath(uid))
         end,
+        songs = function() return jam.owner:jamSongs() end,
+        song_file = function(uid) return read_file(jam.owner:songPath(uid)) end,
+        name = _("Jam session"),
         labels = {
             title = _("Songbook"), waiting = _("Waiting for a song…"),
             offline = _("Connection lost"), chords = _("Chords"),
@@ -1296,8 +1318,116 @@ function Songbook:stopJam()
     jam.server, jam.queue, jam.context = nil, nil, nil
 end
 
+-- Following another songbook: poll its /state.json and open each new song
+-- (saved to songs/jam/) in the host's key. Requests block the UI, so they
+-- use short timeouts.
+local FOLLOW_INTERVAL = 4         -- seconds between polls
+local FOLLOW_TIMEOUT = { 2, 4 }   -- block, total seconds
+local FOLLOW_MAX_FAILURES = 4
+
+local follow_poll
+
+function Songbook:isFollowing()
+    return jam.follow ~= nil
+end
+
+function Songbook:followFailed()
+    local f = jam.follow
+    f.failures = f.failures + 1
+    if f.failures >= FOLLOW_MAX_FAILURES then
+        self:stopFollowing()
+        UIManager:show(InfoMessage:new{
+            text = T(_("Lost connection to the songbook at %1. Stopped following."), f.url),
+        })
+    end
+end
+
+function Songbook:followStep()
+    local f = jam.follow
+    local body = Repo.fetch(f.url .. "state.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local state = body and Jam.parse_state(body, require("json").decode)
+    if not state then return self:followFailed() end
+    if not state.uid or state.rev == f.rev then
+        f.failures = 0
+        return
+    end
+    local uid = make_uid(JAM_KEY, Jam.song_id(state.uid))
+    if state.uid ~= f.uid then
+        local cho = Repo.fetch(f.url .. "song.cho", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+        if not cho then return self:followFailed() end
+        util.makePath(self.songs_dir .. "/" .. JAM_KEY)
+        if not write_file(self:songPath(uid), cho) then return self:followFailed() end
+    end
+    -- Other changes of the host's options don't concern us.
+    local same = state.uid == f.uid and state.transpose == f.transpose
+    f.failures, f.rev, f.uid, f.transpose = 0, state.rev, state.uid, state.transpose
+    if same then return end
+    self:setMapValue("transpose", uid, state.transpose ~= 0 and state.transpose or nil)
+    self:openSong(uid)
+end
+
+follow_poll = function()
+    if not jam.follow then return end
+    local ok, err = pcall(jam.owner.followStep, jam.owner)
+    if not ok then
+        logger.warn("Songbook: following failed", err)
+        if jam.follow then jam.owner:followFailed() end
+    end
+    if jam.follow then UIManager:scheduleIn(FOLLOW_INTERVAL, follow_poll) end
+end
+
+function Songbook:startFollowing(url)
+    self:stopFollowing()
+    jam.follow = { url = url, failures = 0 }
+    UIManager:preventStandby()
+    follow_poll()
+end
+
+function Songbook:stopFollowing()
+    if not jam.follow then return end
+    UIManager:unschedule(follow_poll)
+    UIManager:allowStandby()
+    jam.follow = nil
+end
+
+function Songbook:askFollowUrl(on_saved)
+    local dialog
+    dialog = InputDialog:new{
+        title = _("Follow another songbook"),
+        description = _("Address shown on the other device under Jam session."),
+        input = self:get("jam_follow_url") or "",
+        input_hint = "192.168.1.5:8765",
+        buttons = {{
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Follow"), is_enter_default = true, callback = function()
+                local url = Jam.normalize_url(dialog:getInputText(), DEFAULTS.jam_port)
+                UIManager:close(dialog)
+                if url then
+                    self:set("jam_follow_url", url)
+                    on_saved(url)
+                end
+            end },
+        }},
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+--- Add the followed songbook as a song repository (once) and browse it.
+function Songbook:browseFollowed()
+    local url = jam.follow and jam.follow.url
+    if not url then return end
+    local server
+    for _i, s in ipairs(self:getServers()) do
+        if Repo.base_url(s.url) == Repo.base_url(url) then server = s end
+    end
+    server = server or self:addServer(url)
+    NetworkMgr:runWhenConnected(function() self:showOnlineSongs({ server }) end)
+end
+
 function Songbook:onExit()
     self:stopJam()
+    self:stopFollowing()
 end
 
 function Songbook:showJamQR()
@@ -1358,6 +1488,35 @@ function Songbook:jamMenu()
                     end,
                 })
             end,
+            separator = true,
+        },
+        {
+            text_func = function()
+                if not self:isFollowing() then return _("Follow another songbook…") end
+                return T(_("Following %1"), (jam.follow.url:gsub("^%a+://", ""):gsub("/$", "")))
+            end,
+            help_text = _("Open the songs another device is playing, as they change. They are saved to My songs (Jam session) and shown in the other player's key; you can still transpose them."),
+            keep_menu_open = true,
+            checked_func = function() return self:isFollowing() end,
+            callback = function(touchmenu_instance)
+                if self:isFollowing() then
+                    self:stopFollowing()
+                    touchmenu_instance:updateItems()
+                    return
+                end
+                self:askFollowUrl(function(url)
+                    NetworkMgr:runWhenConnected(function()
+                        self:startFollowing(url)
+                        touchmenu_instance:updateItems()
+                    end)
+                end)
+            end,
+        },
+        {
+            text = _("Browse their songs"),
+            help_text = _("Adds the followed songbook as a song repository, so you can download any of its songs."),
+            enabled_func = function() return self:isFollowing() end,
+            callback = function() self:browseFollowed() end,
         },
     }
 end
@@ -1428,7 +1587,8 @@ function Songbook:addToMainMenu(menu_items)
             },
             {
                 text_func = function()
-                    return self:isJamRunning() and _("Jam session (sharing)") or _("Jam session")
+                    if self:isJamRunning() then return _("Jam session (sharing)") end
+                    return self:isFollowing() and _("Jam session (following)") or _("Jam session")
                 end,
                 sub_item_table = self:jamMenu(),
             },

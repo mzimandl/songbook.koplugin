@@ -116,14 +116,16 @@ function M.parse_index(body, decode)
 end
 
 --- HTTP GET. Returns body or nil, error message. On-device only.
-function M.fetch(url)
+-- Timeouts in seconds default to socketutil's LARGE ones.
+function M.fetch(url, block_timeout, total_timeout)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
     local socket = require("socket")
     local socketutil = require("socketutil")
 
     local sink = {}
-    socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
+    socketutil:set_timeout(block_timeout or socketutil.LARGE_BLOCK_TIMEOUT,
+        total_timeout or socketutil.LARGE_TOTAL_TIMEOUT)
     local code, _, status = socket.skip(1, http.request{
         url = url,
         method = "GET",

@@ -33,12 +33,14 @@ stub("ui/widget/inputdialog", class())
 stub("ui/widget/spinwidget", class())
 stub("ui/widget/menu", class({ switchItemTable = function(self, t, items) self.item_table = items end }))
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
-local zmqs, standby = {}, 0
+local zmqs, standby, scheduled = {}, 0, nil
 stub("ui/uimanager", {
     show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
     insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
     removeZMQ = function(_, z) for i = #zmqs, 1, -1 do if zmqs[i] == z then table.remove(zmqs, i) end end end,
     preventStandby = function() standby = standby + 1 end,
+    scheduleIn = function(_, _s, f) scheduled = f end,
+    unschedule = function(_, f) if scheduled == f then scheduled = nil end end,
     allowStandby = function() standby = standby - 1 end,
 })
 local sent
@@ -80,7 +82,9 @@ stub("luasettings", { open = function()
 end })
 stub("docsettings", { open = function() return { purge = function() end } end })
 local index_name = "Test repo"
-stub("json", { decode = function()
+local decoded = {}   -- body -> table, for bodies other than the index
+stub("json", { decode = function(body)
+    if decoded[body] then return decoded[body] end
     return { name = index_name, songs = { { id = "test", title = "Test", file = "songs/test.cho", updated = "1" } } }
 end })
 stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, udp = function()
@@ -88,10 +92,11 @@ stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, udp = fu
 end })
 stub("ltn12", { sink = { table = function(t) return t end } })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
-local requested = {}
+local requested, responses = {}, {}   -- responses[url] = body, or false for 404
 stub("socket.http", { request = function(req)
     table.insert(requested, req.url)
-    table.insert(req.sink, "{title: Downloaded}\n[Am]La")
+    if responses[req.url] == false then return 1, 404, {}, "HTTP/1.1 404 Not Found" end
+    table.insert(req.sink, responses[req.url] or "{title: Downloaded}\n[Am]La")
     return 1, 200, {}, "HTTP/1.1 200 OK"
 end })
 stub("apps/reader/readerui", { showReader = function(_, path) table.insert(opened, path) end })
@@ -140,6 +145,19 @@ check(items.songbook.sub_item_table[5].text_func() == "Transpose (+2)", "transpo
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 
+local InputDialog = require("ui/widget/inputdialog")
+InputDialog.onShowKeyboard = function() end
+local input_text
+InputDialog.getInputText = function() return input_text end
+local function last_shown() return shown[#shown] end
+local function find_button(dialog, text)
+    for _, row in ipairs(dialog.buttons) do
+        for _, b in ipairs(row) do
+            if b.text == text then return b end
+        end
+    end
+end
+
 -- Jam session ------------------------------------------------------------------
 local jam_menu = items.songbook.sub_item_table[8]
 local tmi = { updateItems = function() end }
@@ -174,22 +192,57 @@ plugin.ui.document = nil
 code, body = jam_get("/state.json")
 check(body:find('"uid":"test"', 1, true), "last song shared after reader closed")
 plugin.ui.document = doc
+
+-- the host's songs as a repository
+code, body = jam_get("/index.json")
+check(code == "200" and body:find('"file":"songs/test.cho"', 1, true) and body:find('"key":"C"', 1, true), "jam index: " .. tostring(body))
+code, body = jam_get("/songs/test.cho")
+check(code == "200" and body:find("Jede", 1, true), "jam song file")
+code = jam_get("/songs/..~settings~x.cho")
+check(code == "404", "jam song file outside songs/")
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func(), "jam server stopped")
 
+-- following another songbook
+local host = "http://10.0.0.2:8765/"
+responses[host .. "state.json"] = "S1"
+responses[host .. "song.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
+decoded.S1 = { uid = "repo/song-a", rev = "1", transpose = 2, notation = "cz" }
+local follow_item = jam_menu.sub_item_table[4]
+check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[5].enabled_func() == false, "not following")
+input_text = " 10.0.0.2 "
+local n_opened = #opened
+follow_item.callback(tmi)
+find_button(last_shown(), "Follow").callback()
+check(follow_item.checked_func() and follow_item.text_func() == "Following 10.0.0.2:8765", "following: " .. follow_item.text_func())
+check(settings_store.jam_follow_url == host and standby == 1 and scheduled ~= nil, "follow polling scheduled")
+check(jam_menu.text_func() == "Jam session (following)", "jam menu label while following")
+check(io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "followed song saved")
+check(#opened == n_opened + 1 and opened[#opened]:find("/jam~repo_song%-a@t%+2"), "followed song opened in host key: " .. opened[#opened])
+plugin.ui.document.file = opened[#opened]
+local fetched = #requested
+scheduled()
+check(#opened == n_opened + 1 and #requested == fetched + 1, "same state: nothing reopened or downloaded")
+decoded.S2 = { uid = "repo/song-a", rev = "2", transpose = 2 }
+responses[host .. "state.json"] = "S2"
+scheduled()
+check(#opened == n_opened + 1, "other host option change: not reopened")
+decoded.S3 = { uid = "repo/song-a", rev = "3", transpose = 0 }
+responses[host .. "state.json"] = "S3"
+scheduled()
+check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#requested] == host .. "state.json",
+    "host transposition followed without download")
+local jam_song
+for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
+check(jam_song and jam_song.source == "Jam session" and jam_song.title == "Hostova", "followed song in my songs")
+responses[host .. "state.json"] = false
+for _i = 1, 4 do if scheduled then scheduled() end end
+check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lost connection", 1, true), "following stops when host is gone")
+responses[host .. "state.json"] = nil
+plugin.ui.document.file = opened[n_opened]
+plugin:deleteSong("jam/repo_song-a")
+
 -- Song repositories ----------------------------------------------------------
-local InputDialog = require("ui/widget/inputdialog")
-InputDialog.onShowKeyboard = function() end
-local input_text
-InputDialog.getInputText = function() return input_text end
-local function last_shown() return shown[#shown] end
-local function find_button(dialog, text)
-    for _, row in ipairs(dialog.buttons) do
-        for _, b in ipairs(row) do
-            if b.text == text then return b end
-        end
-    end
-end
 
 -- no repository yet: browsing asks for one first
 input_text = " https://example.com/songs "

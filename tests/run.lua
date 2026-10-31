@@ -225,6 +225,44 @@ eq(page:find("Čekám &lt;na&gt; píseň", 1, true) ~= nil, true, "jam page esca
 eq(page:find("pre{}", 1, true) ~= nil, true, "jam page has song css")
 eq(page:find("%s", 1, true), nil, "jam page has no placeholders left")
 
+-- Jam: repository endpoints and following ------------------------------------
+eq(Jam.json({ songs = { { id = "a" }, { id = "b" } }, n = 1 }), '{"n":1,"songs":[{"id":"a"},{"id":"b"}]}', "jam json nested")
+eq(Jam.song_id("my-repo/amazing.grace"), "my-repo_amazing.grace", "jam song id")
+eq(Jam.song_id("..x/y z"), "x_y_z", "jam song id sanitized")
+eq(Jam.uid_from_stem("repo~song"), "repo/song", "jam stem to uid")
+eq(Jam.uid_from_stem("local-song"), "local-song", "jam stem local song")
+eq(Jam.uid_from_stem("..~etc~passwd"), nil, "jam stem traversal")
+eq(Jam.uid_from_stem("a~..~b"), nil, "jam stem traversal inside")
+eq(Jam.uid_from_stem(".hidden"), nil, "jam stem leading dot")
+local Repo = require("songbook/repo")
+local index = Jam.index({ { uid = "r/x", title = "X", updated = "5" }, { uid = "y", title = "Y" } }, "Jam")
+eq(index, '{"name":"Jam","songs":[{"file":"songs/r~x.cho","id":"r_x","title":"X","updated":"5"},'
+    .. '{"file":"songs/y.cho","id":"y","title":"Y"}],"version":1}', "jam index json")
+local json_like = function(body)  -- the index uses no escapes, a Lua table literal is enough
+    return loadstring("return " .. body:gsub('"(%w+)":', "%1="):gsub("%[", "{"):gsub("%]", "}"))()
+end
+local parsed = Repo.parse_index(index, json_like)
+eq(parsed[1].id .. " " .. parsed[1].file .. " " .. parsed[1].updated, "r_x songs/r~x.cho 5", "jam index readable as repository")
+eq(Jam.normalize_url("192.168.1.5", 8765), "http://192.168.1.5:8765/", "jam url ip")
+eq(Jam.normalize_url(" 192.168.1.5:9000 ", 8765), "http://192.168.1.5:9000/", "jam url with port")
+eq(Jam.normalize_url("http://kobo.local:8765/", 8765), "http://kobo.local:8765/", "jam url full")
+eq(Jam.normalize_url("  ", 8765), nil, "jam url empty")
+local function decode_table(t) return function() return t end end
+local st = Jam.parse_state("", decode_table({ uid = "r/x", rev = "r/x@1", transpose = 14 }))
+eq(st.uid .. " " .. st.rev .. " " .. st.transpose, "r/x r/x@1 2", "jam parse state")
+st = Jam.parse_state("", decode_table({ notation = "cz" }))
+eq(st and st.uid, nil, "jam parse state without song")
+eq(Jam.parse_state("", function() error("bad") end), nil, "jam parse state bad json")
+
+ctx.songs = function() return { { uid = "r/x", title = "X" } } end
+ctx.song_file = function(uid) return uid == "r/x" and "{title: X}" or nil end
+ctx.name = "Jam"
+resp = handle("/index.json")
+eq(resp:match("\r\n\r\n(.*)$"):find('"file":"songs/r~x.cho"', 1, true) ~= nil, true, "jam serves index")
+eq(handle("/songs/r~x.cho"):match("\r\n\r\n(.*)$"), "{title: X}", "jam serves song file")
+eq(handle("/songs/r~y.cho"):match("^HTTP/1.1 (%d+)"), "404", "jam missing song file")
+eq(handle("/songs/..~r~x.cho"):match("^HTTP/1.1 (%d+)"), "404", "jam song file traversal")
+
 local web = Render.html(ChordPro.parse("{title: W}\n[C]La"), { web = true })
 eq(web:sub(1, 15), "<!DOCTYPE html>", "web render is html5")
 eq(web:find("viewport", 1, true) ~= nil, true, "web render has viewport")
