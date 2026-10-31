@@ -47,6 +47,8 @@ stub("libs/libkoreader-lfs", {
         return function() i = i + 1; return list[i] end
     end,
     attributes = function(p, what)
+        local r = os.execute("test -d '" .. p .. "'")
+        if r == 0 or r == true then return "directory" end
         local f = io.open(p, "rb")
         if f then f:close(); return "file" end
         return nil
@@ -57,12 +59,14 @@ stub("luasettings", { open = function()
     return {
         readSetting = function(_, k) return settings_store[k] end,
         saveSetting = function(_, k, v) settings_store[k] = v end,
+        delSetting = function(_, k) settings_store[k] = nil end,
         flush = function() end,
     }
 end })
 stub("docsettings", { open = function() return { purge = function() end } end })
+local index_name = "Test repo"
 stub("json", { decode = function()
-    return { songs = { { id = "test", title = "Test", file = "songs/test.cho", updated = "1" } } }
+    return { name = index_name, songs = { { id = "test", title = "Test", file = "songs/test.cho", updated = "1" } } }
 end })
 stub("socket", { skip = function(n, ...) return select(n + 1, ...) end })
 stub("ltn12", { sink = { table = function(t) return t end } })
@@ -70,7 +74,7 @@ stub("socketutil", { set_timeout = function() end, reset_timeout = function() en
 local requested = {}
 stub("socket.http", { request = function(req)
     table.insert(requested, req.url)
-    table.insert(req.sink, "{}")
+    table.insert(req.sink, "{title: Downloaded}\n[Am]La")
     return 1, 200, {}, "HTTP/1.1 200 OK"
 end })
 stub("apps/reader/readerui", { showReader = function(_, path) table.insert(opened, path) end })
@@ -119,37 +123,136 @@ check(items.songbook.sub_item_table[3].text_func() == "Transpose (+2)", "transpo
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 
--- online list builds items
-plugin:set("server_url", "https://example.com/songs")
-plugin:browseOnline()
-local menu = shown[#shown]
-check(menu.item_table and menu.item_table[2].text == "Test", "online list item")
-check(menu.item_table[2].mandatory == "update", "file present but not from server -> update: " .. tostring(menu.item_table[2].mandatory))
-check(requested[#requested] == "https://example.com/songs/index.json", "plain server url used as is")
-
--- github.com repository address is fetched from raw.githubusercontent.com
-plugin:set("server_url", "https://github.com/user/songs")
-plugin:browseOnline()
-check(requested[#requested] == "https://raw.githubusercontent.com/user/songs/HEAD/index.json",
-    "github url -> raw: " .. tostring(requested[#requested]))
-
--- saving the server URL refreshes the open menu so "Server:" shows the new value
+-- Song repositories ----------------------------------------------------------
 local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end
-InputDialog.getInputText = function() return " https://github.com/user/other " end
-local server_item = items.songbook.sub_item_table[4].sub_item_table[1]
-local refreshed = 0
-server_item.callback({ updateItems = function() refreshed = refreshed + 1 end })
-shown[#shown].buttons[1][2].callback()
-check(refreshed == 1, "menu refreshed after saving server url")
-check(server_item.text_func() == "Server: https://github.com/user/other", "server item shows new url: " .. server_item.text_func())
+local input_text
+InputDialog.getInputText = function() return input_text end
+local function last_shown() return shown[#shown] end
+local function find_button(dialog, text)
+    for _, row in ipairs(dialog.buttons) do
+        for _, b in ipairs(row) do
+            if b.text == text then return b end
+        end
+    end
+end
 
--- "Download all songs" keeps the menu open
+-- no repository yet: browsing asks for one first
+input_text = " https://example.com/songs "
+plugin:browseOnline()
+last_shown().buttons[1][2].callback()
+local servers = plugin:getServers()
+check(#servers == 1 and servers[1].url == "https://example.com/songs" and servers[1].key == "example.com-songs",
+    "first repository added: " .. tostring(servers[1] and servers[1].key))
+check(requested[#requested] == "https://example.com/songs/index.json", "plain server url used as is")
+local menu = last_shown()
+check(menu.title == "Test repo", "single repository list titled by index name: " .. tostring(menu.title))
+check(menu.item_table[2].text == "Test", "online list item")
+check(menu.item_table[2].mandatory == "", "local song with same id is not 'saved': " .. tostring(menu.item_table[2].mandatory))
+
+-- tap downloads into songs/<key>/ and opens it
+menu.item_table[2].callback()
+check(io.open(root .. "/songbook/songs/example.com-songs/test.cho"), "downloaded into repository folder")
+check(plugin:getMap("downloaded")["example.com-songs/test"] == "1", "downloaded map keyed by uid")
+check(opened[#opened]:find("/rendered/example.com%-songs~test@t%+0"), "rendered name uses ~: " .. opened[#opened])
+plugin.ui.document.file = opened[#opened]
+check(plugin:currentSongId() == "example.com-songs/test", "currentSongId returns uid")
+plugin:onSongbookTranspose(1)
+check(plugin:getMap("transpose")["example.com-songs/test"] == 1, "transpose stored per uid")
+check(plugin:getMap("transpose")["test"] == nil, "local song with same id unaffected")
+
+-- second repository: browsing shows a picker, github url fetched from raw
+plugin:addServer("https://github.com/user/songs")
+plugin:browseOnline()
+local picker = last_shown()
+check(#picker.item_table == 3 and picker.item_table[3].text == "All repositories", "repository picker")
+picker.item_table[2].callback()
+check(requested[#requested] == "https://raw.githubusercontent.com/user/songs/HEAD/index.json",
+    "github url -> raw: " .. tostring(requested[#requested]))
+plugin:browseOnline()
+last_shown().item_table[3].callback()
+menu = last_shown()
+check(menu.title == "All repositories" and #menu.item_table == 3, "all repositories list")
+check(menu.item_table[2].mandatory:find("Test repo", 1, true), "merged list shows repository name")
+
+-- My songs lists songs from everywhere with their source
+local all = plugin:listLocal()
+check(#all == 2, "my songs: local + downloaded: " .. #all)
+local sources = {}
+for _, song in ipairs(all) do sources[song.uid] = song.source or "local" end
+check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test repo", "my songs sources")
+
+-- settings submenu: add, rename, remove
+local repos_item = items.songbook.sub_item_table[4].sub_item_table[1]
+check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
+local tm = { updateItems = function() end }
+tm.item_table = repos_item.sub_item_table_func()
+check(#tm.item_table == 3 and tm.item_table[3].text == "Add repository…", "repositories submenu")
+input_text = "https://github.com/other/repo/tree/dev"
+tm.item_table[3].callback(tm)
+last_shown().buttons[1][2].callback()
+check(#tm.item_table == 4 and tm.item_table[3].text_func() == "other/repo (dev)", "submenu refreshed after add")
+
+tm.item_table[1].callback(tm)
+input_text = "Moje písně"
+find_button(last_shown(), "Rename").callback()
+last_shown().buttons[1][2].callback()
+check(tm.item_table[1].text_func() == "Moje písně", "renamed repository")
+tm.item_table[1].callback(tm)
+input_text = ""
+find_button(last_shown(), "Rename").callback()
+last_shown().buttons[1][2].callback()
+check(tm.item_table[1].text_func() == "Test repo", "empty name falls back to index name")
+
+tm.item_table[1].callback(tm)
+find_button(last_shown(), "Remove").callback()
+find_button(last_shown(), "Remove and delete its songs").callback()
+check(#plugin:getServers() == 2 and #tm.item_table == 3, "repository removed")
+check(not io.open(root .. "/songbook/songs/example.com-songs/test.cho"), "its songs deleted")
+check(plugin:getMap("downloaded")["example.com-songs/test"] == nil, "downloaded entry removed")
+check(plugin:getMap("transpose")["example.com-songs/test"] == nil, "transpose entry removed")
+check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
+
+-- "Download all songs" keeps the menu open and reports per repository
 local download_all
 for _, item in ipairs(items.songbook.sub_item_table[4].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")
+download_all.callback()
+check(notes[#notes]:find("Downloaded: 1", 1, true) and select(2, notes[#notes]:gsub("Downloaded:", "")) == 2,
+    "download all summary per repository: " .. notes[#notes])
+
+-- Migration from the single server_url setting --------------------------------
+os.execute("rm -rf '" .. root .. "'")
+root = root .. "-migrate"
+os.execute("mkdir -p '" .. root .. "/settings' '" .. root .. "/songbook/songs' '" .. root .. "/songbook/rendered'")
+for _, name in ipairs({ "old", "mine" }) do
+    local fh = io.open(root .. "/songbook/songs/" .. name .. ".cho", "w")
+    fh:write("{title: " .. name .. "}\n")
+    fh:close()
+end
+io.open(root .. "/songbook/rendered/old@t+2.cz.w42.c1.r0.html", "w"):close()
+for k in pairs(settings_store) do settings_store[k] = nil end
+settings_store.server_url = "https://github.com/user/songs"
+settings_store.downloaded = { old = "abc" }
+settings_store.transpose = { old = 2, mine = 1 }
+local migrated = Songbook:new{ ui = { menu = { registerToMainMenu = function() end } } }
+servers = migrated:getServers()
+check(#servers == 1 and servers[1].key == "user-songs" and servers[1].url == "https://github.com/user/songs",
+    "migrated server_url to servers")
+check(settings_store.server_url == nil, "server_url removed")
+check(io.open(root .. "/songbook/songs/user-songs/old.cho") and not io.open(root .. "/songbook/songs/old.cho"),
+    "downloaded song moved to repository folder")
+check(io.open(root .. "/songbook/songs/mine.cho"), "local song stays")
+check(settings_store.downloaded["user-songs/old"] == "abc" and settings_store.downloaded.old == nil, "downloaded map migrated")
+check(settings_store.transpose["user-songs/old"] == 2 and settings_store.transpose.mine == 1, "transpose map migrated")
+check(not io.open(root .. "/songbook/rendered/old@t+2.cz.w42.c1.r0.html"), "old renders removed")
+
+settings_store.server_url = ""
+settings_store.servers = nil
+migrated = Songbook:new{ ui = { menu = { registerToMainMenu = function() end } } }
+check(#migrated:getServers() == 0 and settings_store.server_url == nil, "empty server_url migrates to no servers")
 
 os.execute("rm -rf '" .. root .. "'")
 print(("%d passed, %d failed"):format(passed, failed))

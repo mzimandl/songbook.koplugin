@@ -6,13 +6,13 @@ The server is any static HTTP(S) location (GitHub raw, GitHub Pages, ...):
     <base>/index.json
     <base>/songs/<file>.cho
 
-index.json:
-    { "version": 1,
+index.json ("name" is optional, shown as the repository name):
+    { "version": 1, "name": "My songs",
       "songs": [ { "id": "amazing-grace", "title": "Amazing Grace",
                    "artist": "John Newton", "key": "G",
                    "file": "songs/amazing-grace.cho", "updated": "2026-10-31" } ] }
 
-Pure helpers (join, sanitize_id, parse_index) have no KOReader dependencies;
+Pure helpers (join, base_url, server_key, sanitize_id, parse_index) have no KOReader dependencies;
 fetch() uses KOReader's LuaSocket/LuaSec and is only called on-device.
 ]]
 
@@ -47,6 +47,34 @@ function M.base_url(url)
     return "https://raw.githubusercontent.com/" .. user .. "/" .. repo .. "/" .. ref .. sub .. "/"
 end
 
+--- Short display name derived from a server URL ("user/repo", or host/path).
+function M.default_name(url)
+    local base = M.base_url(url)
+    local user, repo, ref, sub = base:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([^/]+)(.-)/?$")
+    if user then
+        local name = user .. "/" .. repo
+        if ref ~= "HEAD" then name = name .. " (" .. ref .. sub .. ")" end
+        return name
+    end
+    return (base:gsub("^%a+://", ""):gsub("/+$", ""))
+end
+
+--- Stable folder-safe key for a server URL, unique among `taken` (a set).
+-- The key is created once when a server is added and never changes, so
+-- downloaded songs stay in songs/<key>/ even if the URL or name is edited.
+function M.server_key(url, taken)
+    local key = M.default_name(url):lower():gsub("[^%w%-_%.]+", "-"):gsub("%-+", "-")
+    key = key:gsub("^[%-%.]+", ""):gsub("%-+$", ""):sub(1, 60)
+    if key == "" then key = "repo" end
+    taken = taken or {}
+    local candidate, n = key, 1
+    while taken[candidate] do
+        n = n + 1
+        candidate = key .. "-" .. n
+    end
+    return candidate
+end
+
 --- Make an id safe to use as a file name.
 function M.sanitize_id(id)
     id = tostring(id or ""):gsub("[^%w%-_%.]", "_"):gsub("^%.+", "")
@@ -59,6 +87,7 @@ end
 
 --- Decode index.json text into a list of song entries.
 -- decode: a JSON decode function (KOReader: require("json").decode)
+-- Returns songs, nil, repository name (or nil) / nil, error message.
 function M.parse_index(body, decode)
     local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" then
@@ -82,7 +111,8 @@ function M.parse_index(body, decode)
             end
         end
     end
-    return songs
+    local name = type(data.name) == "string" and data.name:match("%S") and data.name or nil
+    return songs, nil, name
 end
 
 --- HTTP GET. Returns body or nil, error message. On-device only.

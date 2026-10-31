@@ -24,8 +24,9 @@ tests/                  off-device tests (LuaJIT, not used by the plugin)
    `git clone https://github.com/mzimandl/songbook.koplugin`.
    `tests/` can be deleted on the device.
 2. Restart KOReader → **Tools → Songbook**.
-3. **Settings → Server** → enter the song server address. For a GitHub
-   repository the ordinary address is enough:
+3. **Settings → Song repositories → Add repository…** → enter the song server
+   address. You can add several. For a GitHub repository the ordinary address
+   is enough:
    - `https://github.com/<user>/<repo>`: default branch, `index.json` in the repo root
    - `https://github.com/<user>/<repo>/tree/<branch>/<folder>`: other branch or subfolder
 
@@ -42,23 +43,31 @@ Use it as a starting point for your own song collection. It has the songs, the
 `index.json` generator and the GitHub Action that keeps it up to date.
 
 `updated` in the index is a content hash, so the plugin re-downloads a song
-only when its file changed.
+only when its file changed. An optional top-level `"name"` in `index.json` is
+shown as the repository name. `build_index.py` takes it from `songbook.json`
+(`{"name": "My songs"}`) in the song repo root. Without it the name comes from the URL
+(`user/repo`).
 
 ## Using it
 
-- **Browse online**: tap a song to download (if new or changed) and open it.
-  Long-press to force re-download. The first list item is search.
-- **My songs**: downloaded songs, plus any `.cho` you copy to
-  `koreader/songbook/songs/`. Long-press to delete.
+- **Browse online**: with more than one repository, pick one first, or
+  *All repositories* for one combined list. Tap a song to download (if new or
+  changed) and open it. Long-press to force re-download. The first list item
+  is search.
+- **My songs**: downloaded songs from all repositories, plus any `.cho` you copy
+  to `koreader/songbook/songs/`. Each song shows which repository it came
+  from. Long-press to delete.
 - **Transpose** (in the menu while a song is open): ±1 semitone / original key.
-  It is saved per song. It is also available as gesture actions
+  It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*) under Taps & gestures → General.
 - **Settings**:
+  - Song repositories: add, edit the URL, rename or remove. Removing asks
+    whether to delete the songs downloaded from it.
   - Chord notation: Czech (H, B = B♭) or English.
   - Line width: wrap column. Lower it if lines are cut off on the right.
   - Show chords: lyrics-only mode.
   - Repeat chorus text: `{chorus}` prints the chorus instead of a label.
-  - Download all songs: for offline use.
+  - Download all songs: from all repositories, for offline use.
 
 ## Supported ChordPro
 
@@ -83,7 +92,10 @@ symlinked into `plugins/`.
 
 ## Notes and limitations
 
-- Rendering goes to `koreader/songbook/rendered/<id>@<options>.html`. Each option
+- Downloaded songs are stored in `koreader/songbook/songs/<repository>/<id>.cho`.
+  The folder name is fixed when the repository is added. Songs downloaded by
+  older versions (straight into `songs/`) are moved there automatically.
+- Rendering goes to `koreader/songbook/rendered/<repository>~<id>@<options>.html`. Each option
   combination gets its own file name, so the reader cache never shows stale
   chords. Older variants of the same song are removed automatically.
 - Chord alignment needs a monospace font. Songs are rendered in `<pre>`
