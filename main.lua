@@ -124,6 +124,9 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_favorites",
         { category = "none", event = "SongbookShowFavorites",
           title = _("Songbook: favorites"), general = true })
+    Dispatcher:registerAction("songbook_collections",
+        { category = "none", event = "SongbookShowCollections",
+          title = _("Songbook: collections"), general = true })
     Dispatcher:registerAction("songbook_toggle_favorite",
         { category = "none", event = "SongbookToggleFavorite",
           title = _("Songbook: add/remove favorite"), reader = true })
@@ -443,6 +446,9 @@ function Songbook:deleteSong(uid)
     self:setMapValue("downloaded", uid, nil)
     self:setMapValue("transpose", uid, nil)
     self:setMapValue("favorites", uid, nil)
+    local collections = self:getCollections()
+    for _, c in ipairs(collections) do c.songs[uid] = nil end
+    self:saveCollections(collections)
     self:removeStaleRenders(uid, nil)
 end
 
@@ -480,16 +486,238 @@ function Songbook:favoriteButton(song, close, refresh, before)
     }
 end
 
+-- Collections -------------------------------------------------------------------
+--
+-- Named song lists made on the device: { { name = "...", songs = { [uid] = true } } }.
+-- Names are unique, so they identify a collection.
+
+function Songbook:getCollections()
+    local collections = self.settings:readSetting("collections") or {}
+    table.sort(collections, function(a, b) return lower(a.name) < lower(b.name) end)
+    return collections
+end
+
+function Songbook:saveCollections(collections)
+    self:set("collections", collections)
+end
+
+function Songbook:findCollection(name, collections)
+    for i, c in ipairs(collections or self:getCollections()) do
+        if c.name == name then return c, i end
+    end
+end
+
+local function count_keys(t)
+    local n = 0
+    for _k in pairs(t) do n = n + 1 end
+    return n
+end
+
+--- Create a collection. Returns true, or nil and an error message.
+function Songbook:createCollection(name)
+    if self:findCollection(name) then
+        return nil, T(_("A collection named \"%1\" already exists."), name)
+    end
+    local collections = self:getCollections()
+    table.insert(collections, { name = name, songs = {} })
+    self:saveCollections(collections)
+    return true
+end
+
+function Songbook:renameCollection(old, new)
+    if old == new then return true end
+    if self:findCollection(new) then
+        return nil, T(_("A collection named \"%1\" already exists."), new)
+    end
+    local collections = self:getCollections()
+    local c = self:findCollection(old, collections)
+    if c then c.name = new end
+    self:saveCollections(collections)
+    return true
+end
+
+function Songbook:deleteCollection(name)
+    local collections = self:getCollections()
+    local _c, i = self:findCollection(name, collections)
+    if i then table.remove(collections, i) end
+    self:saveCollections(collections)
+end
+
+function Songbook:isInCollection(name, uid)
+    local c = self:findCollection(name)
+    return c ~= nil and c.songs[uid] == true
+end
+
+function Songbook:setInCollection(name, uid, on)
+    local collections = self:getCollections()
+    local c = self:findCollection(name, collections)
+    if not c then return end
+    c.songs[uid] = on and true or nil
+    self:saveCollections(collections)
+end
+
+--- Ask for a collection name. on_saved(name) gets a non-empty name.
+function Songbook:askCollectionName(title, current, on_saved)
+    local dialog
+    dialog = InputDialog:new{
+        title = title,
+        input = current or "",
+        input_hint = _("Collection name"),
+        buttons = {{
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local name = util.trim(dialog:getInputText())
+                UIManager:close(dialog)
+                if name ~= "" then on_saved(name) end
+            end },
+        }},
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+--- Dialog with a check button per collection for one song.
+-- on_changed(): called after every change; before(): see favoriteButton.
+function Songbook:showSongCollections(song, on_changed, before)
+    local dialog
+    local function reopen()
+        on_changed()
+        self:showSongCollections(song, on_changed, before)
+    end
+    local function change(fn)
+        return function()
+            UIManager:close(dialog)
+            if before and not before() then return end
+            fn()
+        end
+    end
+    local buttons = {}
+    for _i, c in ipairs(self:getCollections()) do
+        local on = c.songs[song.uid] == true
+        table.insert(buttons, {{
+            text = (on and "✓ " or "") .. c.name,
+            callback = change(function()
+                self:setInCollection(c.name, song.uid, not on)
+                reopen()
+            end),
+        }})
+    end
+    table.insert(buttons, {
+        { text = _("New collection…"), callback = change(function()
+            self:askCollectionName(_("New collection"), "", function(name)
+                local ok, err = self:createCollection(name)
+                if not ok then notify(err) return end
+                self:setInCollection(name, song.uid, true)
+                reopen()
+            end)
+        end) },
+        { text = _("Close"), callback = function() UIManager:close(dialog) end },
+    })
+    dialog = ButtonDialog:new{
+        title = T(_("Collections: %1"), song.title),
+        buttons = buttons,
+    }
+    UIManager:show(dialog)
+end
+
+function Songbook:collectionsButton(song, close, refresh, before)
+    return {
+        text = _("Collections…"),
+        callback = function()
+            close()
+            self:showSongCollections(song, refresh, before)
+        end,
+    }
+end
+
+function Songbook:onSongbookShowCollections()
+    local menu
+    local function build()
+        local items = {}
+        for _i, c in ipairs(self:getCollections()) do
+            table.insert(items, {
+                text = c.name,
+                mandatory = tostring(count_keys(c.songs)),
+                collection = c.name,
+                callback = function()
+                    UIManager:close(menu)
+                    self:showCollection(c.name)
+                end,
+            })
+        end
+        table.insert(items, {
+            text = _("New collection…"),
+            bold = true,
+            callback = function()
+                self:askCollectionName(_("New collection"), "", function(name)
+                    local ok, err = self:createCollection(name)
+                    if not ok then notify(err) return end
+                    menu:switchItemTable(nil, build())
+                end)
+            end,
+        })
+        return items
+    end
+    menu = Menu:new{
+        title = _("Collections"),
+        item_table = build(),
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        width = Screen:getWidth(),
+        height = Screen:getHeight(),
+        onMenuHold = function(_menu, item)
+            if not item.collection then return true end
+            local name = item.collection
+            local dialog
+            dialog = ButtonDialog:new{
+                title = name,
+                buttons = {{
+                    { text = _("Rename"), callback = function()
+                        UIManager:close(dialog)
+                        self:askCollectionName(_("Rename collection"), name, function(new)
+                            local ok, err = self:renameCollection(name, new)
+                            if not ok then notify(err) return end
+                            menu:switchItemTable(nil, build())
+                        end)
+                    end },
+                    { text = _("Delete"), callback = function()
+                        UIManager:close(dialog)
+                        UIManager:show(ConfirmBox:new{
+                            text = T(_("Delete collection \"%1\"?\nThe songs stay on the device."), name),
+                            ok_text = _("Delete"),
+                            ok_callback = function()
+                                self:deleteCollection(name)
+                                menu:switchItemTable(nil, build())
+                            end,
+                        })
+                    end },
+                }},
+            }
+            UIManager:show(dialog)
+            return true
+        end,
+    }
+    UIManager:show(menu)
+    return true
+end
+
+function Songbook:showCollection(name)
+    return self:showLocal(name, function(song) return self:isInCollection(name, song.uid) end,
+        _("This collection is empty. Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."))
+end
+
 -- Song lists on the device -----------------------------------------------------
 
---- List of songs on the device; favorites_only shows just the favorites.
-function Songbook:showLocal(favorites_only)
+--- List of songs on the device. filter(song) limits the list (nil = all);
+-- empty_text is shown instead of an empty list.
+function Songbook:showLocal(title, filter, empty_text)
     local function load()
         local songs = self:listLocal()
-        if not favorites_only then return songs end
+        if not filter then return songs end
         local out = {}
         for _, song in ipairs(songs) do
-            if self:isFavorite(song.uid) then table.insert(out, song) end
+            if filter(song) then table.insert(out, song) end
         end
         return out
     end
@@ -501,15 +729,10 @@ function Songbook:showLocal(favorites_only)
         return songs
     end
     if #first == 0 then
-        if favorites_only then
-            notify(_("No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."))
-        else
-            notify(T(_("No songs yet. Download some via \"Browse online\", or copy .cho files to:\n%1"),
-                self.songs_dir))
-        end
+        notify(empty_text)
         return true
     end
-    self:showList(favorites_only and _("Favorites") or _("My songs"), get_songs, function(song)
+    self:showList(title, get_songs, function(song)
         return {
             text = song.title,
             mandatory = details(song.artist, song.source),
@@ -525,6 +748,7 @@ function Songbook:showLocal(favorites_only)
             title = song.title,
             buttons = {
                 { self:favoriteButton(song, close, refresh) },
+                { self:collectionsButton(song, close, refresh) },
                 {{ text = _("Delete"), callback = function()
                     close()
                     UIManager:show(ConfirmBox:new{
@@ -544,11 +768,13 @@ function Songbook:showLocal(favorites_only)
 end
 
 function Songbook:onSongbookShowLocal()
-    return self:showLocal(false)
+    return self:showLocal(_("My songs"), nil,
+        T(_("No songs yet. Download some via \"Browse online\", or copy .cho files to:\n%1"), self.songs_dir))
 end
 
 function Songbook:onSongbookShowFavorites()
-    return self:showLocal(true)
+    return self:showLocal(_("Favorites"), function(song) return self:isFavorite(song.uid) end,
+        _("No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."))
 end
 
 -- Online -------------------------------------------------------------------
@@ -700,13 +926,15 @@ function Songbook:showOnlineSongs(servers)
             if not ok then notify(T(_("Download failed: %1"), derr)) end
             return ok
         end
+        local function ensure_downloaded()
+            return self:isDownloaded(song) or download()
+        end
         dialog = ButtonDialog:new{
             title = song.title,
             buttons = {
-                -- a favorite must be on the device, so download it first if needed
-                { self:favoriteButton(song, close, refresh, function()
-                    return self:isDownloaded(song) or download()
-                end) },
+                -- favorites and collections hold songs on the device, so download first
+                { self:favoriteButton(song, close, refresh, ensure_downloaded) },
+                { self:collectionsButton(song, close, refresh, ensure_downloaded) },
                 {{ text = _("Download again"), callback = function()
                     close()
                     if download() then
@@ -945,6 +1173,10 @@ function Songbook:addToMainMenu(menu_items)
                 callback = function() self:onSongbookShowFavorites() end,
             },
             {
+                text = _("Collections"),
+                callback = function() self:onSongbookShowCollections() end,
+            },
+            {
                 text_func = function()
                     local id = self:currentSongId()
                     local t = id and self:getMap("transpose")[id] or 0
@@ -967,6 +1199,18 @@ function Songbook:addToMainMenu(menu_items)
                 callback = function()
                     local uid = self:currentSongId()
                     if uid then self:setFavorite(uid, not self:isFavorite(uid)) end
+                end,
+            },
+            {
+                text = _("Add to collection…"),
+                enabled_func = function() return self:currentSongId() ~= nil end,
+                keep_menu_open = true,
+                callback = function()
+                    local uid = self:currentSongId()
+                    if not uid then return end
+                    local _key, id = split_uid(uid)
+                    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+                    self:showSongCollections({ uid = uid, title = meta.title or id }, function() end)
                 end,
                 separator = true,
             },

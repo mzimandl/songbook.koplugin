@@ -91,8 +91,8 @@ check(registered == plugin, "registered to main menu")
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 6, "menu built")
-check(items.songbook.sub_item_table[4].enabled_func() == false, "transpose disabled outside a song")
+check(items.songbook and #items.songbook.sub_item_table == 8, "menu built")
+check(items.songbook.sub_item_table[5].enabled_func() == false, "transpose disabled outside a song")
 
 -- empty library
 plugin:onSongbookShowLocal()
@@ -114,12 +114,12 @@ check(html:find("Jede kůň", 1, true), "rendered lyrics")
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(items.songbook.sub_item_table[4].enabled_func() == true, "transpose enabled in a song")
+check(items.songbook.sub_item_table[5].enabled_func() == true, "transpose enabled in a song")
 plugin:onSongbookTranspose(1)
 plugin:onSongbookTranspose(1)
 check(opened[#opened]:find("test@t%+2"), "transposed render path")
 check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "chords transposed to D")
-check(items.songbook.sub_item_table[4].text_func() == "Transpose (+2)", "transpose label")
+check(items.songbook.sub_item_table[5].text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 
@@ -183,7 +183,7 @@ for _, song in ipairs(all) do sources[song.uid] = song.source or "local" end
 check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test repo", "my songs sources")
 
 -- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[6].sub_item_table[1]
+local repos_item = items.songbook.sub_item_table[8].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 local tm = { updateItems = function() end }
 tm.item_table = repos_item.sub_item_table_func()
@@ -215,7 +215,7 @@ check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
 
 -- "Download all songs" keeps the menu open and reports per repository
 local download_all
-for _, item in ipairs(items.songbook.sub_item_table[6].sub_item_table) do
+for _, item in ipairs(items.songbook.sub_item_table[8].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")
@@ -251,7 +251,7 @@ find_button(hold(list, "test"), "Remove from favorites").callback()
 check(not plugin:isFavorite("test") and list.item_table[2].text == "No songs", "favorite removed, list refreshed")
 
 -- reader menu item and gesture toggle the open song
-local fav_item = items.songbook.sub_item_table[5]
+local fav_item = items.songbook.sub_item_table[6]
 plugin:openSong("user-songs/test")
 check(fav_item.enabled_func() and not fav_item.checked_func(), "favorite item enabled in a song")
 fav_item.callback()
@@ -269,6 +269,89 @@ check(io.open(root .. "/songbook/songs/other-repo-dev/test.cho") and plugin:isFa
 check(item_for(list, "other-repo-dev/test").text == "★ Test", "online list refreshed with star")
 plugin:deleteSong("other-repo-dev/test")
 check(not plugin:isFavorite("other-repo-dev/test"), "deleting a song removes the favorite")
+
+-- Collections -------------------------------------------------------------------
+local function texts(dialog)
+    local t = {}
+    for _, row in ipairs(dialog.buttons) do
+        for _, b in ipairs(row) do t[#t + 1] = b.text end
+    end
+    return table.concat(t, "|")
+end
+
+plugin:onSongbookShowCollections()
+local picker = last_shown()
+check(picker.title == "Collections" and #picker.item_table == 1 and picker.item_table[1].text == "New collection…",
+    "empty collections list")
+input_text = " Táborák "
+picker.item_table[1].callback()
+last_shown().buttons[1][2].callback()
+check(#picker.item_table == 2 and picker.item_table[1].text == "Táborák" and picker.item_table[1].mandatory == "0",
+    "collection created, list refreshed")
+picker.item_table[2].callback()
+last_shown().buttons[1][2].callback()
+check(notes[#notes]:find("already exists", 1, true) and #plugin:getCollections() == 1, "duplicate name rejected")
+
+-- add a song from My songs, and create a second collection from the song dialog
+plugin:onSongbookShowLocal()
+list = last_shown()
+find_button(hold(list, "test"), "Collections…").callback()
+find_button(last_shown(), "Táborák").callback()
+check(plugin:isInCollection("Táborák", "test"), "song added to collection")
+check(texts(last_shown()) == "✓ Táborák|New collection…|Close", "dialog reopened with check: " .. texts(last_shown()))
+input_text = "Vánoce"
+find_button(last_shown(), "New collection…").callback()
+last_shown().buttons[1][2].callback()
+check(plugin:isInCollection("Vánoce", "test"), "new collection from song dialog contains the song")
+check(texts(last_shown()) == "✓ Táborák|✓ Vánoce|New collection…|Close", "collections sorted by name")
+find_button(last_shown(), "✓ Vánoce").callback()
+check(not plugin:isInCollection("Vánoce", "test"), "song removed from collection")
+
+-- open a collection from the list
+plugin:onSongbookShowCollections()
+picker = last_shown()
+picker.item_table[1].callback()
+list = last_shown()
+check(list.title == "Táborák" and #list.item_table == 2 and item_for(list, "test"), "collection song list")
+plugin:showCollection("Vánoce")
+check(notes[#notes]:find("This collection is empty", 1, true), "empty collection message")
+
+-- rename and delete
+plugin:onSongbookShowCollections()
+picker = last_shown()
+picker.onMenuHold(picker, picker.item_table[1])
+input_text = "Vánoce"
+find_button(last_shown(), "Rename").callback()
+last_shown().buttons[1][2].callback()
+check(notes[#notes]:find("already exists", 1, true), "rename to existing name rejected")
+picker.onMenuHold(picker, picker.item_table[1])
+input_text = "Oheň"
+find_button(last_shown(), "Rename").callback()
+last_shown().buttons[1][2].callback()
+check(picker.item_table[1].text == "Oheň" and plugin:isInCollection("Oheň", "test"), "collection renamed, songs kept")
+picker.onMenuHold(picker, picker.item_table[2])
+find_button(last_shown(), "Delete").callback()
+last_shown().ok_callback()
+check(#plugin:getCollections() == 1 and #picker.item_table == 2, "collection deleted")
+
+-- reader menu: add the open song to a collection
+local coll_item = items.songbook.sub_item_table[7]
+plugin:openSong("user-songs/test")
+check(coll_item.enabled_func() and coll_item.keep_menu_open, "add to collection enabled in a song")
+coll_item.callback()
+check(last_shown().title == "Collections: Downloaded", "collections dialog for open song: " .. tostring(last_shown().title))
+find_button(last_shown(), "Oheň").callback()
+check(plugin:isInCollection("Oheň", "user-songs/test"), "open song added to collection")
+
+-- online list: adding to a collection downloads first; deleting removes it
+plugin:showOnlineSongs({ (plugin:findServer("other-repo-dev")) })
+list = last_shown()
+find_button(hold(list, "other-repo-dev/test"), "Collections…").callback()
+find_button(last_shown(), "Oheň").callback()
+check(io.open(root .. "/songbook/songs/other-repo-dev/test.cho") and plugin:isInCollection("Oheň", "other-repo-dev/test"),
+    "online song downloaded and added to collection")
+plugin:deleteSong("other-repo-dev/test")
+check(not plugin:isInCollection("Oheň", "other-repo-dev/test"), "deleting a song removes it from collections")
 
 -- Migration from the single server_url setting --------------------------------
 os.execute("rm -rf '" .. root .. "'")

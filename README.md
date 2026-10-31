@@ -52,15 +52,22 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 
 - **Browse online**: with more than one repository, pick one first, or
   *All repositories* for one combined list. Tap a song to download (if new or
-  changed) and open it. Long-press to add to favorites or force re-download.
+  changed) and open it. Long-press to add to favorites or collections, or to force re-download.
   The first list item is search.
 - **My songs**: downloaded songs from all repositories, plus any `.cho` you copy
   to `koreader/songbook/songs/`. Each song shows which repository it came
-  from. Long-press to add to favorites or delete.
+  from. Long-press to add to favorites or collections, or to delete.
 - **Favorites**: songs marked with ★. Add or remove them by long-pressing a
   song in any list, or with **Favorite** in the Songbook menu while a song is
   open. Favoriting an online song downloads it. Gesture actions:
   *Songbook: favorites* (General) and *Songbook: add/remove favorite* (Reader).
+- **Collections**: your own named song lists (e.g. *Campfire*, *Christmas*).
+  A song can be in several collections, from any repository. Create them in
+  **Collections → New collection…**, or from a song: long-press it in a list
+  → *Collections…*, or **Add to collection…** in the Songbook menu while a song
+  is open. Long-press a collection to rename or delete it (its songs stay on
+  the device). Adding an online song downloads it. Gesture action:
+  *Songbook: collections* (General).
 - **Transpose** (in the menu while a song is open): ±1 semitone / original key.
   It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*) under Taps & gestures → General.
