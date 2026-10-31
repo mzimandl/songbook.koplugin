@@ -121,6 +121,12 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_my_songs",
         { category = "none", event = "SongbookShowLocal",
           title = _("Songbook: my songs"), general = true })
+    Dispatcher:registerAction("songbook_favorites",
+        { category = "none", event = "SongbookShowFavorites",
+          title = _("Songbook: favorites"), general = true })
+    Dispatcher:registerAction("songbook_toggle_favorite",
+        { category = "none", event = "SongbookToggleFavorite",
+          title = _("Songbook: add/remove favorite"), reader = true })
 end
 
 -- Songs and servers -------------------------------------------------------------
@@ -350,25 +356,30 @@ local function matches(song, query)
         or (song.artist and lower(song.artist):find(query, 1, true))
 end
 
---- Generic searchable song list. make_item(song) -> menu item.
-function Songbook:showList(title, songs, make_item, on_hold)
-    local menu
-    local function build(query)
+--- Generic searchable song list.
+-- get_songs() -> songs; make_item(song) -> menu item.
+-- on_hold(song, refresh): refresh() rebuilds the list (keeping the search).
+function Songbook:showList(title, get_songs, make_item, on_hold)
+    local menu, query
+    local function build()
         local items = {
             {
                 text = query and T(_("Search: %1"), query) or _("Search…"),
                 bold = true,
                 callback = function()
                     self:askSearch(query, function(q)
-                        menu:switchItemTable(title, build(q ~= "" and q or nil))
+                        query = q ~= "" and q or nil
+                        menu:switchItemTable(title, build())
                     end)
                 end,
             },
         }
-        for _, song in ipairs(songs) do
+        local favorites = self:getMap("favorites")
+        for _, song in ipairs(get_songs()) do
             if matches(song, query) then
                 local item = make_item(song)
                 item.song = song
+                if favorites[song.uid] then item.text = "★ " .. item.text end
                 table.insert(items, item)
             end
         end
@@ -377,17 +388,20 @@ function Songbook:showList(title, songs, make_item, on_hold)
         end
         return items
     end
+    local function refresh()
+        menu:switchItemTable(title, build())
+    end
 
     menu = Menu:new{
         title = title,
-        item_table = build(nil),
+        item_table = build(),
         covers_fullscreen = true,
         is_borderless = true,
         is_popout = false,
         width = Screen:getWidth(),
         height = Screen:getHeight(),
         onMenuHold = function(_menu, item)
-            if item.song and on_hold then on_hold(item.song, menu) end
+            if item.song and on_hold then on_hold(item.song, refresh) end
             return true
         end,
     }
@@ -428,17 +442,74 @@ function Songbook:deleteSong(uid)
     os.remove(self:songPath(uid))
     self:setMapValue("downloaded", uid, nil)
     self:setMapValue("transpose", uid, nil)
+    self:setMapValue("favorites", uid, nil)
     self:removeStaleRenders(uid, nil)
 end
 
-function Songbook:onSongbookShowLocal()
-    local songs = self:listLocal()
-    if #songs == 0 then
-        notify(T(_("No songs yet. Download some via \"Browse online\", or copy .cho files to:\n%1"),
-            self.songs_dir))
+-- Favorites -------------------------------------------------------------------
+
+function Songbook:isFavorite(uid)
+    return self:getMap("favorites")[uid] == true
+end
+
+function Songbook:setFavorite(uid, on)
+    self:setMapValue("favorites", uid, on and true or nil)
+end
+
+function Songbook:onSongbookToggleFavorite()
+    local uid = self:currentSongId()
+    if not uid then return end
+    local on = not self:isFavorite(uid)
+    self:setFavorite(uid, on)
+    notify(on and _("Added to favorites.") or _("Removed from favorites."))
+    return true
+end
+
+--- Favorite toggle button for a song's long-press dialog.
+-- before(): optional step that must succeed first (e.g. download); returns ok.
+function Songbook:favoriteButton(song, close, refresh, before)
+    local on = self:isFavorite(song.uid)
+    return {
+        text = on and _("Remove from favorites") or _("Add to favorites"),
+        callback = function()
+            close()
+            if before and not before() then return end
+            self:setFavorite(song.uid, not on)
+            refresh()
+        end,
+    }
+end
+
+-- Song lists on the device -----------------------------------------------------
+
+--- List of songs on the device; favorites_only shows just the favorites.
+function Songbook:showLocal(favorites_only)
+    local function load()
+        local songs = self:listLocal()
+        if not favorites_only then return songs end
+        local out = {}
+        for _, song in ipairs(songs) do
+            if self:isFavorite(song.uid) then table.insert(out, song) end
+        end
+        return out
+    end
+    -- the first build reuses this list; refreshes read the folder again
+    local first = load()
+    local function get_songs()
+        local songs = first or load()
+        first = nil
+        return songs
+    end
+    if #first == 0 then
+        if favorites_only then
+            notify(_("No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."))
+        else
+            notify(T(_("No songs yet. Download some via \"Browse online\", or copy .cho files to:\n%1"),
+                self.songs_dir))
+        end
         return true
     end
-    self:showList(_("My songs"), songs, function(song)
+    self:showList(favorites_only and _("Favorites") or _("My songs"), get_songs, function(song)
         return {
             text = song.title,
             mandatory = details(song.artist, song.source),
@@ -447,19 +518,37 @@ function Songbook:onSongbookShowLocal()
                 self:openSong(song.uid)
             end,
         }
-    end, function(song, menu)
-        UIManager:show(ConfirmBox:new{
-            text = T(_("Delete \"%1\"?"), song.title),
-            ok_text = _("Delete"),
-            ok_callback = function()
-                self:deleteSong(song.uid)
-                UIManager:close(menu)
-                self.list_menu = nil
-                self:onSongbookShowLocal()
-            end,
-        })
+    end, function(song, refresh)
+        local dialog
+        local function close() UIManager:close(dialog) end
+        dialog = ButtonDialog:new{
+            title = song.title,
+            buttons = {
+                { self:favoriteButton(song, close, refresh) },
+                {{ text = _("Delete"), callback = function()
+                    close()
+                    UIManager:show(ConfirmBox:new{
+                        text = T(_("Delete \"%1\"?"), song.title),
+                        ok_text = _("Delete"),
+                        ok_callback = function()
+                            self:deleteSong(song.uid)
+                            refresh()
+                        end,
+                    })
+                end }},
+            },
+        }
+        UIManager:show(dialog)
     end)
     return true
+end
+
+function Songbook:onSongbookShowLocal()
+    return self:showLocal(false)
+end
+
+function Songbook:onSongbookShowFavorites()
+    return self:showLocal(true)
 end
 
 -- Online -------------------------------------------------------------------
@@ -583,7 +672,7 @@ function Songbook:showOnlineSongs(servers)
         return self:isUpToDate(song) and _("saved") or _("update")
     end
     local title = multi and _("All repositories") or self:serverName(servers[1])
-    self:showList(title, songs, function(song)
+    self:showList(title, function() return songs end, function(song)
         return {
             text = song.title,
             mandatory = details(song.artist, multi and self:serverName(song.server) or nil, status(song)),
@@ -601,19 +690,31 @@ function Songbook:showOnlineSongs(servers)
                 self:openSong(song.uid)
             end,
         }
-    end, function(song)
+    end, function(song, refresh)
         local dialog
+        local function close() UIManager:close(dialog) end
+        local function download()
+            local msg = busy(T(_("Downloading %1…"), song.title))
+            local ok, derr = self:download(song)
+            UIManager:close(msg)
+            if not ok then notify(T(_("Download failed: %1"), derr)) end
+            return ok
+        end
         dialog = ButtonDialog:new{
             title = song.title,
-            buttons = {{
-                { text = _("Download again"), callback = function()
-                    UIManager:close(dialog)
-                    local msg = busy(T(_("Downloading %1…"), song.title))
-                    local ok, derr = self:download(song)
-                    UIManager:close(msg)
-                    notify(ok and _("Downloaded.") or T(_("Download failed: %1"), derr))
-                end },
-            }},
+            buttons = {
+                -- a favorite must be on the device, so download it first if needed
+                { self:favoriteButton(song, close, refresh, function()
+                    return self:isDownloaded(song) or download()
+                end) },
+                {{ text = _("Download again"), callback = function()
+                    close()
+                    if download() then
+                        notify(_("Downloaded."))
+                        refresh()
+                    end
+                end }},
+            },
         }
         UIManager:show(dialog)
     end)
@@ -840,6 +941,10 @@ function Songbook:addToMainMenu(menu_items)
                 callback = function() self:onSongbookShowLocal() end,
             },
             {
+                text = _("Favorites"),
+                callback = function() self:onSongbookShowFavorites() end,
+            },
+            {
                 text_func = function()
                     local id = self:currentSongId()
                     local t = id and self:getMap("transpose")[id] or 0
@@ -851,6 +956,18 @@ function Songbook:addToMainMenu(menu_items)
                     { text = _("Down a semitone"), callback = function() self:onSongbookTranspose(-1) end },
                     { text = _("Original key"), callback = function() self:onSongbookTranspose(0) end },
                 },
+            },
+            {
+                text = _("Favorite"),
+                enabled_func = function() return self:currentSongId() ~= nil end,
+                checked_func = function()
+                    local uid = self:currentSongId()
+                    return uid ~= nil and self:isFavorite(uid)
+                end,
+                callback = function()
+                    local uid = self:currentSongId()
+                    if uid then self:setFavorite(uid, not self:isFavorite(uid)) end
+                end,
                 separator = true,
             },
             {

@@ -91,8 +91,8 @@ check(registered == plugin, "registered to main menu")
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 4, "menu built")
-check(items.songbook.sub_item_table[3].enabled_func() == false, "transpose disabled outside a song")
+check(items.songbook and #items.songbook.sub_item_table == 6, "menu built")
+check(items.songbook.sub_item_table[4].enabled_func() == false, "transpose disabled outside a song")
 
 -- empty library
 plugin:onSongbookShowLocal()
@@ -114,12 +114,12 @@ check(html:find("Jede kůň", 1, true), "rendered lyrics")
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(items.songbook.sub_item_table[3].enabled_func() == true, "transpose enabled in a song")
+check(items.songbook.sub_item_table[4].enabled_func() == true, "transpose enabled in a song")
 plugin:onSongbookTranspose(1)
 plugin:onSongbookTranspose(1)
 check(opened[#opened]:find("test@t%+2"), "transposed render path")
 check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "chords transposed to D")
-check(items.songbook.sub_item_table[3].text_func() == "Transpose (+2)", "transpose label")
+check(items.songbook.sub_item_table[4].text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 
@@ -183,7 +183,7 @@ for _, song in ipairs(all) do sources[song.uid] = song.source or "local" end
 check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test repo", "my songs sources")
 
 -- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[4].sub_item_table[1]
+local repos_item = items.songbook.sub_item_table[6].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 local tm = { updateItems = function() end }
 tm.item_table = repos_item.sub_item_table_func()
@@ -215,13 +215,60 @@ check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
 
 -- "Download all songs" keeps the menu open and reports per repository
 local download_all
-for _, item in ipairs(items.songbook.sub_item_table[4].sub_item_table) do
+for _, item in ipairs(items.songbook.sub_item_table[6].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")
 download_all.callback()
 check(notes[#notes]:find("Downloaded: 1", 1, true) and select(2, notes[#notes]:gsub("Downloaded:", "")) == 2,
     "download all summary per repository: " .. notes[#notes])
+
+-- Favorites ---------------------------------------------------------------------
+local function item_for(list, uid)
+    for _, item in ipairs(list.item_table) do
+        if item.song and item.song.uid == uid then return item end
+    end
+end
+local function hold(list, uid)
+    list.onMenuHold(list, item_for(list, uid))
+    return last_shown()
+end
+
+plugin:onSongbookShowFavorites()
+check(notes[#notes]:find("No favorites yet", 1, true), "empty favorites message")
+
+plugin:onSongbookShowLocal()
+local list = last_shown()
+find_button(hold(list, "test"), "Add to favorites").callback()
+check(plugin:isFavorite("test"), "favorite added from My songs")
+check(item_for(list, "test").text == "★ Žluťoučký kůň", "list refreshed with star: " .. item_for(list, "test").text)
+check(item_for(list, "user-songs/test").text == "Downloaded", "other songs without star")
+
+plugin:onSongbookShowFavorites()
+list = last_shown()
+check(list.title == "Favorites" and #list.item_table == 2 and item_for(list, "test"), "favorites list")
+find_button(hold(list, "test"), "Remove from favorites").callback()
+check(not plugin:isFavorite("test") and list.item_table[2].text == "No songs", "favorite removed, list refreshed")
+
+-- reader menu item and gesture toggle the open song
+local fav_item = items.songbook.sub_item_table[5]
+plugin:openSong("user-songs/test")
+check(fav_item.enabled_func() and not fav_item.checked_func(), "favorite item enabled in a song")
+fav_item.callback()
+check(fav_item.checked_func() and plugin:isFavorite("user-songs/test"), "favorite from reader menu")
+plugin:onSongbookToggleFavorite()
+check(not plugin:isFavorite("user-songs/test"), "gesture toggles favorite off")
+
+-- online list: favoriting a song that isn't on the device downloads it first
+plugin:deleteSong("other-repo-dev/test")
+plugin:showOnlineSongs({ (plugin:findServer("other-repo-dev")) })
+list = last_shown()
+find_button(hold(list, "other-repo-dev/test"), "Add to favorites").callback()
+check(io.open(root .. "/songbook/songs/other-repo-dev/test.cho") and plugin:isFavorite("other-repo-dev/test"),
+    "online favorite downloads the song")
+check(item_for(list, "other-repo-dev/test").text == "★ Test", "online list refreshed with star")
+plugin:deleteSong("other-repo-dev/test")
+check(not plugin:isFavorite("other-repo-dev/test"), "deleting a song removes the favorite")
 
 -- Migration from the single server_url setting --------------------------------
 os.execute("rm -rf '" .. root .. "'")
