@@ -584,6 +584,7 @@ function Songbook:addToMainMenu(menu_items)
                     },
                     {
                         text = _("Download all songs"),
+                        keep_menu_open = true,
                         callback = function() self:downloadAll() end,
                     },
                     {

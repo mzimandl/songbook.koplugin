@@ -144,6 +144,13 @@ shown[#shown].buttons[1][2].callback()
 check(refreshed == 1, "menu refreshed after saving server url")
 check(server_item.text_func() == "Server: https://github.com/user/other", "server item shows new url: " .. server_item.text_func())
 
+-- "Download all songs" keeps the menu open
+local download_all
+for _, item in ipairs(items.songbook.sub_item_table[4].sub_item_table) do
+    if item.text == "Download all songs" then download_all = item end
+end
+check(download_all and download_all.keep_menu_open, "download all keeps menu open")
+
 os.execute("rm -rf '" .. root .. "'")
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
