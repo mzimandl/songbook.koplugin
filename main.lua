@@ -52,6 +52,10 @@ local jam = {}
 
 -- Songs received from a followed songbook are kept in songs/<JAM_KEY>/.
 local JAM_KEY = "jam"
+-- Requests to a followed songbook block the UI, so they use short timeouts.
+local FOLLOW_INTERVAL = 4         -- seconds between polls
+local FOLLOW_TIMEOUT = { 2, 4 }   -- block, total seconds
+local FOLLOW_MAX_FAILURES = 4
 
 -- Helpers -------------------------------------------------------------------
 
@@ -772,24 +776,24 @@ function Songbook:showLocal(title, filter, empty_text)
     end, function(song, refresh)
         local dialog
         local function close() UIManager:close(dialog) end
-        dialog = ButtonDialog:new{
-            title = song.title,
-            buttons = {
-                { self:favoriteButton(song, close, refresh) },
-                { self:collectionsButton(song, close, refresh) },
-                {{ text = _("Delete"), callback = function()
-                    close()
-                    UIManager:show(ConfirmBox:new{
-                        text = T(_("Delete \"%1\"?"), song.title),
-                        ok_text = _("Delete"),
-                        ok_callback = function()
-                            self:deleteSong(song.uid)
-                            refresh()
-                        end,
-                    })
-                end }},
-            },
+        local buttons = {
+            { self:favoriteButton(song, close, refresh) },
+            { self:collectionsButton(song, close, refresh) },
+            {{ text = _("Delete"), callback = function()
+                close()
+                UIManager:show(ConfirmBox:new{
+                    text = T(_("Delete \"%1\"?"), song.title),
+                    ok_text = _("Delete"),
+                    ok_callback = function()
+                        self:deleteSong(song.uid)
+                        refresh()
+                    end,
+                })
+            end }},
         }
+        local request = self:requestButton(song, close)
+        if request then table.insert(buttons, 1, { request }) end
+        dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
     end)
     return true
@@ -957,21 +961,21 @@ function Songbook:showOnlineSongs(servers)
         local function ensure_downloaded()
             return self:isDownloaded(song) or download()
         end
-        dialog = ButtonDialog:new{
-            title = song.title,
-            buttons = {
-                -- favorites and collections hold songs on the device, so download first
-                { self:favoriteButton(song, close, refresh, ensure_downloaded) },
-                { self:collectionsButton(song, close, refresh, ensure_downloaded) },
-                {{ text = _("Download again"), callback = function()
-                    close()
-                    if download() then
-                        notify(_("Downloaded."))
-                        refresh()
-                    end
-                end }},
-            },
+        local buttons = {
+            -- favorites, collections and our playlist hold songs on the device, so download first
+            { self:favoriteButton(song, close, refresh, ensure_downloaded) },
+            { self:collectionsButton(song, close, refresh, ensure_downloaded) },
+            {{ text = _("Download again"), callback = function()
+                close()
+                if download() then
+                    notify(_("Downloaded."))
+                    refresh()
+                end
+            end }},
         }
+        local request = self:requestButton(song, close, ensure_downloaded)
+        if request then table.insert(buttons, 1, { request }) end
+        dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
     end)
 end
@@ -1289,6 +1293,46 @@ function Songbook:jamRequest(uid, by)
     return true
 end
 
+local function request_error(code)
+    if code == "queued" then return _("This song is already requested.") end
+    if code == "full" then return _("Too many requests, try again later.") end
+    return _("This song is not available.")
+end
+
+--- Ask the followed songbook to play `song`. Songs received from it or
+-- downloaded from it as a repository use its own ids; other songs are matched
+-- by uid, which works when both have them from the same repository.
+function Songbook:requestFromFollowed(song)
+    local f = jam.follow
+    local key, id = split_uid(song.uid)
+    local server = key and self:findServer(key)
+    local same_source = key == JAM_KEY or (server and Repo.base_url(server.url) == Repo.base_url(f.url))
+    local remote_id = same_source and id or Jam.song_id(song.uid)
+    local body = Repo.fetch(f.url .. "queue/add?id=" .. remote_id, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local ok, data = pcall(require("json").decode, body or "")
+    if not body or not ok or type(data) ~= "table" then
+        return notify(_("Cannot reach the other songbook."))
+    end
+    notify(data.ok and T(_("Requested: %1"), song.title) or request_error(data.error))
+end
+
+--- "Request to play" for a song's long-press dialog, or nil when not in a
+-- jam session. While following, the request goes to the followed songbook;
+-- while sharing, to our own playlist. `before` as in favoriteButton().
+function Songbook:requestButton(song, close, before)
+    if not (self:isFollowing() or self:isJamRunning()) then return nil end
+    return {
+        text = _("Request to play"),
+        callback = function()
+            close()
+            if self:isFollowing() then return self:requestFromFollowed(song) end
+            if before and not before() then return end
+            local ok, err = self:jamRequest(song.uid)
+            if not ok then notify(request_error(err)) end
+        end,
+    }
+end
+
 function Songbook:showPlaylist()
     local menu
     local function build()
@@ -1464,12 +1508,7 @@ function Songbook:stopJam()
 end
 
 -- Following another songbook: poll its /state.json and open each new song
--- (saved to songs/jam/) in the host's key. Requests block the UI, so they
--- use short timeouts.
-local FOLLOW_INTERVAL = 4         -- seconds between polls
-local FOLLOW_TIMEOUT = { 2, 4 }   -- block, total seconds
-local FOLLOW_MAX_FAILURES = 4
-
+-- (saved to songs/jam/) in the host's key.
 local follow_poll
 
 function Songbook:isFollowing()

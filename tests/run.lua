@@ -290,6 +290,14 @@ eq(requested_by, "Eva", "jam request name cleaned")
 eq(handle("/queue/add?uid=q"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}', "jam request error")
 eq(handle("/queue/add"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}', "jam request without uid")
 eq(page:find("%%1", 1, true), nil, "jam page percent signs unescaped")
+eq(Jam.find_id({ { uid = "a" }, { uid = "r/x" } }, "r_x"), "r/x", "jam find id")
+eq(Jam.find_id({ { uid = "a" } }, "b"), nil, "jam find id missing")
+requested_by = nil
+local request_uid
+ctx.request = function(uid) request_uid = uid; return true end
+eq(handle("/queue/add?id=r_x"):match("\r\n\r\n(.*)$"), '{"ok":true}', "jam request by id")
+eq(request_uid, "r/x", "jam request by id resolves uid")
+eq(handle("/queue/add?id=nope"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}', "jam request unknown id")
 
 local web = Render.html(ChordPro.parse("{title: W}\n[C]La"), { web = true })
 eq(web:sub(1, 15), "<!DOCTYPE html>", "web render is html5")

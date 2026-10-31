@@ -25,6 +25,7 @@ Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
   /songs/<file> one song of the index ("~" stands for "/" in the uid)
   /playlist.json  played songs and guests' requests; entry = { uid, title, artist, by, at }
   /queue/add?uid=&by=  request a song -> { ok = true } or { ok = false, error = }
+                       (?id= instead of uid: the song's id in /index.json, used by following songbooks)
 
 Following another songbook (normalize_url, parse_state, song_id) is also
 here; main.lua does the polling.
@@ -105,6 +106,13 @@ local function file_stem(uid) return (uid:gsub("/", "~")) end
 --- Song id (file-name safe) for a uid of another songbook.
 function M.song_id(uid)
     return (file_stem(uid):gsub("[^%w%-_%.]", "_"):gsub("^%.+", ""))
+end
+
+--- uid of the song with index id `id`, or nil.
+function M.find_id(songs, id)
+    for _, song in ipairs(songs) do
+        if M.song_id(song.uid) == id then return song.uid end
+    end
 end
 
 --- uid for a /songs/<stem>.cho request, or nil if it could leave the songs folder.
@@ -435,8 +443,10 @@ function M.handle(req, ctx)
             M.json({ history = p.history or {}, queue = p.queue or {} }))
     elseif path == "/queue/add" then
         local ok, err = nil, "missing"
-        if req.query.uid and req.query.uid ~= "" then
-            ok, err = ctx.request(req.query.uid, M.clean_name(req.query.by))
+        local uid = req.query.uid
+        if (not uid or uid == "") and req.query.id then uid = M.find_id(ctx.songs(), req.query.id) end
+        if uid and uid ~= "" then
+            ok, err = ctx.request(uid, M.clean_name(req.query.by))
         end
         return M.response(200, "application/json; charset=utf-8",
             M.json(ok and { ok = true } or { ok = false, error = err or "missing" }))

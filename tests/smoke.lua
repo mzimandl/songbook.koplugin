@@ -235,8 +235,26 @@ p = plugin:getPlaylist()
 check(#p.history == 0 and #p.queue == 0, "playlist cleared")
 plugin:deleteCollection("Jam test")
 
+-- long-press "Request to play" while sharing adds to our own queue
+local function hold_dialog(uid)
+    plugin:onSongbookShowLocal()
+    local list = last_shown()
+    for _, item in ipairs(list.item_table) do
+        if item.song and item.song.uid == uid then list.onMenuHold(list, item) end
+    end
+    return last_shown()
+end
+local hold = hold_dialog("test")
+check(hold.buttons[1][1].text == "Request to play", "request button while sharing")
+hold.buttons[1][1].callback()
+check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "test", "request from long-press")
+hold_dialog("test").buttons[1][1].callback()
+check(notes[#notes] == "This song is already requested.", "long-press request duplicate")
+plugin:savePlaylist({})
+
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func(), "jam server stopped")
+check(hold_dialog("test").buttons[1][1].text ~= "Request to play", "no request button outside a jam session")
 
 -- following another songbook
 local host = "http://10.0.0.2:8765/"
@@ -270,6 +288,17 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song and jam_song.source == "Jam session" and jam_song.title == "Hostova", "followed song in my songs")
+-- long-press "Request to play" while following asks the followed songbook
+responses[host .. "queue/add?id=repo_song-a"] = "R1"
+decoded.R1 = { ok = true }
+hold_dialog("jam/repo_song-a").buttons[1][1].callback()
+check(requested[#requested] == host .. "queue/add?id=repo_song-a" and notes[#notes] == "Requested: Hostova",
+    "request sent to followed songbook: " .. requested[#requested])
+responses[host .. "queue/add?id=test"] = "R2"
+decoded.R2 = { ok = false, error = "queued" }
+hold_dialog("test").buttons[1][1].callback()
+check(notes[#notes] == "This song is already requested.", "followed songbook refuses request")
+check(plugin:getPlaylist().queue[1] == nil, "request while following does not touch our queue")
 responses[host .. "state.json"] = false
 for _i = 1, 4 do if scheduled then scheduled() end end
 check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lost connection", 1, true), "following stops when host is gone")

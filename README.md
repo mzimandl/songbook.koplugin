@@ -86,6 +86,10 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
     request leaves the queue), long-press a request to remove it. *Save played
     songs as collection…* keeps the evening's set list; *Clear playlist*
     starts over. The playlist is kept until cleared, at most 30 requests.
+  - *Request to play* (long-press a song in any list during a jam session):
+    while following, asks the followed reader to play it (it must have the
+    song: one it sent you, one from its repository, or one both of you have
+    from the same repository); while sharing, adds it to your own queue.
   - *Follow another songbook…*: enter the address shown on another reader
     (e.g. `192.168.1.5`, port 8765 is added). Every song it opens opens on
     yours too, in its key; you can still transpose it yourself until it
