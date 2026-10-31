@@ -479,10 +479,27 @@ function Songbook:askSearch(current, cb)
     dialog:onShowKeyboard()
 end
 
+-- Lists are opened with the Songbook menu kept open (and the collection or
+-- repository picker under a song list), so closing a list with × goes back.
+-- Opening a song closes them all.
+function Songbook:setParentList(menu)
+    self.parent_list = menu
+end
+
 function Songbook:closeList()
     if self.list_menu then
         UIManager:close(self.list_menu)
         self.list_menu = nil
+    end
+    if self.parent_list then
+        UIManager:close(self.parent_list)
+        self.parent_list = nil
+    end
+    local menu = self.ui and self.ui.menu
+    if menu and menu.onCloseReaderMenu then
+        menu:onCloseReaderMenu()
+    elseif menu and menu.onCloseFileManagerMenu then
+        menu:onCloseFileManagerMenu()
     end
 end
 
@@ -685,7 +702,6 @@ function Songbook:onSongbookShowCollections()
                 mandatory = tostring(count_keys(c.songs)),
                 collection = c.name,
                 callback = function()
-                    UIManager:close(menu)
                     self:showCollection(c.name)
                 end,
             })
@@ -743,6 +759,7 @@ function Songbook:onSongbookShowCollections()
             return true
         end,
     }
+    self:setParentList(menu)
     UIManager:show(menu)
     return true
 end
@@ -892,19 +909,13 @@ function Songbook:browseOnline()
         for _, server in ipairs(servers) do
             table.insert(items, {
                 text = self:serverName(server),
-                callback = function()
-                    UIManager:close(picker)
-                    self:showOnlineSongs({ server })
-                end,
+                callback = function() self:showOnlineSongs({ server }) end,
             })
         end
         table.insert(items, {
             text = _("All repositories"),
             bold = true,
-            callback = function()
-                UIManager:close(picker)
-                self:showOnlineSongs(servers)
-            end,
+            callback = function() self:showOnlineSongs(servers) end,
         })
         picker = Menu:new{
             title = _("Song repositories"),
@@ -915,6 +926,7 @@ function Songbook:browseOnline()
             width = Screen:getWidth(),
             height = Screen:getHeight(),
         }
+        self:setParentList(picker)
         UIManager:show(picker)
     end)
 end
@@ -1776,18 +1788,22 @@ function Songbook:addToMainMenu(menu_items)
         sub_item_table = {
             {
                 text = _("Browse online"),
+                keep_menu_open = true,
                 callback = function() self:browseOnline() end,
             },
             {
                 text = _("My songs"),
+                keep_menu_open = true,
                 callback = function() self:onSongbookShowLocal() end,
             },
             {
                 text = _("Favorites"),
+                keep_menu_open = true,
                 callback = function() self:onSongbookShowFavorites() end,
             },
             {
                 text = _("Collections"),
+                keep_menu_open = true,
                 callback = function() self:onSongbookShowCollections() end,
             },
             {

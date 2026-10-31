@@ -569,6 +569,28 @@ check(io.open(root .. "/songbook/songs/other-repo-dev/test.cho") and plugin:isIn
 plugin:deleteSong("other-repo-dev/test")
 check(not plugin:isInCollection("Oheň", "other-repo-dev/test"), "deleting a song removes it from collections")
 
+-- lists open over the Songbook menu; opening a song closes them and the menu
+local main_items = items.songbook.sub_item_table
+check(main_items[1].keep_menu_open and main_items[2].keep_menu_open and main_items[3].keep_menu_open
+    and main_items[4].keep_menu_open, "lists keep the songbook menu open")
+local UIManager = require("ui/uimanager")
+local closed, menu_closed = {}, false
+local old_close = UIManager.close
+UIManager.close = function(_, w) closed[w] = true end
+plugin.ui.menu.onCloseReaderMenu = function() menu_closed = true end
+plugin:createCollection("Večer")
+plugin:setInCollection("Večer", "test", true)
+plugin:onSongbookShowCollections()
+local coll_menu = last_shown()
+for _, item in ipairs(coll_menu.item_table) do if item.collection == "Večer" then item.callback() end end
+local coll_list = last_shown()
+check(coll_list ~= coll_menu and not closed[coll_menu] and coll_list.item_table[2].text == "Žluťoučký kůň",
+    "collection list opens over the collections")
+coll_list.item_table[2].callback()
+check(closed[coll_list] and closed[coll_menu] and menu_closed, "opening a song closes lists and menu")
+UIManager.close = old_close
+plugin.ui.menu.onCloseReaderMenu = nil
+
 -- Migration from the single server_url setting --------------------------------
 os.execute("rm -rf '" .. root .. "'")
 root = root .. "-migrate"
