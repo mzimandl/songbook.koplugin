@@ -4,6 +4,7 @@ package.path = "./?.lua;" .. package.path
 local ChordPro = require("songbook/chordpro")
 local Transpose = require("songbook/transpose")
 local Render = require("songbook/render")
+local Jam = require("songbook/jam")
 
 local passed, failed = 0, 0
 local function eq(actual, expected, name)
@@ -179,6 +180,55 @@ eq(#idx, 2, "parse_index skips entries without file")
 eq(idx[1].id, "a-b", "parse_index id from file name")
 eq(idx[2].updated, "3", "parse_index updated as string")
 eq(select(2, Repo.parse_index("", function() error("bad") end)), "invalid index.json", "parse_index bad json")
+
+-- Jam server ------------------------------------------------------------------
+local req = Jam.parse_request("GET /song.html?t=-2&n=en&x=a%20b+c HTTP/1.1\r\nHost: x\r\n\r\n")
+eq(req.method, "GET", "jam parse method")
+eq(req.path, "/song.html", "jam parse path")
+eq(req.query.t, "-2", "jam parse query")
+eq(req.query.x, "a b c", "jam parse url decoding")
+eq(Jam.parse_request("garbage"), nil, "jam parse garbage")
+eq(Jam.parse_request("GET / HTTP/1.0\r\n\r\n").path, "/", "jam parse root")
+eq(Jam.json({ b = 1, a = 'say "hi"\n', c = true }), '{"a":"say \\"hi\\"\\u000a","b":1,"c":true}', "jam json")
+eq(Jam.add_semitones(2, 3), 5, "jam semitones add")
+eq(Jam.add_semitones(10, 3), 1, "jam semitones wrap up")
+eq(Jam.add_semitones(-5, -3), 4, "jam semitones wrap down")
+eq(Jam.add_semitones(nil, -2), -2, "jam semitones nil host")
+
+local got
+local ctx = {
+    state = function() return { uid = "a/b", rev = "a/b@x", title = "Píseň" } end,
+    song_html = function(o) got = o; return "<html>song</html>" end,
+    song_cho = function() return nil end,
+    labels = { waiting = "Čekám <na> píseň" },
+    css = "pre{}",
+}
+local function handle(target) return Jam.handle(Jam.parse_request("GET " .. target .. " HTTP/1.1\r\n\r\n"), ctx) end
+local resp = handle("/state.json")
+eq(resp:match("^HTTP/1.1 (%d+)"), "200", "jam state status")
+eq(resp:match("\r\n\r\n(.*)$"), '{"rev":"a/b@x","title":"Píseň","uid":"a/b"}', "jam state body")
+eq(resp:match("Content%-Length: (%d+)"), tostring(#resp:match("\r\n\r\n(.*)$")), "jam content length in bytes")
+resp = handle("/song.html?t=30&n=xx&c=0&w=5")
+eq(resp:match("\r\n\r\n(.*)$"), "<html>song</html>", "jam song body")
+eq(got.shift, 11, "jam song shift clamped")
+eq(got.notation, nil, "jam song bad notation ignored")
+eq(got.show_chords, false, "jam song chords off")
+eq(got.max_cols, 16, "jam song width clamped")
+handle("/song.html")
+eq(got.shift .. tostring(got.show_chords) .. tostring(got.max_cols), "0truenil", "jam song defaults")
+eq(handle("/song.cho"):match("^HTTP/1.1 (%d+)"), "404", "jam no song source")
+eq(handle("/nothing"):match("^HTTP/1.1 (%d+)"), "404", "jam unknown path")
+eq(Jam.handle(Jam.parse_request("POST / HTTP/1.1\r\n\r\n"), ctx):match("^HTTP/1.1 (%d+)"), "405", "jam only GET")
+eq(Jam.handle(nil, ctx):match("^HTTP/1.1 (%d+)"), "400", "jam bad request")
+local page = handle("/"):match("\r\n\r\n(.*)$")
+eq(page:find("Čekám &lt;na&gt; píseň", 1, true) ~= nil, true, "jam page escapes labels")
+eq(page:find("pre{}", 1, true) ~= nil, true, "jam page has song css")
+eq(page:find("%s", 1, true), nil, "jam page has no placeholders left")
+
+local web = Render.html(ChordPro.parse("{title: W}\n[C]La"), { web = true })
+eq(web:sub(1, 15), "<!DOCTYPE html>", "web render is html5")
+eq(web:find("viewport", 1, true) ~= nil, true, "web render has viewport")
+eq(Render.html(ChordPro.parse("{title: W}"), {}):find("prefers-color-scheme", 1, true), nil, "e-reader render has no web css")
 
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

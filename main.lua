@@ -8,19 +8,21 @@ locally to HTML (chords above lyrics) and open them in the reader.
 -- Own modules must be required at load time: PluginLoader only adds the
 -- plugin folder to package.path while main.lua is being loaded.
 local ChordPro = require("songbook/chordpro")
+local Jam = require("songbook/jam")
 local Render = require("songbook/render")
 local Repo = require("songbook/repo")
 
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
+local Device = require("device")
 local Dispatcher = require("dispatcher")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
 local NetworkMgr = require("ui/network/manager")
-local Screen = require("device").screen
+local Screen = Device.screen
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -40,7 +42,12 @@ local DEFAULTS = {
     max_cols = 42,
     show_chords = true,
     repeat_chorus = false,
+    jam_port = 8765,
 }
+
+-- KOReader makes a new plugin instance for every reader/file manager, so the
+-- jam server lives here and answers through the newest instance (jam.owner).
+local jam = {}
 
 -- Helpers -------------------------------------------------------------------
 
@@ -85,6 +92,7 @@ function Songbook:init()
     util.makePath(self.render_dir)
 
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/songbook.lua")
+    jam.owner = self
     self:migrateSingleServer()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
@@ -250,8 +258,10 @@ function Songbook:removeStaleRenders(uid, keep)
     end
 end
 
---- Render song `uid` with current settings. Returns html path or nil, err.
-function Songbook:render(uid)
+--- HTML of song `uid`; fields of `opts` override the settings
+-- (transpose, notation, max_cols, show_chords, web). Returns html or nil, err.
+function Songbook:songHtml(uid, opts)
+    opts = opts or {}
     local _key, id = split_uid(uid)
     local text = read_file(self:songPath(uid))
     if not text then return nil, T(_("Song file not found: %1"), id) end
@@ -262,18 +272,27 @@ function Songbook:render(uid)
         return nil, T(_("Cannot parse song: %1"), id)
     end
 
-    local html = Render.html(song, {
-        transpose = self:getMap("transpose")[uid] or 0,
-        notation = self:get("notation"),
-        max_cols = self:get("max_cols"),
-        show_chords = self:get("show_chords"),
+    local show_chords = opts.show_chords
+    if show_chords == nil then show_chords = self:get("show_chords") end
+    return Render.html(song, {
+        transpose = opts.transpose or self:getMap("transpose")[uid] or 0,
+        notation = opts.notation or self:get("notation"),
+        max_cols = opts.max_cols or self:get("max_cols"),
+        show_chords = show_chords,
         repeat_chorus = self:get("repeat_chorus"),
+        web = opts.web,
         fallback_title = id,
         labels = {
             key = _("Key"), capo = _("Capo"), transposed = _("Transposed"),
             chorus = _("Ref."), tempo = _("Tempo"),
         },
     })
+end
+
+--- Render song `uid` with current settings. Returns html path or nil, err.
+function Songbook:render(uid)
+    local html, err = self:songHtml(uid)
+    if not html then return nil, err end
 
     local path = self.render_dir .. "/" .. render_stem(uid) .. "@" .. self:renderSignature(uid) .. ".html"
     local written, err = write_file(path, html)
@@ -1153,6 +1172,196 @@ function Songbook:askRemoveServer(server, on_changed)
     UIManager:show(dialog)
 end
 
+-- Jam session -------------------------------------------------------------------
+--
+-- Shares the song being played as a web page on the local network (see
+-- songbook/jam.lua). The shared song is the open one, or the last one opened
+-- when the reader is closed.
+
+-- Address of the network interface used for outgoing traffic; connecting a UDP
+-- socket sends nothing.
+local function local_ip()
+    local ok, ip = pcall(function()
+        local udp = require("socket").udp()
+        udp:setpeername("8.8.8.8", 80)
+        local addr = udp:getsockname()
+        udp:close()
+        return addr
+    end)
+    if ok and ip and ip ~= "0.0.0.0" then return ip end
+end
+
+-- Open/close the port in the Kindle firewall (as httpinspector does).
+local function kindle_firewall(op, port)
+    if not Device:isKindle() then return end
+    os.execute(string.format("iptables %s INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT", op, port))
+    os.execute(string.format("iptables %s OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT", op, port))
+end
+
+-- SimpleTCPServer callback: must send the response and return nothing
+-- (UIManager would treat a return value as an input event).
+local function serve_jam(data, client)
+    local ok, resp = pcall(function() return Jam.handle(Jam.parse_request(data), jam.context) end)
+    if not ok then
+        logger.warn("Songbook: jam request failed", resp)
+        resp = Jam.response(500, "text/plain", "Internal error")
+    end
+    jam.server:send(resp, client)
+end
+
+function Songbook:jamSong()
+    local uid = self:currentSongId() or jam.uid
+    if uid and not lfs.attributes(self:songPath(uid), "mode") then uid = nil end
+    jam.uid = uid
+    return uid
+end
+
+function Songbook:jamState()
+    local uid = self:jamSong()
+    local state = { notation = self:get("notation") }
+    if uid then
+        local _key, id = split_uid(uid)
+        local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+        state.uid = uid
+        state.rev = uid .. "@" .. self:renderSignature(uid)
+        state.title = meta.title or id
+        state.artist = meta.artist
+    end
+    return state
+end
+
+function Songbook:jamSongHtml(opts)
+    local uid = self:jamSong()
+    if not uid then return nil end
+    return (self:songHtml(uid, {
+        transpose = Jam.add_semitones(self:getMap("transpose")[uid], opts.shift),
+        notation = opts.notation,
+        show_chords = opts.show_chords,
+        max_cols = opts.max_cols,
+        web = true,
+    }))
+end
+
+function Songbook:isJamRunning()
+    return jam.server ~= nil
+end
+
+function Songbook:jamUrl()
+    local ip = jam.server and local_ip()
+    return ip and string.format("http://%s:%d/", ip, jam.port)
+end
+
+function Songbook:startJam()
+    if jam.server then return true end
+    local port = self:get("jam_port")
+    kindle_firewall("-A", port)
+    local server = require("ui/message/simpletcpserver"):new{
+        host = "*",
+        port = port,
+        receiveCallback = serve_jam,
+    }
+    local ok, err = server:start()
+    if not ok then
+        kindle_firewall("-D", port)
+        UIManager:show(InfoMessage:new{
+            text = T(_("Cannot start the jam session on port %1."), port) .. "\n\n" .. tostring(err),
+        })
+        return false
+    end
+    jam.server, jam.port = server, port
+    jam.context = {
+        state = function() return jam.owner:jamState() end,
+        song_html = function(opts) return jam.owner:jamSongHtml(opts) end,
+        song_cho = function()
+            local uid = jam.owner:jamSong()
+            return uid and read_file(jam.owner:songPath(uid))
+        end,
+        labels = {
+            title = _("Songbook"), waiting = _("Waiting for a song…"),
+            offline = _("Connection lost"), chords = _("Chords"),
+        },
+        css = Render.css(nil, true),
+    }
+    jam.queue = UIManager:insertZMQ(server)
+    UIManager:preventStandby()
+    return true
+end
+
+function Songbook:stopJam()
+    if not jam.server then return end
+    UIManager:removeZMQ(jam.queue)
+    jam.server:stop()
+    kindle_firewall("-D", jam.port)
+    UIManager:allowStandby()
+    jam.server, jam.queue, jam.context = nil, nil, nil
+end
+
+function Songbook:onExit()
+    self:stopJam()
+end
+
+function Songbook:showJamQR()
+    local url = self:jamUrl()
+    if not url then return end
+    UIManager:show(require("ui/widget/qrmessage"):new{
+        text = url,
+        width = Screen:getWidth(),
+        height = Screen:getHeight(),
+    })
+end
+
+function Songbook:jamMenu()
+    return {
+        {
+            text = _("Share songs on the network"),
+            help_text = _("Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves."),
+            keep_menu_open = true,
+            checked_func = function() return self:isJamRunning() end,
+            callback = function(touchmenu_instance)
+                if self:isJamRunning() then
+                    self:stopJam()
+                    touchmenu_instance:updateItems()
+                    return
+                end
+                NetworkMgr:runWhenConnected(function()
+                    if self:startJam() then
+                        notify(T(_("Guests can open:\n%1"), self:jamUrl() or _("unknown address")))
+                    end
+                    touchmenu_instance:updateItems()
+                end)
+            end,
+        },
+        {
+            text_func = function()
+                if not self:isJamRunning() then return _("Address: not sharing") end
+                return T(_("Address: %1"), self:jamUrl() or _("unknown"))
+            end,
+            help_text = _("Tap to show the address as a QR code."),
+            enabled_func = function() return self:jamUrl() ~= nil end,
+            keep_menu_open = true,
+            callback = function() self:showJamQR() end,
+        },
+        {
+            text_func = function() return T(_("Port: %1"), self:get("jam_port")) end,
+            enabled_func = function() return not self:isJamRunning() end,
+            keep_menu_open = true,
+            callback = function(touchmenu_instance)
+                UIManager:show(SpinWidget:new{
+                    title_text = _("Port"),
+                    value = self:get("jam_port"),
+                    value_min = 1024,
+                    value_max = 65535,
+                    default_value = DEFAULTS.jam_port,
+                    callback = function(spin)
+                        self:set("jam_port", spin.value)
+                        touchmenu_instance:updateItems()
+                    end,
+                })
+            end,
+        },
+    }
+end
+
 function Songbook:setAndRefresh(key, value)
     self:set(key, value)
     self:refreshCurrent()
@@ -1216,6 +1425,12 @@ function Songbook:addToMainMenu(menu_items)
                     self:showSongCollections({ uid = uid, title = meta.title or id }, function() end)
                 end,
                 separator = true,
+            },
+            {
+                text_func = function()
+                    return self:isJamRunning() and _("Jam session (sharing)") or _("Jam session")
+                end,
+                sub_item_table = self:jamMenu(),
             },
             {
                 text = _("Settings"),

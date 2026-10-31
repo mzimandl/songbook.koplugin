@@ -23,7 +23,8 @@ end })
 stub("datastorage", { getDataDir = function() return root end, getSettingsDir = function() return root .. "/settings" end })
 stub("dispatcher", { registerAction = function() end })
 stub("logger", { warn = print, info = function() end, dbg = function() end })
-stub("device", { screen = { getWidth = function() return 600 end, getHeight = function() return 800 end } })
+stub("device", { isKindle = function() return false end,
+    screen = { getWidth = function() return 600 end, getHeight = function() return 800 end } })
 stub("ui/widget/container/widgetcontainer", class())
 stub("ui/widget/infomessage", class({ init = function(self) table.insert(notes, self.text) end }))
 stub("ui/widget/buttondialog", class())
@@ -31,8 +32,22 @@ stub("ui/widget/confirmbox", class())
 stub("ui/widget/inputdialog", class())
 stub("ui/widget/spinwidget", class())
 stub("ui/widget/menu", class({ switchItemTable = function(self, t, items) self.item_table = items end }))
-stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end })
-stub("ui/uimanager", { show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end })
+stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
+local zmqs, standby = {}, 0
+stub("ui/uimanager", {
+    show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
+    insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
+    removeZMQ = function(_, z) for i = #zmqs, 1, -1 do if zmqs[i] == z then table.remove(zmqs, i) end end end,
+    preventStandby = function() standby = standby + 1 end,
+    allowStandby = function() standby = standby - 1 end,
+})
+local sent
+stub("ui/message/simpletcpserver", class({
+    start = function(self) self.started = true; return true end,
+    stop = function(self) self.started = false end,
+    send = function(_, data) sent = data end,
+}))
+stub("ui/widget/qrmessage", class())
 stub("util", {
     makePath = function(p) os.execute("mkdir -p '" .. p .. "'") end,
     trim = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end,
@@ -68,7 +83,9 @@ local index_name = "Test repo"
 stub("json", { decode = function()
     return { name = index_name, songs = { { id = "test", title = "Test", file = "songs/test.cho", updated = "1" } } }
 end })
-stub("socket", { skip = function(n, ...) return select(n + 1, ...) end })
+stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, udp = function()
+    return { setpeername = function() end, getsockname = function() return "192.168.1.5" end, close = function() end }
+end })
 stub("ltn12", { sink = { table = function(t) return t end } })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
 local requested = {}
@@ -91,7 +108,7 @@ check(registered == plugin, "registered to main menu")
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 8, "menu built")
+check(items.songbook and #items.songbook.sub_item_table == 9, "menu built")
 check(items.songbook.sub_item_table[5].enabled_func() == false, "transpose disabled outside a song")
 
 -- empty library
@@ -122,6 +139,43 @@ check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "c
 check(items.songbook.sub_item_table[5].text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
+
+-- Jam session ------------------------------------------------------------------
+local jam_menu = items.songbook.sub_item_table[8]
+local tmi = { updateItems = function() end }
+check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
+check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
+jam_menu.sub_item_table[1].callback(tmi)
+check(#zmqs == 1 and zmqs[1].port == 8765 and standby == 1, "jam server started")
+check(jam_menu.text_func() == "Jam session (sharing)", "jam menu label while sharing")
+check(jam_menu.sub_item_table[2].text_func() == "Address: http://192.168.1.5:8765/", "jam address")
+check(jam_menu.sub_item_table[3].enabled_func() == false, "port locked while sharing")
+local function jam_get(target)
+    sent = nil
+    check(zmqs[1].receiveCallback("GET " .. target .. " HTTP/1.1\r\n\r\n", {}) == nil, "jam callback returns nothing")
+    return sent and sent:match("^HTTP/1.1 (%d+)"), sent and sent:match("\r\n\r\n(.*)$")
+end
+local code, body = jam_get("/state.json")
+check(code == "200" and body:find('"uid":"test"', 1, true) and body:find('"title":"Žluťoučký kůň"', 1, true), "jam state: " .. tostring(body))
+local rev = body:match('"rev":"([^"]*)"')
+code, body = jam_get("/song.html?t=2&n=en")
+check(code == "200" and body:find("<!DOCTYPE html>", 1, true) and body:find('<span class="c">D', 1, true), "jam song transposed for guest")
+code, body = jam_get("/song.cho")
+check(code == "200" and body:find("[C]Jede", 1, true), "jam song source")
+plugin:onSongbookTranspose(1)
+code, body = jam_get("/state.json")
+check(body:match('"rev":"([^"]*)"') ~= rev, "host transposition changes rev")
+code, body = jam_get("/song.html")
+check(body:find('<span class="c">D', 1, true), "guest gets host transposition")
+plugin:onSongbookTranspose(0)
+-- reader closed: the last song stays shared
+local doc = plugin.ui.document
+plugin.ui.document = nil
+code, body = jam_get("/state.json")
+check(body:find('"uid":"test"', 1, true), "last song shared after reader closed")
+plugin.ui.document = doc
+jam_menu.sub_item_table[1].callback(tmi)
+check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func(), "jam server stopped")
 
 -- Song repositories ----------------------------------------------------------
 local InputDialog = require("ui/widget/inputdialog")
@@ -196,7 +250,7 @@ index_name = "Test repo"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 
 -- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[8].sub_item_table[1]
+local repos_item = items.songbook.sub_item_table[9].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 local tm = { updateItems = function() end }
 tm.item_table = repos_item.sub_item_table_func()
@@ -228,7 +282,7 @@ check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
 
 -- "Download all songs" keeps the menu open and reports per repository
 local download_all
-for _, item in ipairs(items.songbook.sub_item_table[8].sub_item_table) do
+for _, item in ipairs(items.songbook.sub_item_table[9].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")

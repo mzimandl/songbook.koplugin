@@ -71,6 +71,14 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 - **Transpose** (in the menu while a song is open): ±1 semitone / original key.
   It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*) under Taps & gestures → General.
+- **Jam session**: *Share songs on the network* starts a small web server.
+  Guests on the same Wi-Fi open the shown address (tap it for a QR code) in a
+  phone browser and see the song you are playing; it changes when you open
+  another song or transpose. Each guest can transpose, switch notation, hide
+  chords and change the font size for themselves; lines wrap to the phone's
+  width. The default port is 8765 (changeable while not sharing). The device
+  does not go to standby while sharing. There is no password: share only on
+  networks you trust.
 - **Settings**:
   - Song repositories: add, edit the URL, rename or remove. Removing asks
     whether to delete the songs downloaded from it.
@@ -94,7 +102,7 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 ## Development
 
 ```sh
-luajit tests/run.lua     # parser, transposer, layout, HTML, repo helpers
+luajit tests/run.lua     # parser, transposer, layout, HTML, repo and jam server helpers
 luajit tests/smoke.lua   # main.lua against stubbed KOReader modules
 ```
 

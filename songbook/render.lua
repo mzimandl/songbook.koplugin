@@ -12,6 +12,7 @@ opts = {
   show_chords   = true,       -- false = lyrics only
   repeat_chorus = false,      -- {chorus} replays the last chorus instead of a label
   font_size     = nil,        -- CSS size for <pre>, e.g. "0.9em"
+  web           = false,      -- HTML5 page for phone browsers (jam session) instead of e-reader XHTML
   labels        = { key=, capo=, transposed=, chorus= },
 }
 ]]
@@ -170,6 +171,22 @@ pre { font-family: "Droid Sans Mono", "DejaVu Sans Mono", "Noto Sans Mono", mono
 .lyblock { margin: 0 0 0.9em 0; page-break-inside: avoid; }
 ]]
 
+-- Added after CSS for browsers: readable on a phone, follows the dark mode.
+local WEB_CSS = [[
+body { margin: 0.8em; font-family: sans-serif; background: #fff; color: #111; }
+.c { color: #b03000; }
+.chorus { border-left-color: currentColor; }
+@media (prefers-color-scheme: dark) {
+  body { background: #121212; color: #e8e8e8; }
+  .c { color: #ffab70; }
+}
+]]
+
+--- Stylesheet of a rendered song; `web` adds the browser rules.
+function M.css(font_size, web)
+    return CSS:format(font_size or "0.9em") .. (web and WEB_CSS or "")
+end
+
 local function render_block_lines(block, opts, flats, out)
     if not opts.show_chords then
         out[#out + 1] = '<div class="lyblock">'
@@ -231,14 +248,20 @@ function M.html(song, opts)
     local title = meta.title or opts.fallback_title or "?"
 
     local out = {}
-    out[#out + 1] = '<?xml version="1.0" encoding="UTF-8"?>'
-    out[#out + 1] = '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
-    out[#out + 1] = '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>'
+    if opts.web then
+        out[#out + 1] = '<!DOCTYPE html>'
+        out[#out + 1] = '<html><head><meta charset="utf-8"/>'
+        out[#out + 1] = '<meta name="viewport" content="width=device-width, initial-scale=1"/>'
+    else
+        out[#out + 1] = '<?xml version="1.0" encoding="UTF-8"?>'
+        out[#out + 1] = '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        out[#out + 1] = '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>'
+    end
     out[#out + 1] = "<title>" .. escape(title) .. "</title>"
     if meta.artist then
         out[#out + 1] = '<meta name="author" content="' .. escape(meta.artist) .. '"/>'
     end
-    out[#out + 1] = "<style>" .. CSS:format(opts.font_size or "0.9em") .. "</style>"
+    out[#out + 1] = "<style>" .. M.css(opts.font_size, opts.web) .. "</style>"
     out[#out + 1] = "</head><body>"
     out[#out + 1] = "<h1>" .. escape(title) .. "</h1>"
     if meta.subtitle then out[#out + 1] = '<p class="artist">' .. escape(meta.subtitle) .. "</p>" end
