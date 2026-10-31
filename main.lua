@@ -342,13 +342,16 @@ function Songbook:listLocal()
     return songs
 end
 
---- "Artist · Repository" for the right-hand side of list items.
-local function details(...)
+-- KOReader's Menu gives the right-hand text all the width it needs and cuts the
+-- song title instead, so long artist or repository names are shortened.
+local MAX_ARTIST, MAX_SOURCE = 16, 12
+
+--- "Artist · Repository · status" for the right-hand side of list items.
+local function details(artist, source, status)
     local parts = {}
-    for i = 1, select("#", ...) do
-        local v = select(i, ...)
-        if v and v ~= "" then parts[#parts + 1] = v end
-    end
+    if artist and artist ~= "" then parts[#parts + 1] = Render.truncate(artist, MAX_ARTIST) end
+    if source and source ~= "" then parts[#parts + 1] = Render.truncate(source, MAX_SOURCE) end
+    if status and status ~= "" then parts[#parts + 1] = status end
     return table.concat(parts, " · ")
 end
 

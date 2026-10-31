@@ -122,6 +122,10 @@ for i, row in ipairs(r) do
     eq(math.max(Render.width(row.chords), Render.width(row.lyrics)) <= 12, true, "row " .. i .. " fits")
 end
 eq(Render.width("žluťoučký"), 9, "utf8 width")
+eq(Render.truncate("Krátké", 6), "Krátké", "truncate fits")
+eq(Render.truncate("Žluťoučký kůň", 6), "Žluťo…", "truncate utf8 with ellipsis")
+eq(Render.width(Render.truncate("Žluťoučký kůň", 6)), 6, "truncate width")
+eq(Render.truncate("ab cdef", 4), "ab…", "truncate drops trailing space")
 
 -- HTML ----------------------------------------------------------------------
 local html = Render.html(song, { transpose = 2, notation = "cz" })

@@ -182,6 +182,19 @@ local sources = {}
 for _, song in ipairs(all) do sources[song.uid] = song.source or "local" end
 check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test repo", "my songs sources")
 
+-- long repository names are shortened so the song title stays readable
+index_name = "Velmi dlouhý název repozitáře písní"
+plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })   -- picks up the new name
+check(last_shown().item_table[2].mandatory == "saved", "single repository list shows no repository name")
+plugin:onSongbookShowLocal()
+local long_item
+for _, item in ipairs(last_shown().item_table) do
+    if item.song and item.song.uid == "example.com-songs/test" then long_item = item end
+end
+check(long_item and long_item.mandatory == "Velmi dlouh…", "long repository name shortened: " .. tostring(long_item and long_item.mandatory))
+index_name = "Test repo"
+plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
+
 -- settings submenu: add, rename, remove
 local repos_item = items.songbook.sub_item_table[8].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")

@@ -36,6 +36,20 @@ function M.width(s)
 end
 local width = M.width
 
+--- Shorten s to at most n UTF-8 characters, ending with "…" when cut.
+function M.truncate(s, n)
+    if width(s) <= n then return s end
+    local count, cut = 0, #s + 1
+    for i = 1, #s do
+        local b = s:byte(i)
+        if b < 0x80 or b >= 0xC0 then
+            count = count + 1
+            if count == n then cut = i break end   -- start of the n-th char: "…" goes here
+        end
+    end
+    return (s:sub(1, cut - 1):gsub("%s+$", "")) .. "…"
+end
+
 local function rtrim(s) return (s:gsub("%s+$", "")) end
 
 local function pad(s, cols, fill)
