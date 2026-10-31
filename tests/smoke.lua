@@ -67,7 +67,9 @@ end })
 stub("socket", { skip = function(n, ...) return select(n + 1, ...) end })
 stub("ltn12", { sink = { table = function(t) return t end } })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
+local requested = {}
 stub("socket.http", { request = function(req)
+    table.insert(requested, req.url)
     table.insert(req.sink, "{}")
     return 1, 200, {}, "HTTP/1.1 200 OK"
 end })
@@ -123,6 +125,13 @@ plugin:browseOnline()
 local menu = shown[#shown]
 check(menu.item_table and menu.item_table[2].text == "Test", "online list item")
 check(menu.item_table[2].mandatory == "update", "file present but not from server -> update: " .. tostring(menu.item_table[2].mandatory))
+check(requested[#requested] == "https://example.com/songs/index.json", "plain server url used as is")
+
+-- github.com repository address is fetched from raw.githubusercontent.com
+plugin:set("server_url", "https://github.com/user/songs")
+plugin:browseOnline()
+check(requested[#requested] == "https://raw.githubusercontent.com/user/songs/HEAD/index.json",
+    "github url -> raw: " .. tostring(requested[#requested]))
 
 os.execute("rm -rf '" .. root .. "'")
 print(("%d passed, %d failed"):format(passed, failed))

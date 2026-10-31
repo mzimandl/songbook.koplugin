@@ -25,6 +25,28 @@ function M.join(base, path)
     return base .. path:gsub("^/+", "")
 end
 
+--- Turn a github.com repository URL into its raw.githubusercontent.com base.
+-- "https://github.com/u/r"                -> ".../u/r/HEAD/" (default branch)
+-- "https://github.com/u/r/tree/dev/songs" -> ".../u/r/dev/songs/"
+-- "https://github.com/u/r/blob/dev/index.json" -> ".../u/r/dev/"
+-- Other URLs are returned unchanged.
+function M.base_url(url)
+    url = (url or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local path = url:match("^https?://www%.github%.com/(.*)$") or url:match("^https?://github%.com/(.*)$")
+    if not path then return url end
+    path = path:gsub("[?#].*$", ""):gsub("/+$", "")
+    local user, repo, rest = path:match("^([^/]+)/([^/]+)(.*)$")
+    if not user then return url end
+    repo = repo:gsub("%.git$", "")
+    local ref, sub = rest:match("^/tree/([^/]+)(.*)$")
+    if not ref then
+        ref, sub = rest:match("^/blob/([^/]+)(.*)$")
+        if sub then sub = sub:gsub("/[^/]*$", "") end
+    end
+    if not ref then ref, sub = "HEAD", "" end
+    return "https://raw.githubusercontent.com/" .. user .. "/" .. repo .. "/" .. ref .. sub .. "/"
+end
+
 --- Make an id safe to use as a file name.
 function M.sanitize_id(id)
     id = tostring(id or ""):gsub("[^%w%-_%.]", "_"):gsub("^%.+", "")

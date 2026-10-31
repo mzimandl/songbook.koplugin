@@ -24,8 +24,15 @@ tests/                  off-device tests (LuaJIT, not used by the plugin)
    `git clone https://github.com/mzimandl/songbook.koplugin`.
    `tests/` can be deleted on the device.
 2. Restart KOReader → **Tools → Songbook**.
-3. **Settings → Server** → enter the folder URL that contains `index.json`, e.g.
-   `https://raw.githubusercontent.com/<user>/<repo>/<branch>/`
+3. **Settings → Server** → enter the song server address. For a GitHub
+   repository the ordinary address is enough:
+   - `https://github.com/<user>/<repo>`: default branch, `index.json` in the repo root
+   - `https://github.com/<user>/<repo>/tree/<branch>/<folder>`: other branch or subfolder
+
+   The plugin downloads these from `raw.githubusercontent.com`. Any other
+   address must point straight to the folder with `index.json`, e.g.
+   `https://raw.githubusercontent.com/<user>/<repo>/<branch>/` or a GitHub Pages
+   URL. An address like `https://github.com/<user>/<repo>/raw/…` won't work.
 
 ## Song server (GitHub)
 

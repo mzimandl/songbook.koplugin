@@ -354,8 +354,12 @@ end
 
 -- Online -------------------------------------------------------------------
 
+function Songbook:serverBase()
+    return Repo.base_url(self:get("server_url"))
+end
+
 function Songbook:fetchIndex()
-    local base = self:get("server_url")
+    local base = self:serverBase()
     local msg = busy(_("Loading song list…"))
     local body, err = Repo.fetch(Repo.join(base, "index.json"))
     UIManager:close(msg)
@@ -373,7 +377,7 @@ function Songbook:isUpToDate(song)
 end
 
 function Songbook:download(song)
-    local body, err = Repo.fetch(Repo.join(self:get("server_url"), song.file))
+    local body, err = Repo.fetch(Repo.join(self:serverBase(), song.file))
     if not body then return nil, err end
     local ok, werr = write_file(self:songPath(song.id), body)
     if not ok then return nil, werr end
@@ -467,9 +471,9 @@ function Songbook:askServerUrl(on_saved)
     local dialog
     dialog = InputDialog:new{
         title = _("Song server URL"),
-        description = _("Folder containing index.json, e.g. a GitHub raw URL."),
+        description = _("GitHub repository address, or any web folder containing index.json."),
         input = self:get("server_url"),
-        input_hint = "https://raw.githubusercontent.com/user/songs/main/",
+        input_hint = "https://github.com/user/songs",
         buttons = {{
             { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
             { text = _("Save"), is_enter_default = true, callback = function()
