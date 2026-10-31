@@ -133,6 +133,17 @@ plugin:browseOnline()
 check(requested[#requested] == "https://raw.githubusercontent.com/user/songs/HEAD/index.json",
     "github url -> raw: " .. tostring(requested[#requested]))
 
+-- saving the server URL refreshes the open menu so "Server:" shows the new value
+local InputDialog = require("ui/widget/inputdialog")
+InputDialog.onShowKeyboard = function() end
+InputDialog.getInputText = function() return " https://github.com/user/other " end
+local server_item = items.songbook.sub_item_table[4].sub_item_table[1]
+local refreshed = 0
+server_item.callback({ updateItems = function() refreshed = refreshed + 1 end })
+shown[#shown].buttons[1][2].callback()
+check(refreshed == 1, "menu refreshed after saving server url")
+check(server_item.text_func() == "Server: https://github.com/user/other", "server item shows new url: " .. server_item.text_func())
+
 os.execute("rm -rf '" .. root .. "'")
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

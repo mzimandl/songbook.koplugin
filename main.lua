@@ -467,7 +467,8 @@ end
 
 -- Settings -------------------------------------------------------------------
 
-function Songbook:askServerUrl(on_saved)
+-- touchmenu_instance: menu to refresh so the "Server:" item shows the new URL.
+function Songbook:askServerUrl(on_saved, touchmenu_instance)
     local dialog
     dialog = InputDialog:new{
         title = _("Song server URL"),
@@ -480,6 +481,7 @@ function Songbook:askServerUrl(on_saved)
                 local url = util.trim(dialog:getInputText())
                 UIManager:close(dialog)
                 self:set("server_url", url)
+                if touchmenu_instance then touchmenu_instance:updateItems() end
                 if url ~= "" and on_saved then on_saved() end
             end },
         }},
@@ -529,7 +531,7 @@ function Songbook:addToMainMenu(menu_items)
                             return T(_("Server: %1"), url ~= "" and url or _("not set"))
                         end,
                         keep_menu_open = true,
-                        callback = function() self:askServerUrl() end,
+                        callback = function(touchmenu_instance) self:askServerUrl(nil, touchmenu_instance) end,
                     },
                     {
                         text = _("Chord notation"),
