@@ -4,6 +4,7 @@
 - LuaJIT 2.1 / Lua 5.1: no utf8 library, use Render.width() / Render.truncate() for character counts.
 - Tests: `luajit tests/run.lua` and `luajit tests/smoke.lua` must pass before finishing any change (`lua5.1` works too when luajit isn't installed). smoke.lua stubs KOReader modules and addresses menu items by index (`items.songbook.sub_item_table[n]`), so update it when the menu changes.
 - Czech notation: H = B natural, B = B flat. Chords are never transposed when marked [*...].
+- Distributed through ZenPM from mzimandl/koplugins (manifest.json, installs the master branch zip). ZenPM offers an update only when `version` in _meta.lua grows: bump it for every change that should reach devices; a workflow in koplugins copies it into the manifest.
 - Song format: ChordPro (.cho), server = static index.json + songs/. The song server is a separate repo (mzimandl/koreader-songbook-repo); its tools/build_index.py writes index.json (optional "name" from songbook.json).
 
 ## Data model (main.lua)
