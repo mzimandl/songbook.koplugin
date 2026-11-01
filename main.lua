@@ -407,7 +407,8 @@ end
 --- Generic searchable song list.
 -- get_songs() -> songs; make_item(song) -> menu item.
 -- on_hold(song, refresh): refresh() rebuilds the list (keeping the search).
-function Songbook:showList(title, get_songs, make_item, on_hold)
+-- on_close(): called when the list is closed with × (not when a song is opened).
+function Songbook:showList(title, get_songs, make_item, on_hold, on_close)
     local menu, query
     local function build()
         local items = {
@@ -455,6 +456,14 @@ function Songbook:showList(title, get_songs, make_item, on_hold)
     }
     -- The search callback must not close the list; song callbacks do.
     menu.close_callback = nil
+    if on_close then
+        local close = menu.onClose
+        menu.onClose = function(m)
+            local handled = close and close(m)
+            on_close()
+            return handled
+        end
+    end
     self.list_menu = menu
     UIManager:show(menu)
     return menu
@@ -702,7 +711,8 @@ function Songbook:onSongbookShowCollections()
                 mandatory = tostring(count_keys(c.songs)),
                 collection = c.name,
                 callback = function()
-                    self:showCollection(c.name)
+                    -- songs may be removed from the collection meanwhile: update the counts
+                    self:showCollection(c.name, function() menu:switchItemTable(nil, build()) end)
                 end,
             })
         end
@@ -764,16 +774,17 @@ function Songbook:onSongbookShowCollections()
     return true
 end
 
-function Songbook:showCollection(name)
+function Songbook:showCollection(name, on_close)
     return self:showLocal(name, function(song) return self:isInCollection(name, song.uid) end,
-        _("This collection is empty. Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."))
+        _("This collection is empty. Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."),
+        on_close)
 end
 
 -- Song lists on the device -----------------------------------------------------
 
 --- List of songs on the device. filter(song) limits the list (nil = all);
--- empty_text is shown instead of an empty list.
-function Songbook:showLocal(title, filter, empty_text)
+-- empty_text is shown instead of an empty list; on_close as in showList().
+function Songbook:showLocal(title, filter, empty_text, on_close)
     local function load()
         local songs = self:listLocal()
         if not filter then return songs end
@@ -825,7 +836,7 @@ function Songbook:showLocal(title, filter, empty_text)
         if request then table.insert(buttons, 1, { request }) end
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
-    end)
+    end, on_close)
     return true
 end
 
@@ -1308,6 +1319,7 @@ function Songbook:jamPlayed(uid)
 end
 
 function Songbook:jamRequest(uid, by)
+    if split_uid(uid) == JAM_KEY then return nil, "missing" end   -- not listed, so not requestable
     local entry = self:playlistEntry(uid, by)
     if not entry then return nil, "missing" end
     local p = self:getPlaylist()
@@ -1587,7 +1599,8 @@ function Songbook:followStep()
     end
     local uid = make_uid(JAM_KEY, Jam.song_id(state.uid))
     if state.uid ~= f.uid then
-        local cho = Repo.fetch(f.url .. "song.cho", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+        -- by uid, not /song.cho: the host may have switched songs since state.json
+        local cho = Repo.fetch(f.url .. Jam.song_path(state.uid), FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
         if not cho then return self:followFailed() end
         util.makePath(self.songs_dir .. "/" .. JAM_KEY)
         if not write_file(self:songPath(uid), cho) then return self:followFailed() end
@@ -1616,11 +1629,14 @@ end
 function Songbook:startFollowing(url)
     self:stopFollowing()
     -- songs from an earlier session are not listed anywhere, so drop them
+    -- (except the open one, which still needs its file to transpose)
     local dir = self.songs_dir .. "/" .. JAM_KEY
     if lfs.attributes(dir, "mode") == "directory" then
+        local current = self:currentSongId()
         for name in lfs.dir(dir) do
             local id = song_file_id(name)
-            if id then self:deleteSong(make_uid(JAM_KEY, id)) end
+            local uid = id and make_uid(JAM_KEY, id)
+            if uid and uid ~= current then self:deleteSong(uid) end
         end
     end
     jam.follow = { url = url, failures = 0 }

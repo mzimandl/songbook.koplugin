@@ -211,6 +211,9 @@ code, body = jam_get("/queue/add?uid=test&by=%20Pavel%0A")
 check(body == '{"ok":true}' and notes[#notes] == "Song request: Žluťoučký kůň (Pavel)", "request added: " .. tostring(body))
 code, body = jam_get("/queue/add?uid=test")
 check(body == '{"error":"queued","ok":false}', "duplicate request: " .. tostring(body))
+code, body = jam_get("/queue/add?uid=..%2F..%2Fsettings%2Fsongbook")
+check(body == '{"error":"missing","ok":false}', "request outside the songs folder refused")
+check(select(2, plugin:jamRequest("jam/x")) == "missing", "followed songs can't be requested")
 code, body = jam_get("/queue/add?uid=nope")
 check(body == '{"error":"missing","ok":false}', "request of a missing song")
 code, body = jam_get("/playlist.json")
@@ -259,7 +262,7 @@ check(hold_dialog("test").buttons[1][1].text ~= "Request to play", "no request b
 -- following another songbook
 local host = "http://10.0.0.2:8765/"
 responses[host .. "state.json"] = "S1"
-responses[host .. "song.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
+responses[host .. "songs/repo~song-a.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
 decoded.S1 = { uid = "repo/song-a", rev = "1", transpose = 2, notation = "cz" }
 local follow_item = jam_menu.sub_item_table[5]
 check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[6].enabled_func() == false, "not following")
@@ -270,7 +273,8 @@ find_button(last_shown(), "Follow").callback()
 check(follow_item.checked_func() and follow_item.text_func() == "Following 10.0.0.2:8765", "following: " .. follow_item.text_func())
 check(settings_store.jam_follow_url == host and standby == 1 and scheduled ~= nil, "follow polling scheduled")
 check(jam_menu.text_func() == "Jam session (following)", "jam menu label while following")
-check(io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "followed song saved")
+check(requested[#requested] == host .. "songs/repo~song-a.cho"
+    and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"):read("*a"):find("Hostova", 1, true), "followed song saved")
 check(#opened == n_opened + 1 and opened[#opened]:find("/jam~repo_song%-a@t%+2"), "followed song opened in host key: " .. opened[#opened])
 plugin.ui.document.file = opened[#opened]
 local fetched = #requested
@@ -323,11 +327,16 @@ check(switched == 1 and remote_pl.item_table[1].text == "Up next (0)", "followed
 responses[host .. "state.json"] = false
 for _i = 1, 4 do if scheduled then scheduled() end end
 check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lost connection", 1, true), "following stops when host is gone")
--- opening a song of our own stops following
-responses[host .. "state.json"] = "S3"
+-- following again drops songs of the last session, except the open one
+io.open(root .. "/songbook/songs/jam/old.cho", "w"):close()
+responses[host .. "state.json"] = false
 follow_item.callback(tmi)
 find_button(last_shown(), "Follow").callback()
-check(follow_item.checked_func() and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "following again")
+check(follow_item.checked_func() and not io.open(root .. "/songbook/songs/jam/old.cho")
+    and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "following again keeps only the open song")
+-- opening a song of our own stops following
+responses[host .. "state.json"] = "S3"
+scheduled()
 plugin:onSongbookTranspose(1)
 check(follow_item.checked_func(), "transposing the followed song keeps following")
 plugin:onSongbookTranspose(0)
@@ -586,6 +595,14 @@ for _, item in ipairs(coll_menu.item_table) do if item.collection == "Večer" th
 local coll_list = last_shown()
 check(coll_list ~= coll_menu and not closed[coll_menu] and coll_list.item_table[2].text == "Žluťoučký kůň",
     "collection list opens over the collections")
+plugin:setInCollection("Večer", "test", false)
+coll_list:onClose()
+local count
+for _, item in ipairs(coll_menu.item_table) do if item.collection == "Večer" then count = item.mandatory end end
+check(count == "0", "collection counts refreshed when the list is closed: " .. tostring(count))
+plugin:setInCollection("Večer", "test", true)
+for _, item in ipairs(coll_menu.item_table) do if item.collection == "Večer" then item.callback() end end
+coll_list = last_shown()
 coll_list.item_table[2].callback()
 check(closed[coll_list] and closed[coll_menu] and menu_closed, "opening a song closes lists and menu")
 UIManager.close = old_close

@@ -115,10 +115,34 @@ function M.find_id(songs, id)
     end
 end
 
+--- Is `uid` a song uid that stays inside the songs folder? ("<id>" or
+-- "<key>/<id>"; ids of copied files may contain spaces or accents.)
+function M.valid_uid(uid)
+    if type(uid) ~= "string" or uid:find("[%c\\]") then return false end
+    local parts = { uid:match("^([^/]+)/([^/]+)$") }
+    if #parts == 0 then
+        if uid == "" or uid:find("/", 1, true) then return false end
+        parts = { uid }
+    end
+    for _, part in ipairs(parts) do
+        if part:sub(1, 1) == "." then return false end   -- ".", ".." and hidden files
+    end
+    return true
+end
+
 --- uid for a /songs/<stem>.cho request, or nil if it could leave the songs folder.
 function M.uid_from_stem(stem)
-    if not stem:match("^[%w%-_][%w%-_%.~]*$") or stem:find("..", 1, true) then return nil end
-    return (stem:gsub("~", "/"))
+    local uid = stem:gsub("~", "/")
+    return M.valid_uid(uid) and uid or nil
+end
+
+local function url_encode(s)
+    return (s:gsub("[^%w%-_%.~]", function(c) return string.format("%%%02X", c:byte()) end))
+end
+
+--- Path of a song's file relative to the server root ("songs/<stem>.cho").
+function M.song_path(uid)
+    return "songs/" .. url_encode(file_stem(uid)) .. ".cho"
 end
 
 --- index.json for songs as listed by ctx.songs().
@@ -128,7 +152,7 @@ function M.index(songs, name)
         list[#list + 1] = {
             id = M.song_id(song.uid),
             uid = song.uid,
-            file = "songs/" .. file_stem(song.uid) .. ".cho",
+            file = M.song_path(song.uid),
             title = song.title, artist = song.artist, key = song.key, updated = song.updated,
         }
     end
@@ -467,7 +491,7 @@ function M.handle(req, ctx)
         local ok, err = nil, "missing"
         local uid = req.query.uid
         if (not uid or uid == "") and req.query.id then uid = M.find_id(ctx.songs(), req.query.id) end
-        if uid and uid ~= "" then
+        if M.valid_uid(uid) then
             ok, err = ctx.request(uid, M.clean_name(req.query.by))
         end
         return M.response(200, "application/json; charset=utf-8",
