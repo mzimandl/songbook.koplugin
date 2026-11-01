@@ -71,6 +71,16 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
   is open. Long-press a collection to rename or delete it (its songs stay on
   the device). Adding an online song downloads it. Gesture action:
   *Songbook: collections* (General).
+- **Playlist**: *Up next* and *Played*. Every song you open is recorded as
+  played (a song from Up next leaves it). Add songs with *Add songs…* in the
+  playlist (tap a song to add it, tap again to remove; songs already in the
+  playlist are hidden, *Show songs already in the playlist* lists them too),
+  or by long-pressing a song in any list → *Add to playlist*. **Next song** in
+  the Songbook menu opens the first song of Up next. In the playlist, tap a
+  song to play it, long-press a song of Up next to move it to the top (*Play
+  next*) or remove it. *Save played songs as collection…* keeps the evening's
+  set list; *Clear playlist* starts over. Gesture actions: *Songbook:
+  playlist* and *Songbook: next song in the playlist* (General).
 - **Transpose** (in the menu while a song is open): ±1 semitone / original key,
   or *Choose key…* to pick the key directly (from `{key}`, else the first chord).
   It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
@@ -83,25 +93,22 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
   width. The default port is 8765 (changeable while not sharing). The device
   does not go to standby while sharing. There is no password: share only on
   networks you trust.
-  - *Playlist*: while sharing, every song you open is recorded as played.
-    Guests can ask for songs on the web page (tab *Playlist*: search, tap
-    +, optionally with their name); you get a short notice and the request
-    shows under *Up next*. Tap a song in the playlist to play it (a played
-    request leaves the queue), long-press a request to remove it. *Save played
-    songs as collection…* keeps the evening's set list; *Clear playlist*
-    starts over. The playlist is kept until cleared, at most 30 requests.
-  - *Request to play* (long-press a song in any list during a jam session):
-    while following, asks the followed reader to play it (it must have the
-    song: one it sent you, one from its repository, or one both of you have
-    from the same repository); while sharing, adds it to your own queue.
+  Guests also see your playlist and can ask for songs on the web page (tab
+  *Playlist*: search, tap +, optionally with their name); you get a short
+  notice and the request joins Up next (at most 30 guests' requests).
+  - *Request to play* (long-press a song in any list while following): asks
+    the followed reader to play it (it must have the song: one it sent you,
+    one from its repository, or one both of you have from the same
+    repository).
   - *Follow another songbook…*: enter the address shown on another reader
     (e.g. `192.168.1.5`, port 8765 is added). Every song it opens opens on
     yours too, in its key; you can still transpose it yourself until it
     changes song or key. Followed songs are kept apart (`songs/jam/`, not in
     My songs, removed when you follow again); to keep one, download it with
     *Browse their songs*. Following stops when you open a song of your own,
-    or when the other reader is unreachable for a while. *Playlist* then
-    shows the other reader's playlist.
+    or when the other reader is unreachable for a while. Following clears
+    your playlist: *Playlist* shows the other reader's one, and *Request
+    songs…* there lists its songs to ask for.
   - *Browse their songs*: adds the followed reader as a song repository, so
     you can download any of its songs.
 - **Settings**:

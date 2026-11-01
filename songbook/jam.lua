@@ -406,12 +406,13 @@ function M.clean_name(by)
     return Render.truncate(by, M.MAX_NAME)
 end
 
---- Add a request to the queue. Returns true or nil, "queued" / "full".
-function M.add_request(queue, entry)
+--- Add a song to the queue, which holds at most `max` songs (default
+-- MAX_QUEUE, the limit for guests). Returns true or nil, "queued" / "full".
+function M.add_request(queue, entry, max)
     for _, e in ipairs(queue) do
         if e.uid == entry.uid then return nil, "queued" end
     end
-    if #queue >= M.MAX_QUEUE then return nil, "full" end
+    if #queue >= (max or M.MAX_QUEUE) then return nil, "full" end
     queue[#queue + 1] = entry
     return true
 end

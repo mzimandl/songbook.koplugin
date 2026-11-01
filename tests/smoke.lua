@@ -122,11 +122,20 @@ check(#defaults == 1 and defaults[1].url == "https://github.com/mzimandl/songboo
 plugin:saveServers({})
 plugin:init()
 check(#plugin:getServers() == 0, "removed default repository is not added again")
+check(settings_store.schema == 1, "fresh install gets the current schema")
+
+-- migration 1: the jam session's playlist became the general one
+settings_store.schema = nil
+settings_store.jam_playlist = { history = { { uid = "x", title = "X" } }, queue = {} }
+plugin:init()
+check(settings_store.jam_playlist == nil and settings_store.playlist.history[1].uid == "x"
+    and settings_store.schema == 1, "jam_playlist migrated to playlist")
+plugin:savePlaylist({})
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 9, "menu built")
-check(items.songbook.sub_item_table[5].enabled_func() == false, "transpose disabled outside a song")
+check(items.songbook and #items.songbook.sub_item_table == 11, "menu built")
+check(items.songbook.sub_item_table[7].enabled_func() == false, "transpose disabled outside a song")
 
 -- empty library
 plugin:onSongbookShowLocal()
@@ -157,17 +166,17 @@ ReaderUI.instance = nil
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(items.songbook.sub_item_table[5].enabled_func() == true, "transpose enabled in a song")
+check(items.songbook.sub_item_table[7].enabled_func() == true, "transpose enabled in a song")
 plugin:onSongbookTranspose(1)
 plugin:onSongbookTranspose(1)
 check(opened[#opened]:find("test@t%+2"), "transposed render path")
 check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "chords transposed to D")
-check(items.songbook.sub_item_table[5].text_func() == "Transpose (+2)", "transpose label")
+check(items.songbook.sub_item_table[7].text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 -- choose the key: test.cho is in C
-check(items.songbook.sub_item_table[5].sub_item_table[4].text == "Choose key…", "choose key item")
-items.songbook.sub_item_table[5].sub_item_table[4].callback()
+check(items.songbook.sub_item_table[7].sub_item_table[4].text == "Choose key…", "choose key item")
+items.songbook.sub_item_table[7].sub_item_table[4].callback()
 local key_dialog = shown[#shown]
 check(#key_dialog.buttons == 3 and key_dialog.buttons[1][1].text == "C" and key_dialog.buttons[1][1].font_bold,
     "key dialog marks the current key")
@@ -190,7 +199,7 @@ local function find_button(dialog, text)
 end
 
 -- Jam session ------------------------------------------------------------------
-local jam_menu = items.songbook.sub_item_table[8]
+local jam_menu = items.songbook.sub_item_table[10]
 local tmi = { updateItems = function() end }
 check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
 check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
@@ -233,7 +242,7 @@ code = jam_get("/songs/..~settings~x.cho")
 check(code == "404", "jam song file outside songs/")
 
 -- playlist: played songs and guests' requests
-local playlist_item = jam_menu.sub_item_table[4]
+local playlist_item = items.songbook.sub_item_table[5]
 local p = plugin:getPlaylist()
 check(#p.history == 1 and p.history[1].uid == "test" and #p.queue == 0, "played while sharing, transposing not repeated")
 check(playlist_item.text_func() == "Playlist", "playlist label")
@@ -248,10 +257,10 @@ code, body = jam_get("/queue/add?uid=nope")
 check(body == '{"error":"missing","ok":false}', "request of a missing song")
 code, body = jam_get("/playlist.json")
 check(body:find('"queue":[{"artist":"Lidová","at":', 1, true) and body:find('"by":"Pavel"', 1, true), "playlist json: " .. tostring(body))
-check(playlist_item.text_func() == "Playlist (1 requested)", "playlist label with requests")
+check(playlist_item.text_func() == "Playlist (1 up next)", "playlist label with requests")
 playlist_item.callback()
 local pl_menu = last_shown()
-check(pl_menu.title == "Playlist" and pl_menu.item_table[3].text == "Up next (1)", "playlist menu")
+check(pl_menu.title == "Playlist" and pl_menu.item_table[4].text == "Up next (1)", "playlist menu")
 local queued_item
 for _, item in ipairs(pl_menu.item_table) do if item.queued then queued_item = item end end
 check(queued_item and queued_item.text == "Žluťoučký kůň" and queued_item.mandatory == "Pavel", "queued song in playlist menu")
@@ -259,16 +268,64 @@ queued_item.callback()
 p = plugin:getPlaylist()
 check(#p.queue == 0 and #p.history == 1, "playing a requested song removes it from the queue")
 input_text = "Jam test"
-pl_menu.item_table[1].callback()
+pl_menu.item_table[2].callback()
 find_button(last_shown(), "Save").callback()
 check(plugin:isInCollection("Jam test", "test"), "played songs saved as collection")
-pl_menu.item_table[2].callback()
+pl_menu.item_table[3].callback()
 last_shown().ok_callback()
 p = plugin:getPlaylist()
 check(#p.history == 0 and #p.queue == 0, "playlist cleared")
 plugin:deleteCollection("Jam test")
 
--- long-press "Request to play" while sharing adds to our own queue
+-- adding songs to the playlist; songs already in it are hidden by default
+f = io.open(root .. "/songbook/songs/second.cho", "w")
+f:write("{title: Druhá}\n[G]La\n")
+f:close()
+pl_menu.item_table[1].callback()
+local picker_list = last_shown()
+local function picker_item(uid)
+    for _, item in ipairs(picker_list.item_table) do
+        if item.song and item.song.uid == uid then return item end
+    end
+end
+check(picker_list.title == "Add to playlist" and picker_list.item_table[2].text == "Show songs already in the playlist"
+    and picker_list.item_table[3].text == "Druhá" and picker_list.item_table[4].text == "Žluťoučký kůň", "playlist picker")
+picker_item("second").callback()
+p = plugin:getPlaylist()
+check(#p.queue == 1 and p.queue[1].uid == "second" and picker_item("second") == nil, "picked song added and hidden")
+check(pl_menu.item_table[4].text == "Up next (1)", "open playlist refreshed after adding")
+picker_list.item_table[2].callback()
+check(plugin:get("playlist_hide_added") == false and picker_list.item_table[2].text == "Hide songs already in the playlist"
+    and picker_item("second").mandatory == "up next", "songs in the playlist shown again")
+picker_item("second").callback()
+check(#plugin:getPlaylist().queue == 0 and picker_item("second").mandatory == "", "tapping a queued song removes it")
+picker_list.item_table[2].callback()
+
+-- next song from the playlist
+local next_item = items.songbook.sub_item_table[6]
+check(next_item.enabled_func() == false and next_item.text_func() == "Next song", "no next song")
+plugin:addToPlaylist("second")
+plugin:addToPlaylist("test")
+check(next_item.enabled_func() and next_item.text_func() == "Next song: Druhá", "next song label")
+playlist_item.callback()
+pl_menu = last_shown()
+local test_item
+for _, item in ipairs(pl_menu.item_table) do if item.queued and item.entry.uid == "test" then test_item = item end end
+pl_menu.onMenuHold(pl_menu, test_item)
+find_button(last_shown(), "Play next").callback()
+check(plugin:getPlaylist().queue[1].uid == "test", "play next moves a song to the top")
+next_item.callback()
+p = plugin:getPlaylist()
+check(opened[#opened]:find("/test@") and #p.queue == 1 and p.history[#p.history].uid == "test", "next song played")
+plugin:onSongbookNextSong()
+check(opened[#opened]:find("/second@") and #plugin:getPlaylist().queue == 0, "next song via gesture")
+plugin:onSongbookNextSong()
+check(notes[#notes] == "There is no next song in the playlist.", "no next song left")
+plugin:openSong("test")
+plugin:deleteSong("second")
+plugin:savePlaylist({})
+
+-- long-press "Add to playlist" adds to our own queue, also while sharing
 local function hold_dialog(uid)
     plugin:onSongbookShowLocal()
     local list = last_shown()
@@ -278,28 +335,35 @@ local function hold_dialog(uid)
     return last_shown()
 end
 local hold = hold_dialog("test")
-check(hold.buttons[1][1].text == "Request to play", "request button while sharing")
+check(hold.buttons[1][1].text == "Add to playlist", "playlist button while sharing")
 hold.buttons[1][1].callback()
-check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "test", "request from long-press")
-hold_dialog("test").buttons[1][1].callback()
-check(notes[#notes] == "This song is already requested.", "long-press request duplicate")
+check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "test"
+    and notes[#notes] == "Added to playlist: Žluťoučký kůň", "added from long-press")
+hold = hold_dialog("test")
+check(hold.buttons[1][1].text == "Remove from playlist", "queued song can be removed from long-press")
+hold.buttons[1][1].callback()
+check(#plugin:getPlaylist().queue == 0, "removed from long-press")
 plugin:savePlaylist({})
 
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func(), "jam server stopped")
-check(hold_dialog("test").buttons[1][1].text ~= "Request to play", "no request button outside a jam session")
+check(hold_dialog("test").buttons[1][1].text == "Add to playlist", "playlist button outside a jam session")
 
 -- following another songbook
 local host = "http://10.0.0.2:8765/"
 responses[host .. "state.json"] = "S1"
 responses[host .. "songs/repo~song-a.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
 decoded.S1 = { uid = "repo/song-a", rev = "1", transpose = 2, notation = "cz" }
-local follow_item = jam_menu.sub_item_table[5]
-check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[6].enabled_func() == false, "not following")
+local follow_item = jam_menu.sub_item_table[4]
+check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[5].enabled_func() == false, "not following")
 input_text = " 10.0.0.2 "
 local n_opened = #opened
+plugin:addToPlaylist("test")
 follow_item.callback(tmi)
+check(last_shown().ok_text == "Follow", "following asks before replacing our playlist")
+last_shown().ok_callback()
 find_button(last_shown(), "Follow").callback()
+check(#plugin:getPlaylist().queue == 0 and #plugin:getPlaylist().history == 0, "following clears our playlist")
 check(follow_item.checked_func() and follow_item.text_func() == "Following 10.0.0.2:8765", "following: " .. follow_item.text_func())
 check(settings_store.jam_follow_url == host and standby == 1 and scheduled ~= nil, "follow polling scheduled")
 check(jam_menu.text_func() == "Jam session (following)", "jam menu label while following")
@@ -322,8 +386,8 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")
-check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[6].enabled_func()
-    and not items.songbook.sub_item_table[7].enabled_func(), "followed song can't be favorited or collected")
+check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[8].enabled_func()
+    and not items.songbook.sub_item_table[9].enabled_func(), "followed song can't be favorited or collected")
 -- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
@@ -339,13 +403,36 @@ check(plugin:getPlaylist().queue[1] == nil, "request while following does not to
 responses[host .. "playlist.json"] = "PL1"
 decoded.PL1 = { history = { { uid = "repo/song-a", title = "Hostova", at = 0 } },
                 queue = { { uid = "repo/b", title = "Druhá", by = "Eva" }, "junk" } }
-check(jam_menu.sub_item_table[4].text_func() == "Playlist of the jam session", "playlist label while following")
-jam_menu.sub_item_table[4].callback()
+check(playlist_item.text_func() == "Playlist (jam session)", "playlist label while following")
+playlist_item.callback()
 local remote_pl = last_shown()
-check(remote_pl.title == "Playlist of 10.0.0.2:8765" and remote_pl.item_table[1].text == "Up next (1)"
-    and remote_pl.item_table[2].text == "Druhá" and remote_pl.item_table[2].mandatory == "Eva"
-    and remote_pl.item_table[2].callback == nil and remote_pl.item_table[3].text == "Played (1)",
+check(remote_pl.title == "Playlist of 10.0.0.2:8765" and remote_pl.item_table[2].text == "Up next (1)"
+    and remote_pl.item_table[3].text == "Druhá" and remote_pl.item_table[3].mandatory == "Eva"
+    and remote_pl.item_table[3].callback == nil and remote_pl.item_table[4].text == "Played (1)",
     "followed songbook's playlist, read-only")
+-- requesting from the followed songbook's songs, without those in its playlist
+responses[host .. "index.json"] = "IX"
+decoded.IX = { songs = { { id = "repo_song-a", title = "Hostova", file = "songs/repo~song-a.cho" },
+                         { id = "repo_b", title = "Druhá", file = "songs/repo~b.cho" },
+                         { id = "c", title = "Cizí", file = "songs/c.cho" } } }
+remote_pl.item_table[1].callback()
+local rpick = last_shown()
+check(rpick.title == "Request from 10.0.0.2:8765" and #rpick.item_table == 3 and rpick.item_table[3].text == "Cizí",
+    "followed songbook's songs not in its playlist")
+responses[host .. "queue/add?id=c"] = "R3"
+decoded.R3 = { ok = true }
+rpick.item_table[3].callback()
+check(requested[#requested - 1] == host .. "queue/add?id=c" and requested[#requested] == host .. "playlist.json",
+    "picked song requested from the followed songbook")
+rpick.item_table[2].callback()
+check(#rpick.item_table == 5 and rpick.item_table[4].text == "Druhá" and rpick.item_table[4].mandatory == "up next"
+    and rpick.item_table[5].mandatory == "played", "followed songbook's playlist marked")
+local n_requested = #requested
+rpick.item_table[4].callback()
+check(notes[#notes] == "This song is already requested." and requested[n_requested + 1] ~= host .. "queue/add?id=repo_b",
+    "queued song not requested again")
+rpick.item_table[2].callback()
+check(next_item.enabled_func() == false, "no next song while following")
 local switched = 0
 remote_pl.switchItemTable = function(self, t, items) switched = switched + 1; self.item_table = items end
 scheduled()
@@ -353,7 +440,7 @@ check(switched == 0, "unchanged followed playlist is not redrawn")
 decoded.PL2 = { history = {}, queue = {} }
 responses[host .. "playlist.json"] = "PL2"
 scheduled()
-check(switched == 1 and remote_pl.item_table[1].text == "Up next (0)", "followed playlist refreshed on poll")
+check(switched == 1 and remote_pl.item_table[2].text == "Up next (0)", "followed playlist refreshed on poll")
 responses[host .. "state.json"] = false
 for _i = 1, 4 do if scheduled then scheduled() end end
 check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lost connection", 1, true), "following stops when host is gone")
@@ -438,7 +525,7 @@ index_name = "Test repo"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 
 -- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[9].sub_item_table[1]
+local repos_item = items.songbook.sub_item_table[11].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 local tm = { updateItems = function() end }
 tm.item_table = repos_item.sub_item_table_func()
@@ -470,7 +557,7 @@ check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
 
 -- "Download all songs" keeps the menu open and reports per repository
 local download_all
-for _, item in ipairs(items.songbook.sub_item_table[9].sub_item_table) do
+for _, item in ipairs(items.songbook.sub_item_table[11].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")
@@ -506,7 +593,7 @@ find_button(hold(list, "test"), "Remove from favorites").callback()
 check(not plugin:isFavorite("test") and list.item_table[2].text == "No songs", "favorite removed, list refreshed")
 
 -- reader menu item and gesture toggle the open song
-local fav_item = items.songbook.sub_item_table[6]
+local fav_item = items.songbook.sub_item_table[8]
 plugin:openSong("user-songs/test")
 check(fav_item.enabled_func() and not fav_item.checked_func(), "favorite item enabled in a song")
 fav_item.callback()
@@ -590,7 +677,7 @@ last_shown().ok_callback()
 check(#plugin:getCollections() == 1 and #picker.item_table == 2, "collection deleted")
 
 -- reader menu: add the open song to a collection
-local coll_item = items.songbook.sub_item_table[7]
+local coll_item = items.songbook.sub_item_table[9]
 plugin:openSong("user-songs/test")
 check(coll_item.enabled_func() and coll_item.keep_menu_open, "add to collection enabled in a song")
 coll_item.callback()

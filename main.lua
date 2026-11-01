@@ -44,6 +44,7 @@ local DEFAULTS = {
     show_chords = true,
     repeat_chorus = false,
     jam_port = 8765,
+    playlist_hide_added = true,
 }
 
 -- Song repository added on the first start (until then `servers` is unset).
@@ -179,6 +180,12 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_toggle_favorite",
         { category = "none", event = "SongbookToggleFavorite",
           title = _("Songbook: add/remove favorite"), reader = true })
+    Dispatcher:registerAction("songbook_playlist",
+        { category = "none", event = "SongbookShowPlaylist",
+          title = _("Songbook: playlist"), general = true })
+    Dispatcher:registerAction("songbook_next_song",
+        { category = "none", event = "SongbookNextSong",
+          title = _("Songbook: next song in the playlist"), general = true })
 end
 
 -- Songs and servers -------------------------------------------------------------
@@ -232,6 +239,14 @@ end
 -- to n. Installs without a `schema` setting are schema 0 (also fresh ones, so
 -- steps must cope with empty settings). Append steps; never change released ones.
 local MIGRATIONS = {}
+
+-- 1: the playlist is no longer tied to the jam session ("jam_playlist" -> "playlist").
+MIGRATIONS[1] = function(self)
+    local p = self.settings:readSetting("jam_playlist")
+    if p == nil then return end
+    self.settings:saveSetting("playlist", p)
+    self.settings:delSetting("jam_playlist")
+end
 
 function Songbook:migrate()
     local schema = self.settings:readSetting("schema") or 0
@@ -339,11 +354,12 @@ function Songbook:openSong(uid)
         notify(err)
         return
     end
-    if jam.server then self:jamPlayed(uid) end
     if jam.follow and split_uid(uid) ~= JAM_KEY then
         self:stopFollowing()
         notify(_("Stopped following the jam session."))
     end
+    -- while following, the followed songbook's playlist is used
+    if not jam.follow then self:playlistPlayed(uid) end
     if self.ui.document then
         self.ui:switchDocument(path)
     else
@@ -453,11 +469,12 @@ local function matches(song, query)
 end
 
 --- Generic searchable song list.
--- get_songs() -> songs; make_item(song) -> menu item.
+-- get_songs() -> songs; make_item(song, refresh) -> menu item.
 -- on_hold(song, refresh): refresh() rebuilds the list (keeping the search).
 -- on_close(): called when the list is closed with × (not when a song is opened).
-function Songbook:showList(title, get_songs, make_item, on_hold, on_close)
-    local menu, query
+-- header(refresh): optional, -> extra menu item shown below the search.
+function Songbook:showList(title, get_songs, make_item, on_hold, on_close, header)
+    local menu, query, refresh
     local function build()
         local items = {
             {
@@ -471,21 +488,23 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close)
                 end,
             },
         }
+        if header then table.insert(items, header(refresh)) end
+        local first = #items
         local favorites = self:getMap("favorites")
         for _, song in ipairs(get_songs()) do
             if matches(song, query) then
-                local item = make_item(song)
+                local item = make_item(song, refresh)
                 item.song = song
                 if favorites[song.uid] then item.text = "★ " .. item.text end
                 table.insert(items, item)
             end
         end
-        if #items == 1 then
+        if #items == first then
             table.insert(items, { text = _("No songs"), select_enabled = false })
         end
         return items
     end
-    local function refresh()
+    refresh = function()
         menu:switchItemTable(title, build())
     end
 
@@ -880,8 +899,7 @@ function Songbook:showLocal(title, filter, empty_text, on_close)
                 })
             end }},
         }
-        local request = self:requestButton(song, close)
-        if request then table.insert(buttons, 1, { request }) end
+        table.insert(buttons, 1, { self:playlistButton(song, close) })
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
     end, on_close)
@@ -1047,6 +1065,7 @@ function Songbook:showOnlineSongs(servers)
         end
         local buttons = {
             -- favorites, collections and our playlist hold songs on the device, so download first
+            { self:playlistButton(song, close, ensure_downloaded) },
             { self:favoriteButton(song, close, refresh, ensure_downloaded) },
             { self:collectionsButton(song, close, refresh, ensure_downloaded) },
             {{ text = _("Download again"), callback = function()
@@ -1057,8 +1076,6 @@ function Songbook:showOnlineSongs(servers)
                 end
             end }},
         }
-        local request = self:requestButton(song, close, ensure_downloaded)
-        if request then table.insert(buttons, 1, { request }) end
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
     end)
@@ -1267,6 +1284,384 @@ function Songbook:askRemoveServer(server, on_changed)
     UIManager:show(dialog)
 end
 
+-- Playlist -------------------------------------------------------------------
+--
+-- Up next (queue) and played songs (history), kept in the settings until
+-- cleared: { history = { entry... }, queue = { entry... } }, entry =
+-- { uid, title, artist, by, at }. Every song opened is recorded as played.
+-- While sharing, guests see it and add requests; while following, the
+-- followed songbook's playlist is used instead (our own is cleared).
+
+function Songbook:getPlaylist()
+    local p = self.settings:readSetting("playlist") or {}
+    p.history, p.queue = p.history or {}, p.queue or {}
+    return p
+end
+
+function Songbook:savePlaylist(p)
+    self:set("playlist", p)
+    if jam.playlist_refresh then jam.playlist_refresh() end
+end
+
+function Songbook:playlistEntry(uid, by)
+    local text = read_file(self:songPath(uid))
+    if not text then return nil end
+    local _key, id = split_uid(uid)
+    local meta = ChordPro.parse_meta(text)
+    return { uid = uid, title = meta.title or id, artist = meta.artist, by = by, at = os.time() }
+end
+
+function Songbook:playlistPlayed(uid)
+    if split_uid(uid) == JAM_KEY then return end
+    local entry = self:playlistEntry(uid)
+    if not entry then return end
+    local p = self:getPlaylist()
+    if Jam.played(p.history, p.queue, entry) then self:savePlaylist(p) end
+end
+
+function Songbook:isQueued(uid)
+    for _i, e in ipairs(self:getPlaylist().queue) do
+        if e.uid == uid then return true end
+    end
+    return false
+end
+
+--- Add a song to Up next; `max` limits the queue (guests' requests).
+-- Returns the entry, or nil and "queued" / "full" / "missing".
+function Songbook:addToPlaylist(uid, by, max)
+    if split_uid(uid) == JAM_KEY then return nil, "missing" end   -- not listed, so not requestable
+    local entry = self:playlistEntry(uid, by)
+    if not entry then return nil, "missing" end
+    local p = self:getPlaylist()
+    local ok, err = Jam.add_request(p.queue, entry, max or math.huge)
+    if not ok then return nil, err end
+    self:savePlaylist(p)
+    return entry
+end
+
+function Songbook:removeFromPlaylist(uid)
+    local p = self:getPlaylist()
+    for i = #p.queue, 1, -1 do
+        if p.queue[i].uid == uid then table.remove(p.queue, i) end
+    end
+    self:savePlaylist(p)
+end
+
+--- Move a queued song to the top of Up next.
+function Songbook:playNextInPlaylist(uid)
+    local p = self:getPlaylist()
+    for i, e in ipairs(p.queue) do
+        if e.uid == uid then
+            table.remove(p.queue, i)
+            table.insert(p.queue, 1, e)
+            break
+        end
+    end
+    self:savePlaylist(p)
+end
+
+--- Request from a jam session guest.
+function Songbook:jamRequest(uid, by)
+    local entry, err = self:addToPlaylist(uid, by, Jam.MAX_QUEUE)
+    if not entry then return nil, err end
+    notify(by and T(_("Song request: %1 (%2)"), entry.title, by) or T(_("Song request: %1"), entry.title))
+    return true
+end
+
+local function request_error(code)
+    if code == "queued" then return _("This song is already requested.") end
+    if code == "full" then return _("Too many requests, try again later.") end
+    return _("This song is not available.")
+end
+
+--- First song of Up next that is on the device, or nil (also while following:
+-- the followed songbook chooses the songs then).
+function Songbook:nextInPlaylist()
+    if self:isFollowing() then return nil end
+    for _i, e in ipairs(self:getPlaylist().queue) do
+        if lfs.attributes(self:songPath(e.uid), "mode") == "file" then return e end
+    end
+end
+
+function Songbook:onSongbookNextSong()
+    local e = self:nextInPlaylist()
+    if e then
+        self:openSong(e.uid)
+    elseif self:isFollowing() then
+        notify(_("While following, the other songbook chooses the songs."))
+    else
+        notify(_("There is no next song in the playlist."))
+    end
+    return true
+end
+
+--- "Add to playlist" / "Remove from playlist" for a song's long-press dialog;
+-- while following, "Request to play" asks the followed songbook.
+-- `before` as in favoriteButton().
+function Songbook:playlistButton(song, close, before)
+    if self:isFollowing() then
+        return {
+            text = _("Request to play"),
+            callback = function()
+                close()
+                self:requestFromFollowed(song)
+            end,
+        }
+    end
+    local queued = self:isQueued(song.uid)
+    return {
+        text = queued and _("Remove from playlist") or _("Add to playlist"),
+        callback = function()
+            close()
+            if queued then
+                self:removeFromPlaylist(song.uid)
+                return notify(T(_("Removed from playlist: %1"), song.title))
+            end
+            if before and not before() then return end
+            local entry, err = self:addToPlaylist(song.uid)
+            notify(entry and T(_("Added to playlist: %1"), entry.title) or request_error(err))
+        end,
+    }
+end
+
+--- Ask the followed songbook to queue its song with index id `remote_id`.
+-- Returns true, or nil and an error message.
+function Songbook:requestFollowed(remote_id)
+    local body = Repo.fetch(jam.follow.url .. "queue/add?id=" .. remote_id, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local ok, data = pcall(require("json").decode, body or "")
+    if not body or not ok or type(data) ~= "table" then
+        return nil, _("Cannot reach the other songbook.")
+    end
+    if not data.ok then return nil, request_error(data.error) end
+    return true
+end
+
+--- Ask the followed songbook to play `song`. Songs received from it or
+-- downloaded from it as a repository use its own ids; other songs are matched
+-- by uid, which works when both have them from the same repository.
+function Songbook:requestFromFollowed(song)
+    local f = jam.follow
+    local key, id = split_uid(song.uid)
+    local server = key and self:findServer(key)
+    local same_source = key == JAM_KEY or (server and Repo.base_url(server.url) == Repo.base_url(f.url))
+    local ok, err = self:requestFollowed(same_source and id or Jam.song_id(song.uid))
+    notify(ok and T(_("Requested: %1"), song.title) or err)
+end
+
+--- Playlist of the followed songbook: p, raw body (nil, nil when unreachable).
+function Songbook:fetchFollowedPlaylist()
+    local body = Repo.fetch(jam.follow.url .. "playlist.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local p = body and Jam.parse_playlist(body, require("json").decode)
+    if p then return p, body end
+end
+
+--- Songs of the followed songbook (its /index.json; ids as it knows them), or nil.
+function Songbook:fetchFollowedSongs()
+    local body = Repo.fetch(jam.follow.url .. "index.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local songs = body and Repo.parse_index(body, require("json").decode)
+    if not songs then return nil end
+    table.sort(songs, function(a, b) return lower(a.title) < lower(b.title) end)
+    return songs
+end
+
+local function follow_name()
+    return (jam.follow.url:gsub("^%a+://", ""):gsub("/$", ""))
+end
+
+--- Our playlist, or while following the followed songbook's (read-only).
+function Songbook:onSongbookShowPlaylist()
+    local remote = self:isFollowing()
+    local p, body
+    if remote then
+        p, body = self:fetchFollowedPlaylist()
+        if not p then
+            notify(_("Cannot reach the other songbook."))
+            return true
+        end
+    end
+    local title = remote and T(_("Playlist of %1"), follow_name()) or _("Playlist")
+    local menu
+    local function build()
+        if not remote then p = self:getPlaylist() end
+        local items = {
+            {
+                text = remote and _("Request songs…") or _("Add songs…"),
+                bold = true,
+                callback = function() self:showPlaylistPicker() end,
+            },
+        }
+        if not remote then
+            table.insert(items, {
+                text = _("Save played songs as collection…"),
+                bold = true,
+                callback = function() self:savePlaylistAsCollection() end,
+            })
+            table.insert(items, {
+                text = _("Clear playlist"),
+                bold = true,
+                callback = function()
+                    UIManager:show(ConfirmBox:new{
+                        text = _("Clear the list of played and requested songs?"),
+                        ok_text = _("Clear"),
+                        ok_callback = function() self:savePlaylist({}) end,
+                    })
+                end,
+            })
+        end
+        table.insert(items, { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false })
+        local function add(entry, mandatory, queued)
+            local item = { text = entry.title, mandatory = mandatory, entry = entry, queued = queued }
+            -- the other songbook's songs may not be on this device
+            if not remote then
+                item.callback = function()
+                    self:closeList()
+                    self:openSong(entry.uid)
+                end
+            end
+            table.insert(items, item)
+        end
+        for _i, e in ipairs(p.queue) do add(e, e.by and Render.truncate(e.by, MAX_SOURCE) or "", true) end
+        if #p.queue == 0 then table.insert(items, { text = _("No songs"), dim = true, select_enabled = false }) end
+        table.insert(items, { text = T(_("Played (%1)"), #p.history), bold = true, select_enabled = false })
+        for i = #p.history, 1, -1 do
+            local at = p.history[i].at
+            add(p.history[i], at and os.date("%H:%M", at) or "")
+        end
+        return items
+    end
+    menu = Menu:new{
+        title = title,
+        item_table = build(),
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        width = Screen:getWidth(),
+        height = Screen:getHeight(),
+        onMenuHold = function(_menu, item)
+            if remote or not item.queued then return true end
+            local uid = item.entry.uid
+            local dialog
+            dialog = ButtonDialog:new{
+                title = item.entry.title,
+                buttons = {
+                    {{ text = _("Play next"), callback = function()
+                        UIManager:close(dialog)
+                        self:playNextInPlaylist(uid)
+                    end }},
+                    {{ text = _("Remove from playlist"), callback = function()
+                        UIManager:close(dialog)
+                        self:removeFromPlaylist(uid)
+                    end }},
+                },
+            }
+            UIManager:show(dialog)
+            return true
+        end,
+    }
+    -- Menu calls close_callback after every tap; song items close the list themselves.
+    menu.close_callback = nil
+    -- Called after our playlist changes, and on every poll while following.
+    jam.playlist_refresh = function()
+        if not UIManager:isWidgetShown(menu) or remote ~= self:isFollowing() then
+            jam.playlist_refresh = nil
+            return
+        end
+        if remote then
+            local new_p, new_body = self:fetchFollowedPlaylist()
+            if not new_p or new_body == body then return end   -- no redraw when nothing changed
+            p, body = new_p, new_body
+        end
+        menu:switchItemTable(title, build())
+    end
+    self:setParentList(menu)
+    UIManager:show(menu)
+    return true
+end
+
+--- Song list for building the playlist: a tap adds the song to Up next and
+-- another tap removes it. Songs already in the playlist (up next or played)
+-- can be hidden. While following, lists the followed songbook's songs and
+-- requests them there.
+function Songbook:showPlaylistPicker()
+    local remote = self:isFollowing()
+    local all
+    if remote then all = self:fetchFollowedSongs() else all = self:listLocal() end
+    if not all then return notify(_("Cannot reach the other songbook.")) end
+    -- playlist entries are matched by the ids of the songbook that keeps the playlist
+    local function song_key(song) return remote and song.id or song.uid end
+    local function entry_key(e) return remote and e.uid and Jam.song_id(e.uid) or e.uid end
+    local queued, played
+    local function get_songs()
+        local p
+        if remote then
+            p = self:fetchFollowedPlaylist() or { queue = {}, history = {} }
+        else
+            p = self:getPlaylist()
+        end
+        queued, played = {}, {}
+        for _i, e in ipairs(p.queue) do if e.uid then queued[entry_key(e)] = true end end
+        for _i, e in ipairs(p.history) do if e.uid then played[entry_key(e)] = true end end
+        if not self:get("playlist_hide_added") then return all end
+        local songs = {}
+        for _i, song in ipairs(all) do
+            local k = song_key(song)
+            if not (queued[k] or played[k]) then songs[#songs + 1] = song end
+        end
+        return songs
+    end
+    local title = remote and T(_("Request from %1"), follow_name()) or _("Add to playlist")
+    self:showList(title, get_songs, function(song, refresh)
+        local k = song_key(song)
+        local status = queued[k] and _("up next") or played[k] and _("played") or nil
+        return {
+            text = song.title,
+            mandatory = details(song.artist, not remote and song.source or nil, status),
+            callback = function()
+                if remote then
+                    if queued[k] then return notify(_("This song is already requested.")) end
+                    local ok, err = self:requestFollowed(song.id)
+                    if not ok then notify(err) end
+                elseif queued[k] then
+                    self:removeFromPlaylist(song.uid)
+                else
+                    local entry, err = self:addToPlaylist(song.uid)
+                    if not entry then notify(request_error(err)) end
+                end
+                refresh()
+            end,
+        }
+    end, nil, nil, function(refresh)
+        local hide = self:get("playlist_hide_added")
+        return {
+            text = hide and _("Show songs already in the playlist") or _("Hide songs already in the playlist"),
+            bold = true,
+            callback = function()
+                self:set("playlist_hide_added", not hide)
+                refresh()
+            end,
+        }
+    end)
+end
+
+function Songbook:savePlaylistAsCollection()
+    local history = self:getPlaylist().history
+    if #history == 0 then
+        notify(_("No songs have been played yet."))
+        return
+    end
+    self:askCollectionName(_("Save played songs as collection"), os.date(_("Jam %Y-%m-%d")), function(name)
+        local ok, err = self:createCollection(name)
+        if not ok then return notify(err) end
+        local collections = self:getCollections()
+        local c = self:findCollection(name, collections)
+        for _i, e in ipairs(history) do
+            if lfs.attributes(self:songPath(e.uid), "mode") then c.songs[e.uid] = true end
+        end
+        self:saveCollections(collections)
+        notify(T(_("Saved %1 songs to \"%2\"."), count_keys(c.songs), name))
+    end)
+end
+
 -- Jam session -------------------------------------------------------------------
 --
 -- Shares the song being played as a web page on the local network (see
@@ -1336,209 +1731,6 @@ function Songbook:jamSongs()
         }
     end
     return songs
-end
-
--- Playlist: songs played while sharing and guests' requests, kept in the
--- settings until cleared.
-function Songbook:getPlaylist()
-    local p = self.settings:readSetting("jam_playlist") or {}
-    p.history, p.queue = p.history or {}, p.queue or {}
-    return p
-end
-
-function Songbook:savePlaylist(p)
-    self:set("jam_playlist", p)
-    if jam.playlist_refresh then jam.playlist_refresh() end
-end
-
-function Songbook:playlistEntry(uid, by)
-    local text = read_file(self:songPath(uid))
-    if not text then return nil end
-    local _key, id = split_uid(uid)
-    local meta = ChordPro.parse_meta(text)
-    return { uid = uid, title = meta.title or id, artist = meta.artist, by = by, at = os.time() }
-end
-
-function Songbook:jamPlayed(uid)
-    local entry = self:playlistEntry(uid)
-    if not entry then return end
-    local p = self:getPlaylist()
-    if Jam.played(p.history, p.queue, entry) then self:savePlaylist(p) end
-end
-
-function Songbook:jamRequest(uid, by)
-    if split_uid(uid) == JAM_KEY then return nil, "missing" end   -- not listed, so not requestable
-    local entry = self:playlistEntry(uid, by)
-    if not entry then return nil, "missing" end
-    local p = self:getPlaylist()
-    local ok, err = Jam.add_request(p.queue, entry)
-    if not ok then return nil, err end
-    self:savePlaylist(p)
-    notify(by and T(_("Song request: %1 (%2)"), entry.title, by) or T(_("Song request: %1"), entry.title))
-    return true
-end
-
-local function request_error(code)
-    if code == "queued" then return _("This song is already requested.") end
-    if code == "full" then return _("Too many requests, try again later.") end
-    return _("This song is not available.")
-end
-
---- Ask the followed songbook to play `song`. Songs received from it or
--- downloaded from it as a repository use its own ids; other songs are matched
--- by uid, which works when both have them from the same repository.
-function Songbook:requestFromFollowed(song)
-    local f = jam.follow
-    local key, id = split_uid(song.uid)
-    local server = key and self:findServer(key)
-    local same_source = key == JAM_KEY or (server and Repo.base_url(server.url) == Repo.base_url(f.url))
-    local remote_id = same_source and id or Jam.song_id(song.uid)
-    local body = Repo.fetch(f.url .. "queue/add?id=" .. remote_id, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
-    local ok, data = pcall(require("json").decode, body or "")
-    if not body or not ok or type(data) ~= "table" then
-        return notify(_("Cannot reach the other songbook."))
-    end
-    notify(data.ok and T(_("Requested: %1"), song.title) or request_error(data.error))
-end
-
---- "Request to play" for a song's long-press dialog, or nil when not in a
--- jam session. While following, the request goes to the followed songbook;
--- while sharing, to our own playlist. `before` as in favoriteButton().
-function Songbook:requestButton(song, close, before)
-    if not (self:isFollowing() or self:isJamRunning()) then return nil end
-    return {
-        text = _("Request to play"),
-        callback = function()
-            close()
-            if self:isFollowing() then return self:requestFromFollowed(song) end
-            if before and not before() then return end
-            local ok, err = self:jamRequest(song.uid)
-            if not ok then notify(request_error(err)) end
-        end,
-    }
-end
-
---- Playlist of the followed songbook: p, raw body (nil, nil when unreachable).
-function Songbook:fetchFollowedPlaylist()
-    local body = Repo.fetch(jam.follow.url .. "playlist.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
-    local p = body and Jam.parse_playlist(body, require("json").decode)
-    if p then return p, body end
-end
-
---- Our playlist, or while following the followed songbook's (read-only).
-function Songbook:showPlaylist()
-    local remote = self:isFollowing()
-    local p, body
-    if remote then
-        p, body = self:fetchFollowedPlaylist()
-        if not p then return notify(_("Cannot reach the other songbook.")) end
-    end
-    local title = remote and T(_("Playlist of %1"), (jam.follow.url:gsub("^%a+://", ""):gsub("/$", "")))
-        or _("Playlist")
-    local menu
-    local function build()
-        if not remote then p = self:getPlaylist() end
-        local items = {}
-        if not remote then
-            table.insert(items, {
-                text = _("Save played songs as collection…"),
-                bold = true,
-                callback = function() self:savePlaylistAsCollection() end,
-            })
-            table.insert(items, {
-                text = _("Clear playlist"),
-                bold = true,
-                callback = function()
-                    UIManager:show(ConfirmBox:new{
-                        text = _("Clear the list of played and requested songs?"),
-                        ok_text = _("Clear"),
-                        ok_callback = function() self:savePlaylist({}) end,
-                    })
-                end,
-            })
-        end
-        table.insert(items, { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false })
-        local function add(entry, mandatory, queued)
-            local item = { text = entry.title, mandatory = mandatory, entry = entry, queued = queued }
-            -- the other songbook's songs may not be on this device
-            if not remote then
-                item.callback = function()
-                    UIManager:close(menu)
-                    self:openSong(entry.uid)
-                end
-            end
-            table.insert(items, item)
-        end
-        for _i, e in ipairs(p.queue) do add(e, e.by and Render.truncate(e.by, MAX_SOURCE) or "", true) end
-        if #p.queue == 0 then table.insert(items, { text = _("No requests"), dim = true, select_enabled = false }) end
-        table.insert(items, { text = T(_("Played (%1)"), #p.history), bold = true, select_enabled = false })
-        for i = #p.history, 1, -1 do
-            local at = p.history[i].at
-            add(p.history[i], at and os.date("%H:%M", at) or "")
-        end
-        return items
-    end
-    menu = Menu:new{
-        title = title,
-        item_table = build(),
-        covers_fullscreen = true,
-        is_borderless = true,
-        is_popout = false,
-        width = Screen:getWidth(),
-        height = Screen:getHeight(),
-        onMenuHold = function(_menu, item)
-            if remote or not item.queued then return true end
-            local dialog
-            dialog = ButtonDialog:new{
-                title = item.entry.title,
-                buttons = {{{ text = _("Remove from queue"), callback = function()
-                    UIManager:close(dialog)
-                    local list = self:getPlaylist()
-                    for i = #list.queue, 1, -1 do
-                        if list.queue[i].uid == item.entry.uid then table.remove(list.queue, i) end
-                    end
-                    self:savePlaylist(list)
-                end }}},
-            }
-            UIManager:show(dialog)
-            return true
-        end,
-    }
-    -- Menu calls close_callback after every tap; song items close the list themselves.
-    menu.close_callback = nil
-    -- Called after our playlist changes, and on every poll while following.
-    jam.playlist_refresh = function()
-        if not UIManager:isWidgetShown(menu) or remote ~= self:isFollowing() then
-            jam.playlist_refresh = nil
-            return
-        end
-        if remote then
-            local new_p, new_body = self:fetchFollowedPlaylist()
-            if not new_p or new_body == body then return end   -- no redraw when nothing changed
-            p, body = new_p, new_body
-        end
-        menu:switchItemTable(title, build())
-    end
-    UIManager:show(menu)
-end
-
-function Songbook:savePlaylistAsCollection()
-    local history = self:getPlaylist().history
-    if #history == 0 then
-        notify(_("No songs have been played yet."))
-        return
-    end
-    self:askCollectionName(_("Save played songs as collection"), os.date(_("Jam %Y-%m-%d")), function(name)
-        local ok, err = self:createCollection(name)
-        if not ok then return notify(err) end
-        local collections = self:getCollections()
-        local c = self:findCollection(name, collections)
-        for _i, e in ipairs(history) do
-            if lfs.attributes(self:songPath(e.uid), "mode") then c.songs[e.uid] = true end
-        end
-        self:saveCollections(collections)
-        notify(T(_("Saved %1 songs to \"%2\"."), count_keys(c.songs), name))
-    end)
 end
 
 function Songbook:jamSongHtml(opts)
@@ -1687,6 +1879,8 @@ function Songbook:startFollowing(url)
             if uid and uid ~= current then self:deleteSong(uid) end
         end
     end
+    -- the followed songbook's playlist is used instead of ours
+    self:savePlaylist({})
     jam.follow = { url = url, failures = 0 }
     UIManager:preventStandby()
     follow_poll()
@@ -1753,7 +1947,7 @@ function Songbook:jamMenu()
     return {
         {
             text = _("Share songs on the network"),
-            help_text = _("Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves."),
+            help_text = _("Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves, and see your playlist and ask for songs."),
             keep_menu_open = true,
             checked_func = function() return self:isJamRunning() end,
             callback = function(touchmenu_instance)
@@ -1797,24 +1991,14 @@ function Songbook:jamMenu()
                     end,
                 })
             end,
-        },
-        {
-            text_func = function()
-                if self:isFollowing() then return _("Playlist of the jam session") end
-                local n = #self:getPlaylist().queue
-                return n > 0 and T(_("Playlist (%1 requested)"), n) or _("Playlist")
-            end,
-            help_text = _("Songs played while sharing, and songs guests asked for on the web page. While following another songbook, its playlist."),
-            keep_menu_open = true,
-            callback = function() self:showPlaylist() end,
             separator = true,
         },
         {
             text_func = function()
                 if not self:isFollowing() then return _("Follow another songbook…") end
-                return T(_("Following %1"), (jam.follow.url:gsub("^%a+://", ""):gsub("/$", "")))
+                return T(_("Following %1"), follow_name())
             end,
-            help_text = _("Open the songs another device is playing, as they change. They are saved to My songs (Jam session) and shown in the other player's key; you can still transpose them."),
+            help_text = _("Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead."),
             keep_menu_open = true,
             checked_func = function() return self:isFollowing() end,
             callback = function(touchmenu_instance)
@@ -1823,12 +2007,21 @@ function Songbook:jamMenu()
                     touchmenu_instance:updateItems()
                     return
                 end
-                self:askFollowUrl(function(url)
-                    NetworkMgr:runWhenConnected(function()
-                        self:startFollowing(url)
-                        touchmenu_instance:updateItems()
+                local function ask()
+                    self:askFollowUrl(function(url)
+                        NetworkMgr:runWhenConnected(function()
+                            self:startFollowing(url)
+                            touchmenu_instance:updateItems()
+                        end)
                     end)
-                end)
+                end
+                local p = self:getPlaylist()
+                if #p.queue + #p.history == 0 then return ask() end
+                UIManager:show(ConfirmBox:new{
+                    text = _("Following another songbook clears your playlist and uses theirs instead."),
+                    ok_text = _("Follow"),
+                    ok_callback = ask,
+                })
             end,
         },
         {
@@ -1869,6 +2062,23 @@ function Songbook:addToMainMenu(menu_items)
                 text = _("Collections"),
                 keep_menu_open = true,
                 callback = function() self:onSongbookShowCollections() end,
+            },
+            {
+                text_func = function()
+                    if self:isFollowing() then return _("Playlist (jam session)") end
+                    local n = #self:getPlaylist().queue
+                    return n > 0 and T(_("Playlist (%1 up next)"), n) or _("Playlist")
+                end,
+                keep_menu_open = true,
+                callback = function() self:onSongbookShowPlaylist() end,
+            },
+            {
+                text_func = function()
+                    local e = self:nextInPlaylist()
+                    return e and T(_("Next song: %1"), Render.truncate(e.title, 24)) or _("Next song")
+                end,
+                enabled_func = function() return self:nextInPlaylist() ~= nil end,
+                callback = function() self:onSongbookNextSong() end,
             },
             {
                 text_func = function()
