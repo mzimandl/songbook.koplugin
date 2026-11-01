@@ -50,6 +50,7 @@ local DEFAULTS = {
     jam_port = 8765,
     playlist_hide_added = true,
     autoscroll = false,
+    scroll_mode = true,
 }
 
 -- Song repository added on the first start (until then `servers` is unset).
@@ -374,10 +375,22 @@ function Songbook:openSong(uid)
     end
     -- while following, the followed songbook's playlist is used
     if not jam.follow then self:playlistPlayed(uid) end
+    if self:get("scroll_mode") then self:preferScrollMode(path) end
     if self.ui.document then
         self.ui:switchDocument(path)
     else
         require("apps/reader/readerui"):showReader(path)
+    end
+end
+
+--- Open the rendered song in continuous (scroll) mode, unless its view mode
+-- was already chosen: ReaderConfig loads "copt_view_mode" from the
+-- document's settings before rendering.
+function Songbook:preferScrollMode(path)
+    local doc_settings = require("docsettings"):open(path)
+    if doc_settings:readSetting("copt_view_mode") == nil then
+        doc_settings:saveSetting("copt_view_mode", 1)
+        doc_settings:flush()
     end
 end
 
@@ -580,6 +593,7 @@ function Songbook:showDurationDialog(touchmenu_instance)
         right_text = _("Seconds"),
         right_min = 0, right_max = 59,
         right_value = duration % 60,
+        ok_always_enabled = true,
         extra_text = _("Use the song file"),
         extra_callback = function() save(nil) end,
         callback = function(min, sec)
@@ -2404,6 +2418,12 @@ function Songbook:addToMainMenu(menu_items)
                         help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
                         checked_func = function() return self:get("repeat_chorus") end,
                         callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
+                    },
+                    {
+                        text = _("Continuous scroll mode"),
+                        help_text = _("Open songs in continuous (scroll) mode, which autoscroll moves by a quarter screen. Turn it off to use the reader's own view mode."),
+                        checked_func = function() return self:get("scroll_mode") end,
+                        callback = function() self:set("scroll_mode", not self:get("scroll_mode")) end,
                     },
                     {
                         text = _("Autoscroll when a song opens"),

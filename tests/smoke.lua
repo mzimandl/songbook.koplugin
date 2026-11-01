@@ -87,7 +87,17 @@ stub("luasettings", { open = function()
         flush = function() end,
     }
 end })
-stub("docsettings", { open = function() return { purge = function() end } end })
+local doc_store = {}   -- path -> doc settings
+stub("docsettings", { open = function(_, path)
+    doc_store[path] = doc_store[path] or {}
+    local data = doc_store[path]
+    return {
+        purge = function() doc_store[path] = nil end,
+        readSetting = function(_, k) return data[k] end,
+        saveSetting = function(_, k, v) data[k] = v end,
+        flush = function() end,
+    }
+end })
 local index_name = "Test repo"
 local decoded = {}   -- body -> table, for bodies other than the index
 stub("json", { decode = function(body)
@@ -157,6 +167,7 @@ check(#songs == 1 and songs[1].title == "Žluťoučký kůň", "listLocal reads 
 
 plugin:openSong("test")
 check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.w42%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
+check(doc_store[opened[1]].copt_view_mode == 1, "songs open in scroll mode")
 local html = io.open(opened[1]):read("*a")
 check(html:find("Jede kůň", 1, true), "rendered lyrics")
 ReadHistory:addItem(opened[1])
@@ -191,6 +202,15 @@ key_dialog.buttons[3][2].callback()   -- A
 check(opened[#opened]:find("test@t%-3"), "chosen key A is -3: " .. opened[#opened])
 key_dialog.buttons[1][1].callback()
 check(opened[#opened]:find("test@t%+0"), "chosen original key")
+doc_store[opened[#opened]].copt_view_mode = 0
+plugin:openSong("test")
+check(doc_store[opened[#opened]].copt_view_mode == 0, "chosen view mode is kept")
+settings_store.scroll_mode = false
+plugin:onSongbookTranspose(1)
+check(doc_store[opened[#opened]] == nil or doc_store[opened[#opened]].copt_view_mode == nil,
+    "scroll mode not forced when turned off")
+plugin:onSongbookTranspose(0)
+settings_store.scroll_mode = nil
 
 -- autoscroll: 3200 px song on an 800 px screen in scroll mode
 local doc = plugin.ui.document
@@ -210,6 +230,8 @@ check(scroll_menu.enabled_func() and scroll_menu.sub_item_table[2].text_func() =
 scroll_menu.sub_item_table[1].callback()
 check(not plugin:isAutoscrolling() and notes[#notes]:find("no length", 1, true), "no autoscroll without a length")
 scroll_menu.sub_item_table[2].callback()
+check(shown[#shown].ok_always_enabled and shown[#shown].left_value == 3 and shown[#shown].right_value == 0,
+    "the default length can be applied as it is")
 shown[#shown].callback(3, 0)
 check(settings_store.duration.test == 180 and scroll_menu.sub_item_table[2].text_func() == "Song length: 3:00",
     "song length set")

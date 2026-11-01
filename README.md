@@ -93,6 +93,7 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
   *Song length* set on the device. In scroll mode it moves a quarter screen at
   a time, keeping the line being played in the upper half; in page mode it
   turns pages. A manual page turn or scroll re-times it from there.
+  Songs open in continuous (scroll) mode (*Settings → Continuous scroll mode*).
   *Settings → Autoscroll when a song opens* starts it by itself. Gesture
   actions (Reader): *Songbook: start/stop autoscroll*, *autoscroll faster /
   slower* (±10 %, the new length is kept for the song).
