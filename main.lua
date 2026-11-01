@@ -95,6 +95,31 @@ end
 
 -- Lifecycle -------------------------------------------------------------------
 
+-- Rendered songs ("songbook/rendered/<stem>@<options>.html") are kept out of
+-- KOReader's reading history, so it only lists books.
+local function is_song_file(file)
+    return file and file:match("/songbook/rendered/[^/]+@[^/]+%.html$") ~= nil
+end
+
+--- Wrap ReadHistory once: ReaderUI adds every opened document with addItem()
+-- and bumps the first entry with updateLastBookTime() when it closes.
+local function hide_songs_from_history()
+    local ReadHistory = require("readhistory")
+    if ReadHistory.songbook_hidden then return end
+    ReadHistory.songbook_hidden = true
+    local addItem, updateLastBookTime = ReadHistory.addItem, ReadHistory.updateLastBookTime
+    function ReadHistory:addItem(file, ...)
+        if is_song_file(file) then return end
+        return addItem(self, file, ...)
+    end
+    function ReadHistory:updateLastBookTime(...)
+        local ReaderUI = package.loaded["apps/reader/readerui"]
+        local doc = ReaderUI and ReaderUI.instance and ReaderUI.instance.document
+        if doc and is_song_file(doc.file) then return end
+        return updateLastBookTime(self, ...)
+    end
+end
+
 function Songbook:init()
     self.data_dir = DataStorage:getDataDir() .. "/songbook"
     self.songs_dir = self.data_dir .. "/songs"
@@ -104,6 +129,7 @@ function Songbook:init()
 
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/songbook.lua")
     jam.owner = self
+    hide_songs_from_history()
     self:migrate()
     if self.settings:readSetting("servers") == nil then
         self:saveServers({ { key = Repo.server_key(DEFAULT_SERVER_URL), url = DEFAULT_SERVER_URL } })

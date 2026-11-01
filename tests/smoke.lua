@@ -100,7 +100,12 @@ stub("socket.http", { request = function(req)
     table.insert(req.sink, responses[req.url] or "{title: Downloaded}\n[Am]La")
     return 1, 200, {}, "HTTP/1.1 200 OK"
 end })
-stub("apps/reader/readerui", { showReader = function(_, path) table.insert(opened, path) end })
+local ReaderUI = { showReader = function(_, path) table.insert(opened, path) end }
+stub("apps/reader/readerui", ReaderUI)
+local ReadHistory = { hist = { { file = "/books/book.epub", time = 1 } } }
+function ReadHistory:addItem(file) table.insert(self.hist, 1, { file = file, time = 3 }) end
+function ReadHistory:updateLastBookTime() self.hist[1].time = 4 end
+stub("readhistory", ReadHistory)
 
 local passed, failed = 0, 0
 local function check(cond, name)
@@ -138,6 +143,15 @@ plugin:openSong("test")
 check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.w42%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
 local html = io.open(opened[1]):read("*a")
 check(html:find("Jede kůň", 1, true), "rendered lyrics")
+ReadHistory:addItem(opened[1])
+ReaderUI.instance = { document = { file = opened[1] } }
+ReadHistory:updateLastBookTime()
+check(#ReadHistory.hist == 1 and ReadHistory.hist[1].time == 1, "songs are kept out of the reading history")
+ReadHistory:addItem("/books/other.epub")
+ReaderUI.instance.document.file = "/books/other.epub"
+ReadHistory:updateLastBookTime()
+check(#ReadHistory.hist == 2 and ReadHistory.hist[1].time == 4, "books still go to the reading history")
+ReaderUI.instance = nil
 
 -- simulate reader with that file open, transpose up twice
 plugin.ui.document = { file = opened[1] }
