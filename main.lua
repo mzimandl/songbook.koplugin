@@ -2044,24 +2044,29 @@ function Songbook:addToMainMenu(menu_items)
         sorting_hint = "tools",
         sub_item_table = {
             {
-                text = _("Browse online"),
-                keep_menu_open = true,
-                callback = function() self:browseOnline() end,
-            },
-            {
-                text = _("My songs"),
-                keep_menu_open = true,
-                callback = function() self:onSongbookShowLocal() end,
-            },
-            {
-                text = _("Favorites"),
-                keep_menu_open = true,
-                callback = function() self:onSongbookShowFavorites() end,
-            },
-            {
-                text = _("Collections"),
-                keep_menu_open = true,
-                callback = function() self:onSongbookShowCollections() end,
+                text = _("Songs"),
+                sub_item_table = {
+                    {
+                        text = _("Browse online"),
+                        keep_menu_open = true,
+                        callback = function() self:browseOnline() end,
+                    },
+                    {
+                        text = _("My songs"),
+                        keep_menu_open = true,
+                        callback = function() self:onSongbookShowLocal() end,
+                    },
+                    {
+                        text = _("Favorites"),
+                        keep_menu_open = true,
+                        callback = function() self:onSongbookShowFavorites() end,
+                    },
+                    {
+                        text = _("Collections"),
+                        keep_menu_open = true,
+                        callback = function() self:onSongbookShowCollections() end,
+                    },
+                },
             },
             {
                 text_func = function()

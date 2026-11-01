@@ -134,8 +134,9 @@ plugin:savePlaylist({})
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 11, "menu built")
-check(items.songbook.sub_item_table[7].enabled_func() == false, "transpose disabled outside a song")
+check(items.songbook and #items.songbook.sub_item_table == 8
+    and #items.songbook.sub_item_table[1].sub_item_table == 4, "menu built")
+check(items.songbook.sub_item_table[4].enabled_func() == false, "transpose disabled outside a song")
 
 -- empty library
 plugin:onSongbookShowLocal()
@@ -166,17 +167,17 @@ ReaderUI.instance = nil
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(items.songbook.sub_item_table[7].enabled_func() == true, "transpose enabled in a song")
+check(items.songbook.sub_item_table[4].enabled_func() == true, "transpose enabled in a song")
 plugin:onSongbookTranspose(1)
 plugin:onSongbookTranspose(1)
 check(opened[#opened]:find("test@t%+2"), "transposed render path")
 check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "chords transposed to D")
-check(items.songbook.sub_item_table[7].text_func() == "Transpose (+2)", "transpose label")
+check(items.songbook.sub_item_table[4].text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 -- choose the key: test.cho is in C
-check(items.songbook.sub_item_table[7].sub_item_table[4].text == "Choose key…", "choose key item")
-items.songbook.sub_item_table[7].sub_item_table[4].callback()
+check(items.songbook.sub_item_table[4].sub_item_table[4].text == "Choose key…", "choose key item")
+items.songbook.sub_item_table[4].sub_item_table[4].callback()
 local key_dialog = shown[#shown]
 check(#key_dialog.buttons == 3 and key_dialog.buttons[1][1].text == "C" and key_dialog.buttons[1][1].font_bold,
     "key dialog marks the current key")
@@ -199,7 +200,7 @@ local function find_button(dialog, text)
 end
 
 -- Jam session ------------------------------------------------------------------
-local jam_menu = items.songbook.sub_item_table[10]
+local jam_menu = items.songbook.sub_item_table[7]
 local tmi = { updateItems = function() end }
 check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
 check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
@@ -242,7 +243,7 @@ code = jam_get("/songs/..~settings~x.cho")
 check(code == "404", "jam song file outside songs/")
 
 -- playlist: played songs and guests' requests
-local playlist_item = items.songbook.sub_item_table[5]
+local playlist_item = items.songbook.sub_item_table[2]
 local p = plugin:getPlaylist()
 check(#p.history == 1 and p.history[1].uid == "test" and #p.queue == 0, "played while sharing, transposing not repeated")
 check(playlist_item.text_func() == "Playlist", "playlist label")
@@ -302,7 +303,7 @@ check(#plugin:getPlaylist().queue == 0 and picker_item("second").mandatory == ""
 picker_list.item_table[2].callback()
 
 -- next song from the playlist
-local next_item = items.songbook.sub_item_table[6]
+local next_item = items.songbook.sub_item_table[3]
 check(next_item.enabled_func() == false and next_item.text_func() == "Next song", "no next song")
 plugin:addToPlaylist("second")
 plugin:addToPlaylist("test")
@@ -386,8 +387,8 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")
-check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[8].enabled_func()
-    and not items.songbook.sub_item_table[9].enabled_func(), "followed song can't be favorited or collected")
+check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[5].enabled_func()
+    and not items.songbook.sub_item_table[6].enabled_func(), "followed song can't be favorited or collected")
 -- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
@@ -525,7 +526,7 @@ index_name = "Test repo"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 
 -- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[11].sub_item_table[1]
+local repos_item = items.songbook.sub_item_table[8].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 local tm = { updateItems = function() end }
 tm.item_table = repos_item.sub_item_table_func()
@@ -557,7 +558,7 @@ check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
 
 -- "Download all songs" keeps the menu open and reports per repository
 local download_all
-for _, item in ipairs(items.songbook.sub_item_table[11].sub_item_table) do
+for _, item in ipairs(items.songbook.sub_item_table[8].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")
@@ -593,7 +594,7 @@ find_button(hold(list, "test"), "Remove from favorites").callback()
 check(not plugin:isFavorite("test") and list.item_table[2].text == "No songs", "favorite removed, list refreshed")
 
 -- reader menu item and gesture toggle the open song
-local fav_item = items.songbook.sub_item_table[8]
+local fav_item = items.songbook.sub_item_table[5]
 plugin:openSong("user-songs/test")
 check(fav_item.enabled_func() and not fav_item.checked_func(), "favorite item enabled in a song")
 fav_item.callback()
@@ -677,7 +678,7 @@ last_shown().ok_callback()
 check(#plugin:getCollections() == 1 and #picker.item_table == 2, "collection deleted")
 
 -- reader menu: add the open song to a collection
-local coll_item = items.songbook.sub_item_table[9]
+local coll_item = items.songbook.sub_item_table[6]
 plugin:openSong("user-songs/test")
 check(coll_item.enabled_func() and coll_item.keep_menu_open, "add to collection enabled in a song")
 coll_item.callback()
@@ -696,7 +697,7 @@ plugin:deleteSong("other-repo-dev/test")
 check(not plugin:isInCollection("Oheň", "other-repo-dev/test"), "deleting a song removes it from collections")
 
 -- lists open over the Songbook menu; opening a song closes them and the menu
-local main_items = items.songbook.sub_item_table
+local main_items = items.songbook.sub_item_table[1].sub_item_table
 check(main_items[1].keep_menu_open and main_items[2].keep_menu_open and main_items[3].keep_menu_open
     and main_items[4].keep_menu_open, "lists keep the songbook menu open")
 local UIManager = require("ui/uimanager")

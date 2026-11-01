@@ -53,6 +53,9 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 
 ## Using it
 
+The song lists (Browse online, My songs, Favorites, Collections) are in the
+**Songs** submenu of the Songbook menu.
+
 - **Browse online**: with more than one repository, pick one first, or
   *All repositories* for one combined list. Tap a song to download (if new or
   changed) and open it. Long-press to add to favorites or collections, or to force re-download.
@@ -66,7 +69,7 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
   *Songbook: favorites* (General) and *Songbook: add/remove favorite* (Reader).
 - **Collections**: your own named song lists (e.g. *Campfire*, *Christmas*).
   A song can be in several collections, from any repository. Create them in
-  **Collections → New collection…**, or from a song: long-press it in a list
+  **Songs → Collections → New collection…**, or from a song: long-press it in a list
   → *Collections…*, or **Add to collection…** in the Songbook menu while a song
   is open. Long-press a collection to rename or delete it (its songs stay on
   the device). Adding an online song downloads it. Gesture action:
