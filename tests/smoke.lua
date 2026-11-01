@@ -111,6 +111,12 @@ local registered
 local Songbook = require("main")
 local plugin = Songbook:new{ ui = { menu = { registerToMainMenu = function(_, p) registered = p end } } }
 check(registered == plugin, "registered to main menu")
+local defaults = plugin:getServers()
+check(#defaults == 1 and defaults[1].url == "https://github.com/mzimandl/songbook-library"
+    and defaults[1].key == "mzimandl-songbook-library", "default repository on first start")
+plugin:saveServers({})
+plugin:init()
+check(#plugin:getServers() == 0, "removed default repository is not added again")
 
 local items = {}
 plugin:addToMainMenu(items)

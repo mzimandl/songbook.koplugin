@@ -24,7 +24,9 @@ tests/                  off-device tests (LuaJIT, not used by the plugin)
    `git clone https://github.com/mzimandl/songbook.koplugin`.
    `tests/` can be deleted on the device.
 2. Restart KOReader → **Tools → Songbook**.
-3. **Settings → Song repositories → Add repository…** → enter the song server
+3. On the first start the sample repository
+   [Songbook Library](https://github.com/mzimandl/songbook-library) is already added.
+   **Settings → Song repositories → Add repository…** → enter another song server
    address. You can add several. For a GitHub repository the ordinary address
    is enough:
    - `https://github.com/<user>/<repo>`: default branch, `index.json` in the repo root
@@ -38,7 +40,8 @@ tests/                  off-device tests (LuaJIT, not used by the plugin)
 ## Song server (GitHub)
 
 The song server lives in its own repository:
-[mzimandl/koreader-songbook-repo](https://github.com/mzimandl/koreader-songbook-repo).
+[mzimandl/songbook-library](https://github.com/mzimandl/songbook-library)
+(added by default on the first start).
 Use it as a starting point for your own song collection. It has the songs, the
 `index.json` generator and the GitHub Action that keeps it up to date.
 

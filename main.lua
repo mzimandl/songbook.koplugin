@@ -45,6 +45,9 @@ local DEFAULTS = {
     jam_port = 8765,
 }
 
+-- Song repository added on the first start (until then `servers` is unset).
+local DEFAULT_SERVER_URL = "https://github.com/mzimandl/songbook-library"
+
 -- KOReader makes a new plugin instance for every reader/file manager, so the
 -- jam server and following live here and work through the newest instance
 -- (jam.owner).
@@ -102,6 +105,9 @@ function Songbook:init()
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/songbook.lua")
     jam.owner = self
     self:migrate()
+    if self.settings:readSetting("servers") == nil then
+        self:saveServers({ { key = Repo.server_key(DEFAULT_SERVER_URL), url = DEFAULT_SERVER_URL } })
+    end
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
