@@ -133,8 +133,7 @@ symlinked into `plugins/`.
 ## Notes and limitations
 
 - Downloaded songs are stored in `koreader/songbook/songs/<repository>/<id>.cho`.
-  The folder name is fixed when the repository is added. Songs downloaded by
-  older versions (straight into `songs/`) are moved there automatically.
+  The folder name is fixed when the repository is added.
 - Rendering goes to `koreader/songbook/rendered/<repository>~<id>@<options>.html`. Each option
   combination gets its own file name, so the reader cache never shows stale
   chords. Older variants of the same song are removed automatically.

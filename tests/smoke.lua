@@ -608,37 +608,6 @@ check(closed[coll_list] and closed[coll_menu] and menu_closed, "opening a song c
 UIManager.close = old_close
 plugin.ui.menu.onCloseReaderMenu = nil
 
--- Migration from the single server_url setting --------------------------------
-os.execute("rm -rf '" .. root .. "'")
-root = root .. "-migrate"
-os.execute("mkdir -p '" .. root .. "/settings' '" .. root .. "/songbook/songs' '" .. root .. "/songbook/rendered'")
-for _, name in ipairs({ "old", "mine" }) do
-    local fh = io.open(root .. "/songbook/songs/" .. name .. ".cho", "w")
-    fh:write("{title: " .. name .. "}\n")
-    fh:close()
-end
-io.open(root .. "/songbook/rendered/old@t+2.cz.w42.c1.r0.html", "w"):close()
-for k in pairs(settings_store) do settings_store[k] = nil end
-settings_store.server_url = "https://github.com/user/songs"
-settings_store.downloaded = { old = "abc" }
-settings_store.transpose = { old = 2, mine = 1 }
-local migrated = Songbook:new{ ui = { menu = { registerToMainMenu = function() end } } }
-servers = migrated:getServers()
-check(#servers == 1 and servers[1].key == "user-songs" and servers[1].url == "https://github.com/user/songs",
-    "migrated server_url to servers")
-check(settings_store.server_url == nil, "server_url removed")
-check(io.open(root .. "/songbook/songs/user-songs/old.cho") and not io.open(root .. "/songbook/songs/old.cho"),
-    "downloaded song moved to repository folder")
-check(io.open(root .. "/songbook/songs/mine.cho"), "local song stays")
-check(settings_store.downloaded["user-songs/old"] == "abc" and settings_store.downloaded.old == nil, "downloaded map migrated")
-check(settings_store.transpose["user-songs/old"] == 2 and settings_store.transpose.mine == 1, "transpose map migrated")
-check(not io.open(root .. "/songbook/rendered/old@t+2.cz.w42.c1.r0.html"), "old renders removed")
-
-settings_store.server_url = ""
-settings_store.servers = nil
-migrated = Songbook:new{ ui = { menu = { registerToMainMenu = function() end } } }
-check(#migrated:getServers() == 0 and settings_store.server_url == nil, "empty server_url migrates to no servers")
-
 os.execute("rm -rf '" .. root .. "'")
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

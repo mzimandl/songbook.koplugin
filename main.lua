@@ -101,7 +101,7 @@ function Songbook:init()
 
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/songbook.lua")
     jam.owner = self
-    self:migrateSingleServer()
+    self:migrate()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
@@ -195,34 +195,18 @@ function Songbook:sourceName(uid)
     return server and self:serverName(server) or key
 end
 
---- One-time upgrade from the single `server_url` setting to the `servers` list.
--- Songs downloaded from that server move from songs/ to songs/<key>/.
-function Songbook:migrateSingleServer()
-    local url = self.settings:readSetting("server_url")
-    if url == nil then return end
-    if self.settings:readSetting("servers") == nil then
-        local servers = {}
-        if url ~= "" then
-            local key = Repo.server_key(url)
-            servers[1] = { key = key, url = url }
-            util.makePath(self.songs_dir .. "/" .. key)
-            local downloaded, transpose = self:getMap("downloaded"), self:getMap("transpose")
-            local new_downloaded = {}
-            for id, version in pairs(downloaded) do
-                local uid = make_uid(key, id)
-                os.rename(self:songPath(id), self:songPath(uid))
-                new_downloaded[uid] = version
-                if transpose[id] then
-                    transpose[uid], transpose[id] = transpose[id], nil
-                end
-                self:removeStaleRenders(id, nil)
-            end
-            self.settings:saveSetting("downloaded", new_downloaded)
-            self.settings:saveSetting("transpose", transpose)
-        end
-        self.settings:saveSetting("servers", servers)
+--- Settings migrations: MIGRATIONS[n] upgrades the settings from schema n - 1
+-- to n. Installs without a `schema` setting are schema 0 (also fresh ones, so
+-- steps must cope with empty settings). Append steps; never change released ones.
+local MIGRATIONS = {}
+
+function Songbook:migrate()
+    local schema = self.settings:readSetting("schema") or 0
+    if schema >= #MIGRATIONS then return end
+    for n = schema + 1, #MIGRATIONS do
+        MIGRATIONS[n](self)
     end
-    self.settings:delSetting("server_url")
+    self.settings:saveSetting("schema", #MIGRATIONS)
     self.settings:flush()
 end
 

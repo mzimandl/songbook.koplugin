@@ -8,9 +8,16 @@
 - Song format: ChordPro (.cho), server = static index.json + songs/. The song server is a separate repo (mzimandl/koreader-songbook-repo); its tools/build_index.py writes index.json (optional "name" from songbook.json).
 
 ## Data model (main.lua)
-- Several song repositories: setting `servers` = list of `{ key, url, name, index_name }`. `key` is made once by Repo.server_key() and never changes (it is the folder name). The old single `server_url` is migrated in migrateSingleServer().
+- Several song repositories: setting `servers` = list of `{ key, url, name, index_name }`. `key` is made once by Repo.server_key() and never changes (it is the folder name).
 - A song is identified by its uid: `"<key>/<id>"` (stored in `songs/<key>/<id>.cho`) or `"<id>"` for .cho files copied straight into `songs/`. Rendered files are `rendered/<uid with / → ~>@<options>.html`.
 - Per-song settings maps are keyed by uid: `downloaded`, `transpose`, `favorites`; `collections` = list of `{ name, songs = { [uid] = true } }` (names unique). deleteSong() must clean all of them.
+
+## Migrations
+- Released installs keep their settings (`settings/songbook.lua`) and files (`songbook/songs/`, `rendered/`) across updates. Any change to their format (renamed/restructured setting, moved folder, new uid scheme) needs a migration step; adding a new setting with a DEFAULTS entry does not.
+- Steps live in `MIGRATIONS` in main.lua: `MIGRATIONS[n](self)` upgrades schema n - 1 to n. migrate() (from init(), before anything reads settings) runs the missing steps and saves setting `schema` = #MIGRATIONS.
+- Installs without `schema` are schema 0, fresh installs too, so every step must work on empty settings and missing files (check for nil, don't assume old data exists).
+- Only append: never change, reorder or remove a released step.
+- Each step gets a smoke.lua test: prepare old settings/files, create the plugin, check the result. Bump `version` in _meta.lua with it.
 
 ## Jam session
 - songbook/jam.lua is pure: request parsing, routing, JSON, the guest page (PAGE; `%s` placeholders, `%%` = literal %), playlist and follow helpers. main.lua owns the sockets and passes a `ctx` of callbacks (documented at the top of jam.lua).
