@@ -31,15 +31,21 @@ stub("ui/widget/buttondialog", class())
 stub("ui/widget/confirmbox", class())
 stub("ui/widget/inputdialog", class())
 stub("ui/widget/spinwidget", class())
+stub("ui/widget/doublespinwidget", class())
+local toasts = {}
+stub("ui/widget/notification", { notify = function(_, text) table.insert(toasts, text) end })
+stub("ui/event", { new = function(_, name, arg) return { name = name, arg = arg } end })
+local clock = 0
+stub("ui/time", { now = function() return clock end, to_s = function(t) return t end })
 stub("ui/widget/menu", class({ switchItemTable = function(self, t, items) self.item_table = items end }))
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
-local zmqs, standby, scheduled = {}, 0, nil
+local zmqs, standby, scheduled, scheduled_in = {}, 0, nil, nil
 stub("ui/uimanager", {
     show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
     insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
     removeZMQ = function(_, z) for i = #zmqs, 1, -1 do if zmqs[i] == z then table.remove(zmqs, i) end end end,
     preventStandby = function() standby = standby + 1 end,
-    scheduleIn = function(_, _s, f) scheduled = f end,
+    scheduleIn = function(_, secs, f) scheduled, scheduled_in = f, secs end,
     unschedule = function(_, f) if scheduled == f then scheduled = nil end end,
     allowStandby = function() standby = standby - 1 end,
     isWidgetShown = function() return true end,
@@ -134,7 +140,7 @@ plugin:savePlaylist({})
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 8
+check(items.songbook and #items.songbook.sub_item_table == 9
     and #items.songbook.sub_item_table[1].sub_item_table == 4, "menu built")
 check(items.songbook.sub_item_table[4].enabled_func() == false, "transpose disabled outside a song")
 
@@ -186,6 +192,51 @@ check(opened[#opened]:find("test@t%-3"), "chosen key A is -3: " .. opened[#opene
 key_dialog.buttons[1][1].callback()
 check(opened[#opened]:find("test@t%+0"), "chosen original key")
 
+-- autoscroll: 3200 px song on an 800 px screen in scroll mode
+local doc = plugin.ui.document
+local pos = 0
+doc.info = { doc_height = 3200 }
+doc.getCurrentPos = function() return pos end
+plugin.ui.view = { view_mode = "scroll" }
+plugin.ui.dimen = { h = 800 }
+plugin.ui.handleEvent = function(_, ev)
+    if ev.name == "GotoViewRel" then
+        pos = math.min(pos + ev.arg * 800, 2400)
+        plugin:onPosUpdate(pos)
+    end
+end
+local scroll_menu = items.songbook.sub_item_table[5]
+check(scroll_menu.enabled_func() and scroll_menu.sub_item_table[2].text_func() == "Song length", "no song length")
+scroll_menu.sub_item_table[1].callback()
+check(not plugin:isAutoscrolling() and notes[#notes]:find("no length", 1, true), "no autoscroll without a length")
+scroll_menu.sub_item_table[2].callback()
+shown[#shown].callback(3, 0)
+check(settings_store.duration.test == 180 and scroll_menu.sub_item_table[2].text_func() == "Song length: 3:00",
+    "song length set")
+clock = 100
+scroll_menu.sub_item_table[1].callback()
+check(plugin:isAutoscrolling() and standby == 1 and toasts[#toasts] == "Autoscroll: 3:00"
+    and scheduled_in == 22.5, "autoscroll waits until the played line is half way down: " .. tostring(scheduled_in))
+clock = 122.5
+scheduled()
+check(pos == 200 and scheduled_in == 11.25, "autoscroll moves a quarter screen: " .. pos .. " " .. tostring(scheduled_in))
+clock = 125
+pos = 1000
+plugin:onPosUpdate(pos)
+check(scheduled_in == 11.25, "manual move re-anchors the timing: " .. tostring(scheduled_in))
+plugin:onSongbookAutoscrollSpeed(1.1)
+check(settings_store.duration.test == 200 and toasts[#toasts] == "Autoscroll: 3:20", "slower autoscroll keeps the length")
+pos = 2400
+scheduled()
+check(not plugin:isAutoscrolling() and standby == 0 and scheduled == nil, "autoscroll stops at the end")
+settings_store.autoscroll = true
+pos = 0
+plugin:onReaderReady()
+check(plugin:isAutoscrolling() and standby == 1, "autoscroll starts when a song opens")
+plugin:onCloseDocument()
+check(not plugin:isAutoscrolling() and standby == 0 and scheduled == nil, "autoscroll stops with the song")
+settings_store.autoscroll = nil
+
 local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end
 local input_text
@@ -200,7 +251,7 @@ local function find_button(dialog, text)
 end
 
 -- Jam session ------------------------------------------------------------------
-local jam_menu = items.songbook.sub_item_table[7]
+local jam_menu = items.songbook.sub_item_table[8]
 local tmi = { updateItems = function() end }
 check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
 check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
@@ -387,8 +438,8 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")
-check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[5].enabled_func()
-    and not items.songbook.sub_item_table[6].enabled_func(), "followed song can't be favorited or collected")
+check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[6].enabled_func()
+    and not items.songbook.sub_item_table[7].enabled_func(), "followed song can't be favorited or collected")
 -- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
@@ -526,7 +577,7 @@ index_name = "Test repo"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 
 -- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[8].sub_item_table[1]
+local repos_item = items.songbook.sub_item_table[9].sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 local tm = { updateItems = function() end }
 tm.item_table = repos_item.sub_item_table_func()
@@ -558,7 +609,7 @@ check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
 
 -- "Download all songs" keeps the menu open and reports per repository
 local download_all
-for _, item in ipairs(items.songbook.sub_item_table[8].sub_item_table) do
+for _, item in ipairs(items.songbook.sub_item_table[9].sub_item_table) do
     if item.text == "Download all songs" then download_all = item end
 end
 check(download_all and download_all.keep_menu_open, "download all keeps menu open")
@@ -594,7 +645,7 @@ find_button(hold(list, "test"), "Remove from favorites").callback()
 check(not plugin:isFavorite("test") and list.item_table[2].text == "No songs", "favorite removed, list refreshed")
 
 -- reader menu item and gesture toggle the open song
-local fav_item = items.songbook.sub_item_table[5]
+local fav_item = items.songbook.sub_item_table[6]
 plugin:openSong("user-songs/test")
 check(fav_item.enabled_func() and not fav_item.checked_func(), "favorite item enabled in a song")
 fav_item.callback()
@@ -678,7 +729,7 @@ last_shown().ok_callback()
 check(#plugin:getCollections() == 1 and #picker.item_table == 2, "collection deleted")
 
 -- reader menu: add the open song to a collection
-local coll_item = items.songbook.sub_item_table[6]
+local coll_item = items.songbook.sub_item_table[7]
 plugin:openSong("user-songs/test")
 check(coll_item.enabled_func() and coll_item.keep_menu_open, "add to collection enabled in a song")
 coll_item.callback()

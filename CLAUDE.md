@@ -11,7 +11,7 @@
 - Several song repositories: setting `servers` = list of `{ key, url, name, index_name }`. `key` is made once by Repo.server_key() and never changes (it is the folder name). While `servers` is unset (first start), init() adds DEFAULT_SERVER_URL (songbook-library); an emptied list stays empty.
 - A song is identified by its uid: `"<key>/<id>"` (stored in `songs/<key>/<id>.cho`) or `"<id>"` for .cho files copied straight into `songs/`. Rendered files are `rendered/<uid with / → ~>@<options>.html`.
 - Rendered songs stay out of KOReader's reading history: init() wraps ReadHistory addItem()/updateLastBookTime() once (hide_songs_from_history(), matched by path, see is_song_file()), so "lastfile" stays the last book.
-- Per-song settings maps are keyed by uid: `downloaded`, `transpose`, `favorites`; `collections` = list of `{ name, songs = { [uid] = true } }` (names unique). deleteSong() must clean all of them.
+- Per-song settings maps are keyed by uid: `downloaded`, `transpose`, `favorites`, `duration` (seconds, overrides `{duration}` in the .cho); `collections` = list of `{ name, songs = { [uid] = true } }` (names unique). deleteSong() must clean all of them.
 
 ## Migrations
 - Released installs keep their settings (`settings/songbook.lua`) and files (`songbook/songs/`, `rendered/`) across updates. Any change to their format (renamed/restructured setting, moved folder, new uid scheme) needs a migration step; adding a new setting with a DEFAULTS entry does not.
@@ -32,6 +32,11 @@
 - Main menu: Playlist (onSongbookShowPlaylist) and Next song (nextInPlaylist(): first queued song on the device; gesture SongbookNextSong). Long-press dialogs get playlistButton() (Add/Remove, "Request to play" while following).
 - Picker (showPlaylistPicker(), "Add songs…" in the Playlist list): tap adds/removes, songs already in the playlist (queued or played) are hidden while `playlist_hide_added` is on.
 - Sharing serves this playlist; guests add via /queue/add (limited to Jam.MAX_QUEUE, local adds aren't). Following clears ours (startFollowing()); then the Playlist list shows the host's /playlist.json read-only and the picker lists the host's /index.json and requests by its ids. An open Playlist list refreshes through `jam.playlist_refresh`.
+
+## Autoscroll
+- Per reader instance (`self.autoscroll`), stopped in onCloseDocument()/onSuspend; setting `autoscroll` starts it in onReaderReady(). Length = songDuration(uid): map `duration`, else ChordPro.duration(meta.duration).
+- The length is spread over the document height (played line); when it is `trigger` screens below the view top, GotoViewRel(`step`) runs (AUTOSCROLL_MODES: quarter screen in scroll mode, whole page in page mode). PosUpdate/PageUpdate not caused by it (`moving`) re-anchor the start time to the view.
+- Speed gestures (SongbookAutoscrollSpeed) change the length by 10 % and save it for own songs.
 
 ## Gotchas
 - `_` is gettext: don't name a loop variable `_` when the loop body (or a closure in it) calls `_()`; use `_i` etc.

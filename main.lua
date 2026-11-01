@@ -16,19 +16,23 @@ local Transpose = require("songbook/transpose")
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
+local DoubleSpinWidget = require("ui/widget/doublespinwidget")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
 local NetworkMgr = require("ui/network/manager")
+local Notification = require("ui/widget/notification")
 local Screen = Device.screen
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
+local time = require("ui/time")
 local util = require("util")
 local _ = require("gettext")
 local T = require("ffi/util").template
@@ -45,6 +49,7 @@ local DEFAULTS = {
     repeat_chorus = false,
     jam_port = 8765,
     playlist_hide_added = true,
+    autoscroll = false,
 }
 
 -- Song repository added on the first start (until then `servers` is unset).
@@ -186,6 +191,15 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_next_song",
         { category = "none", event = "SongbookNextSong",
           title = _("Songbook: next song in the playlist"), general = true })
+    Dispatcher:registerAction("songbook_autoscroll",
+        { category = "none", event = "SongbookAutoscroll",
+          title = _("Songbook: start/stop autoscroll"), reader = true })
+    Dispatcher:registerAction("songbook_autoscroll_faster",
+        { category = "none", event = "SongbookAutoscrollSpeed", arg = 0.9,
+          title = _("Songbook: autoscroll faster"), reader = true })
+    Dispatcher:registerAction("songbook_autoscroll_slower",
+        { category = "none", event = "SongbookAutoscrollSpeed", arg = 1.1,
+          title = _("Songbook: autoscroll slower"), reader = true })
 end
 
 -- Songs and servers -------------------------------------------------------------
@@ -415,6 +429,185 @@ function Songbook:refreshCurrent()
     if uid then self:openSong(uid) end
 end
 
+-- Autoscroll ------------------------------------------------------------------
+--
+-- The song's length is spread evenly over the document height, which gives
+-- the line being played. Once it gets `trigger` screens below the top of the
+-- view, the view moves by `step` screens (a quarter screen in scroll mode,
+-- so the played lines stay visible; a whole page in page mode). A manual move
+-- re-anchors the timing at the new position.
+
+local AUTOSCROLL_MODES = {
+    scroll = { step = 0.25, trigger = 0.5 },
+    page = { step = 1, trigger = 0.9 },
+}
+local AUTOSCROLL_MIN_WAIT = 0.5   -- seconds
+
+local function now()
+    return time.to_s(time.now())
+end
+
+--- Length of song `uid` in seconds: set on the device, else {duration} in the file.
+function Songbook:songDuration(uid)
+    local own = self:getMap("duration")[uid]
+    if own then return own end
+    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+    return ChordPro.duration(meta.duration)
+end
+
+function Songbook:isAutoscrolling()
+    return self.autoscroll ~= nil
+end
+
+--- pos, document height, screen height and mode of the open song.
+function Songbook:autoscrollView()
+    local doc = self.ui.document
+    local mode = AUTOSCROLL_MODES[self.ui.view.view_mode] or AUTOSCROLL_MODES.scroll
+    return doc:getCurrentPos(), doc.info.doc_height, self.ui.dimen.h, mode
+end
+
+--- Set the start time so that the played line matches the view: the top of
+-- the song at its start, else where a step would have left it.
+function Songbook:anchorAutoscroll()
+    local a = self.autoscroll
+    local pos, height, h, mode = self:autoscrollView()
+    local played = pos > 0 and pos + (mode.trigger - mode.step) * h or 0
+    a.start = now() - math.max(played, 0) / height * a.duration
+end
+
+function Songbook:scheduleAutoscroll()
+    local a = self.autoscroll
+    local pos, height, h, mode = self:autoscrollView()
+    local due = (pos + mode.trigger * h) / height * a.duration
+    UIManager:unschedule(a.task)
+    UIManager:scheduleIn(math.max(due - (now() - a.start), AUTOSCROLL_MIN_WAIT), a.task)
+end
+
+function Songbook:autoscrollStep()
+    local a = self.autoscroll
+    if not a then return end
+    local doc = self.ui.document
+    local pos, height, h, mode = self:autoscrollView()
+    local at_end
+    if mode == AUTOSCROLL_MODES.page then
+        at_end = doc:getCurrentPage() >= doc:getPageCount()
+    else
+        at_end = pos + h >= height
+    end
+    if at_end then
+        self:stopAutoscroll()
+        return
+    end
+    local played = (now() - a.start) / a.duration * height
+    if played >= pos + mode.trigger * h then
+        a.moving = true
+        self.ui:handleEvent(Event:new("GotoViewRel", mode.step))
+        a.moving = false
+    end
+    self:scheduleAutoscroll()
+end
+
+function Songbook:startAutoscroll(quiet)
+    local uid = self:currentSongId()
+    if not uid or self.autoscroll then return end
+    local duration = self:songDuration(uid)
+    if not duration then
+        if not quiet then notify(_("This song has no length. Set it in Autoscroll → Song length.")) end
+        return
+    end
+    self.autoscroll = { uid = uid, duration = duration }
+    self.autoscroll.task = function() self:autoscrollStep() end
+    self:anchorAutoscroll()
+    UIManager:preventStandby()
+    self:scheduleAutoscroll()
+    Notification:notify(T(_("Autoscroll: %1"), ChordPro.format_duration(duration)))
+end
+
+function Songbook:stopAutoscroll()
+    local a = self.autoscroll
+    if not a then return end
+    self.autoscroll = nil
+    UIManager:unschedule(a.task)
+    UIManager:allowStandby()
+end
+
+function Songbook:onSongbookAutoscroll()
+    if self.autoscroll then
+        self:stopAutoscroll()
+        Notification:notify(_("Autoscroll stopped"))
+    else
+        self:startAutoscroll()
+    end
+    return true
+end
+
+--- Make the running autoscroll faster (factor < 1) or slower; the new length
+-- is kept for the song (not for songs received while following).
+function Songbook:onSongbookAutoscrollSpeed(factor)
+    local a = self.autoscroll
+    if not a then return true end
+    a.duration = math.max(30, math.floor(a.duration * factor / 5 + 0.5) * 5)
+    self:anchorAutoscroll()
+    self:scheduleAutoscroll()
+    if a.uid == self:currentOwnSongId() then self:setMapValue("duration", a.uid, a.duration) end
+    Notification:notify(T(_("Autoscroll: %1"), ChordPro.format_duration(a.duration)))
+    return true
+end
+
+function Songbook:showDurationDialog(touchmenu_instance)
+    local uid = self:currentOwnSongId()
+    if not uid then return end
+    local function save(secs)
+        self:setMapValue("duration", uid, secs)
+        local a = self.autoscroll
+        if a then
+            a.duration = self:songDuration(uid) or a.duration
+            self:anchorAutoscroll()
+            self:scheduleAutoscroll()
+        end
+        if touchmenu_instance then touchmenu_instance:updateItems() end
+    end
+    local duration = self:songDuration(uid) or 180
+    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+    local file_duration = ChordPro.duration(meta.duration)
+    UIManager:show(DoubleSpinWidget:new{
+        title_text = _("Song length"),
+        info_text = file_duration and T(_("In the song file: %1"), ChordPro.format_duration(file_duration))
+            or _("The song file has no {duration}."),
+        left_text = _("Minutes"),
+        left_min = 0, left_max = 59,
+        left_value = math.floor(duration / 60),
+        right_text = _("Seconds"),
+        right_min = 0, right_max = 59,
+        right_value = duration % 60,
+        extra_text = _("Use the song file"),
+        extra_callback = function() save(nil) end,
+        callback = function(min, sec)
+            local secs = min * 60 + sec
+            save(secs > 0 and secs or nil)
+        end,
+    })
+end
+
+function Songbook:onReaderReady()
+    if self:get("autoscroll") then self:startAutoscroll(true) end
+end
+
+-- A move the autoscroll didn't make (page turn, pan, re-rendering).
+function Songbook:onPosUpdate()
+    local a = self.autoscroll
+    if a and not a.moving then
+        self:anchorAutoscroll()
+        self:scheduleAutoscroll()
+    end
+end
+Songbook.onPageUpdate = Songbook.onPosUpdate
+
+function Songbook:onCloseDocument()
+    self:stopAutoscroll()
+end
+Songbook.onSuspend = Songbook.onCloseDocument
+
 -- Local songs -------------------------------------------------------------------
 
 local function song_file_id(name)
@@ -584,6 +777,7 @@ function Songbook:deleteSong(uid)
     self:setMapValue("downloaded", uid, nil)
     self:setMapValue("transpose", uid, nil)
     self:setMapValue("favorites", uid, nil)
+    self:setMapValue("duration", uid, nil)
     local collections = self:getCollections()
     for _, c in ipairs(collections) do c.songs[uid] = nil end
     self:saveCollections(collections)
@@ -2100,6 +2294,29 @@ function Songbook:addToMainMenu(menu_items)
                 },
             },
             {
+                text = _("Autoscroll"),
+                enabled_func = function() return self:currentSongId() ~= nil end,
+                checked_func = function() return self:isAutoscrolling() end,
+                sub_item_table = {
+                    {
+                        text = _("Scroll"),
+                        checked_func = function() return self:isAutoscrolling() end,
+                        callback = function() self:onSongbookAutoscroll() end,
+                    },
+                    {
+                        text_func = function()
+                            local uid = self:currentSongId()
+                            local secs = uid and self:songDuration(uid)
+                            return secs and T(_("Song length: %1"), ChordPro.format_duration(secs))
+                                or _("Song length")
+                        end,
+                        enabled_func = function() return self:currentOwnSongId() ~= nil end,
+                        keep_menu_open = true,
+                        callback = function(touchmenu_instance) self:showDurationDialog(touchmenu_instance) end,
+                    },
+                },
+            },
+            {
                 text = _("Favorite"),
                 enabled_func = function() return self:currentOwnSongId() ~= nil end,
                 checked_func = function()
@@ -2187,6 +2404,12 @@ function Songbook:addToMainMenu(menu_items)
                         help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
                         checked_func = function() return self:get("repeat_chorus") end,
                         callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
+                    },
+                    {
+                        text = _("Autoscroll when a song opens"),
+                        help_text = _("Scroll songs that have a length ({duration} in the song file, or set in Autoscroll → Song length) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
+                        checked_func = function() return self:get("autoscroll") end,
+                        callback = function() self:set("autoscroll", not self:get("autoscroll")) end,
                         separator = true,
                     },
                     {

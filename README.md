@@ -88,6 +88,14 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
   or *Choose key…* to pick the key directly (from `{key}`, else the first chord).
   It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*) under Taps & gestures → General.
+- **Autoscroll** (in the menu while a song is open): scrolls the song so that
+  it ends with the song's length, `{duration: 3:45}` in the song file or
+  *Song length* set on the device. In scroll mode it moves a quarter screen at
+  a time, keeping the line being played in the upper half; in page mode it
+  turns pages. A manual page turn or scroll re-times it from there.
+  *Settings → Autoscroll when a song opens* starts it by itself. Gesture
+  actions (Reader): *Songbook: start/stop autoscroll*, *autoscroll faster /
+  slower* (±10 %, the new length is kept for the song).
 - **Jam session**: *Share songs on the network* starts a small web server.
   Guests on the same Wi-Fi open the shown address (tap it for a QR code) in a
   phone browser and see the song you are playing; it changes when you open
@@ -127,7 +135,7 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
 
 | | |
 |---|---|
-| Meta | `{title}` `{t}` `{subtitle}` `{st}` `{artist}` `{key}` `{capo}` `{tempo}` `{meta: name value}` … |
+| Meta | `{title}` `{t}` `{subtitle}` `{st}` `{artist}` `{key}` `{capo}` `{tempo}` `{duration}` `{meta: name value}` … |
 | Sections | `{start_of_chorus}`/`{soc}`, verse, bridge, tab, grid; labels as `{soc: Ref.}` or `label="…"` |
 | Repeat | `{chorus}` |
 | Comments | `{c:}` `{ci:}` `{cb:}`, `#` lines ignored |

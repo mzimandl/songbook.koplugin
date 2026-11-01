@@ -17,6 +17,7 @@ opts = {
 }
 ]]
 
+local ChordPro = require("songbook/chordpro")
 local Transpose = require("songbook/transpose")
 
 local M = {}
@@ -279,6 +280,8 @@ function M.html(song, opts)
         info[#info + 1] = string.format("%s %+d", labels.transposed, opts.transpose)
     end
     if meta.tempo then info[#info + 1] = labels.tempo .. " " .. meta.tempo end
+    local duration = ChordPro.duration(meta.duration)
+    if duration then info[#info + 1] = ChordPro.format_duration(duration) end
     if #info > 0 then
         out[#out + 1] = '<p class="info">' .. escape(table.concat(info, " · ")) .. "</p>"
     end

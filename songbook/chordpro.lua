@@ -192,6 +192,26 @@ function M.parse_meta(text)
     return meta
 end
 
+--- Seconds of a {duration} value ("225", "3:45" or "1:02:03"), or nil.
+function M.duration(value)
+    if not value then return nil end
+    local secs = 0
+    local parts = 0
+    for part in (trim(value) .. ":"):gmatch("(.-):") do
+        if not part:match("^%d+$") then return nil end
+        secs = secs * 60 + tonumber(part)
+        parts = parts + 1
+    end
+    if parts == 0 or parts > 3 or secs == 0 then return nil end
+    return secs
+end
+
+--- "3:45" for 225 seconds.
+function M.format_duration(secs)
+    secs = math.floor(secs + 0.5)
+    return string.format("%d:%02d", math.floor(secs / 60), secs % 60)
+end
+
 --- First chord of the song that can be transposed (skips [*...] and N.C.), or nil.
 function M.first_chord(text)
     for chord in text:gmatch("%[([^%]]*)%]") do

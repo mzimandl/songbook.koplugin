@@ -109,6 +109,16 @@ eq(ChordPro.parse("{t:X}\r\n[C]a\r\n").meta.title, "X", "CRLF + short directive"
 eq(ChordPro.parse('{start_of_verse: label="Sloka 1"}\n[C]a\n{end_of_verse}').blocks[1].label,
     "Sloka 1", "label= syntax")
 eq(ChordPro.parse_meta("{title: A}\n{artist: B}\n[C]x").artist, "B", "parse_meta")
+eq(ChordPro.duration("3:45"), 225, "duration m:ss")
+eq(ChordPro.duration(" 225 "), 225, "duration in seconds")
+eq(ChordPro.duration("1:02:03"), 3723, "duration h:mm:ss")
+eq(ChordPro.duration("3 min"), nil, "duration not a time")
+eq(ChordPro.duration("0:00"), nil, "zero duration")
+eq(ChordPro.duration(nil), nil, "no duration")
+eq(ChordPro.format_duration(225), "3:45", "format_duration")
+eq(ChordPro.format_duration(65), "1:05", "format_duration pads seconds")
+eq(Render.html(ChordPro.parse("{title: A}\n{tempo: 90}\n{duration: 245}\n[C]x"), {}):find("Tempo 90 · 4:05", 1, true) ~= nil,
+    true, "length in the header")
 
 -- Layout ------------------------------------------------------------------
 local function rows(line, cols)
