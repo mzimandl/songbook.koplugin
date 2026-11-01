@@ -59,7 +59,8 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
 - **Browse online**: with more than one repository, pick one first, or
   *All repositories* for one combined list. Tap a song to download (if new or
   changed) and open it. Long-press to add to favorites or collections, or to force re-download.
-  The first list item is search.
+  The first list item is search, the second *Download all* (the songs of the
+  shown repositories that are new or changed, for offline use).
 - **My songs**: downloaded songs from all repositories, plus any `.cho` you copy
   to `koreader/songbook/songs/`. Each song shows which repository it came
   from. Long-press to add to favorites or collections, or to delete.
@@ -130,7 +131,8 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
   - Line width: wrap column. Lower it if lines are cut off on the right.
   - Show chords: lyrics-only mode.
   - Repeat chorus text: `{chorus}` prints the chorus instead of a label.
-  - Download all songs: from all repositories, for offline use.
+  - Continuous scroll mode: open songs in scroll mode.
+  - Autoscroll when a song opens.
 
 ## Supported ChordPro
 

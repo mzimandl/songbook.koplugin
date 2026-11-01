@@ -550,11 +550,11 @@ check(#servers == 1 and servers[1].url == "https://example.com/songs" and server
 check(requested[#requested] == "https://example.com/songs/index.json", "plain server url used as is")
 local menu = last_shown()
 check(menu.title == "Test repo", "single repository list titled by index name: " .. tostring(menu.title))
-check(menu.item_table[2].text == "Test", "online list item")
-check(menu.item_table[2].mandatory == "", "local song with same id is not 'saved': " .. tostring(menu.item_table[2].mandatory))
+check(menu.item_table[2].text == "Download all (1)" and menu.item_table[3].text == "Test", "online list item")
+check(menu.item_table[3].mandatory == "", "local song with same id is not 'saved': " .. tostring(menu.item_table[3].mandatory))
 
 -- tap downloads into songs/<key>/ and opens it
-menu.item_table[2].callback()
+menu.item_table[3].callback()
 check(io.open(root .. "/songbook/songs/example.com-songs/test.cho"), "downloaded into repository folder")
 check(plugin:getMap("downloaded")["example.com-songs/test"] == "1", "downloaded map keyed by uid")
 check(opened[#opened]:find("/rendered/example.com%-songs~test@t%+0"), "rendered name uses ~: " .. opened[#opened])
@@ -575,12 +575,18 @@ check(requested[#requested] == "https://raw.githubusercontent.com/user/songs/HEA
 plugin:browseOnline()
 last_shown().item_table[3].callback()
 menu = last_shown()
-check(menu.title == "All repositories" and #menu.item_table == 3, "all repositories list")
-check(menu.item_table[2].mandatory:find("Test repo", 1, true), "merged list shows repository name")
+check(menu.title == "All repositories" and #menu.item_table == 4, "all repositories list")
+check(menu.item_table[3].mandatory:find("Test repo", 1, true), "merged list shows repository name")
+-- "Download all" downloads the missing songs of the listed repositories
+check(menu.item_table[2].text == "Download all (1)" and menu.item_table[2].bold, "download all in the online list")
+menu.item_table[2].callback()
+check(notes[#notes] == "Downloaded: 1, up to date: 1, failed: 0", "download all summary: " .. notes[#notes])
+check(menu.item_table[2].text == "All songs downloaded" and not menu.item_table[2].callback,
+    "online list refreshed after download all")
 
 -- My songs lists songs from everywhere with their source
 local all = plugin:listLocal()
-check(#all == 2, "my songs: local + downloaded: " .. #all)
+check(#all == 3, "my songs: local + downloaded from both repositories: " .. #all)
 local sources = {}
 for _, song in ipairs(all) do sources[song.uid] = song.source or "local" end
 check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test repo", "my songs sources")
@@ -588,7 +594,7 @@ check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test 
 -- long repository names are shortened so the song title stays readable
 index_name = "Velmi dlouhý název repozitáře písní"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })   -- picks up the new name
-check(last_shown().item_table[2].mandatory == "saved", "single repository list shows no repository name")
+check(last_shown().item_table[3].mandatory == "saved", "single repository list shows no repository name")
 plugin:onSongbookShowLocal()
 local long_item
 for _, item in ipairs(last_shown().item_table) do
@@ -628,16 +634,6 @@ check(not io.open(root .. "/songbook/songs/example.com-songs/test.cho"), "its so
 check(plugin:getMap("downloaded")["example.com-songs/test"] == nil, "downloaded entry removed")
 check(plugin:getMap("transpose")["example.com-songs/test"] == nil, "transpose entry removed")
 check(io.open(root .. "/songbook/songs/test.cho"), "local song kept")
-
--- "Download all songs" keeps the menu open and reports per repository
-local download_all
-for _, item in ipairs(items.songbook.sub_item_table[9].sub_item_table) do
-    if item.text == "Download all songs" then download_all = item end
-end
-check(download_all and download_all.keep_menu_open, "download all keeps menu open")
-download_all.callback()
-check(notes[#notes]:find("Downloaded: 1", 1, true) and select(2, notes[#notes]:gsub("Downloaded:", "")) == 2,
-    "download all summary per repository: " .. notes[#notes])
 
 -- Favorites ---------------------------------------------------------------------
 local function item_for(list, uid)

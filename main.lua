@@ -1240,6 +1240,21 @@ function Songbook:showOnlineSongs(servers)
         return self:isUpToDate(song) and _("saved") or _("update")
     end
     local title = multi and _("All repositories") or self:serverName(servers[1])
+    local function download_all(refresh)
+        local n = 0
+        for _i, song in ipairs(songs) do
+            if not self:isUpToDate(song) then n = n + 1 end
+        end
+        if n == 0 then return { text = _("All songs downloaded"), select_enabled = false } end
+        return {
+            text = T(_("Download all (%1)"), n),
+            bold = true,
+            callback = function()
+                self:downloadSongs(songs)
+                refresh()
+            end,
+        }
+    end
     self:showList(title, function() return songs end, function(song)
         return {
             text = song.title,
@@ -1286,35 +1301,23 @@ function Songbook:showOnlineSongs(servers)
         }
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
-    end)
+    end, nil, download_all)
 end
 
-function Songbook:downloadAll()
-    self:withServers(function()
-        local lines = {}
-        for _i, server in ipairs(self:getServers()) do
-            local name = self:serverName(server)
-            local songs, err = self:fetchIndex(server)
-            if not songs then
-                table.insert(lines, name .. ": " .. err)
-            else
-                local done, failed, skipped = 0, 0, 0
-                for i, song in ipairs(songs) do
-                    if self:isUpToDate(song) then
-                        skipped = skipped + 1
-                    else
-                        local msg = busy(T(_("%1: downloading %2 / %3…"), name, i, #songs))
-                        local ok = self:download(song)
-                        UIManager:close(msg)
-                        if ok then done = done + 1 else failed = failed + 1 end
-                    end
-                end
-                table.insert(lines, T(_("%1\nDownloaded: %2, up to date: %3, failed: %4"),
-                    name, done, skipped, failed))
-            end
-        end
-        notify(table.concat(lines, "\n\n"))
-    end)
+--- Download the songs of `songs` that aren't up to date and report how it went.
+function Songbook:downloadSongs(songs)
+    local missing = {}
+    for _i, song in ipairs(songs) do
+        if not self:isUpToDate(song) then table.insert(missing, song) end
+    end
+    local done, failed = 0, 0
+    for i, song in ipairs(missing) do
+        local msg = busy(T(_("Downloading %1 / %2…"), i, #missing))
+        local ok = self:download(song)
+        UIManager:close(msg)
+        if ok then done = done + 1 else failed = failed + 1 end
+    end
+    notify(T(_("Downloaded: %1, up to date: %2, failed: %3"), done, #songs - #missing, failed))
 end
 
 -- Settings -------------------------------------------------------------------
@@ -2431,11 +2434,6 @@ function Songbook:addToMainMenu(menu_items)
                         checked_func = function() return self:get("autoscroll") end,
                         callback = function() self:set("autoscroll", not self:get("autoscroll")) end,
                         separator = true,
-                    },
-                    {
-                        text = _("Download all songs"),
-                        keep_menu_open = true,
-                        callback = function() self:downloadAll() end,
                     },
                     {
                         text = _("Songs folder"),
