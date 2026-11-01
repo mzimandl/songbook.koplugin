@@ -192,4 +192,11 @@ function M.parse_meta(text)
     return meta
 end
 
+--- First chord of the song that can be transposed (skips [*...] and N.C.), or nil.
+function M.first_chord(text)
+    for chord in text:gmatch("%[([^%]]*)%]") do
+        if chord:match("^[A-H]") then return chord end
+    end
+end
+
 return M

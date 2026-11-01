@@ -54,6 +54,18 @@ eq(Transpose.key_prefers_flats("C", 7, "en"), false, "C+7 = G major -> sharps")
 eq(Transpose.key_prefers_flats("Ami", 0, "cz"), nil, "Ami is neutral")
 eq(Transpose.key_prefers_flats("Dmi", 0, "cz"), true, "Dmi -> F major -> flats")
 eq(Transpose.key_prefers_flats("Emi", 0, "cz"), false, "Emi -> G major -> sharps")
+local kc = Transpose.key_choices("G", "cz")
+eq(#kc, 12, "12 key choices")
+eq(kc[1].name .. kc[1].shift, "C5", "G -> C is +5")
+eq(kc[2].name .. kc[2].shift, "Db6", "G -> Db is +6, flat key")
+eq(kc[3].name .. kc[3].shift, "D-5", "G -> D is -5")
+eq(kc[8].name .. kc[8].shift, "G0", "original key")
+eq(kc[11].name .. kc[11].shift, "B3", "cz B flat")
+eq(kc[12].name .. kc[12].shift, "H4", "cz H")
+eq(Transpose.key_choices("Ami", "cz")[1].name, "Cmi", "minor key choices")
+eq(Transpose.key_choices("N.C.", "cz"), nil, "no choices for unparseable key")
+eq(ChordPro.first_chord("{title: X}\n[*N.C.]ticho [x] [Ami]La [C]la"), "Ami", "first transposable chord")
+eq(ChordPro.first_chord("bez akordu"), nil, "no chord")
 
 -- Parser --------------------------------------------------------------------
 local song = ChordPro.parse([[

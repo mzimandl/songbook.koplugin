@@ -131,4 +131,19 @@ function M.key(key, n, opts)
     return M.chord(key, n, opts)
 end
 
+--- The 12 keys `key` can be transposed to, from C up: list of
+-- { name = transposed key, shift = semitones in -5..6 }. nil for an unparseable key.
+function M.key_choices(key, notation)
+    local semi = key and M.parse_note(key, notation)
+    if not semi then return nil end
+    local choices = {}
+    for target = 0, 11 do
+        local n = (target - semi) % 12
+        if n > 6 then n = n - 12 end
+        local flats = M.key_prefers_flats(key, n, notation)
+        choices[#choices + 1] = { name = M.key(key, n, { notation = notation, flats = flats }), shift = n }
+    end
+    return choices
+end
+
 return M

@@ -165,6 +165,16 @@ check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "c
 check(items.songbook.sub_item_table[5].text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
+-- choose the key: test.cho is in C
+check(items.songbook.sub_item_table[5].sub_item_table[4].text == "Choose key…", "choose key item")
+items.songbook.sub_item_table[5].sub_item_table[4].callback()
+local key_dialog = shown[#shown]
+check(#key_dialog.buttons == 3 and key_dialog.buttons[1][1].text == "C" and key_dialog.buttons[1][1].font_bold,
+    "key dialog marks the current key")
+key_dialog.buttons[3][2].callback()   -- A
+check(opened[#opened]:find("test@t%-3"), "chosen key A is -3: " .. opened[#opened])
+key_dialog.buttons[1][1].callback()
+check(opened[#opened]:find("test@t%+0"), "chosen original key")
 
 local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end

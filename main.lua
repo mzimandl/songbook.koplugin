@@ -11,6 +11,7 @@ local ChordPro = require("songbook/chordpro")
 local Jam = require("songbook/jam")
 local Render = require("songbook/render")
 local Repo = require("songbook/repo")
+local Transpose = require("songbook/transpose")
 
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
@@ -359,6 +360,37 @@ function Songbook:onSongbookTranspose(delta)
     self:setMapValue("transpose", uid, t ~= 0 and t or nil)
     self:openSong(uid)
     return true
+end
+
+--- Pick the key the current song is played in (from {key}, else its first chord).
+function Songbook:showKeyChoice()
+    local uid = self:currentSongId()
+    if not uid then return end
+    local text = read_file(self:songPath(uid)) or ""
+    local choices = Transpose.key_choices(ChordPro.parse_meta(text).key or ChordPro.first_chord(text),
+        self:get("notation"))
+    if not choices then
+        notify(_("The song's key is not known."))
+        return
+    end
+    local current = self:getMap("transpose")[uid] or 0
+    if current > 6 then current = current - 12 elseif current < -5 then current = current + 12 end
+    local dialog
+    local buttons, row = {}, {}
+    for _i, c in ipairs(choices) do
+        table.insert(row, {
+            text = c.name,
+            font_bold = c.shift == current,
+            callback = function()
+                UIManager:close(dialog)
+                self:setMapValue("transpose", uid, c.shift ~= 0 and c.shift or nil)
+                self:openSong(uid)
+            end,
+        })
+        if #row == 4 then table.insert(buttons, row); row = {} end
+    end
+    dialog = ButtonDialog:new{ title = _("Key"), buttons = buttons }
+    UIManager:show(dialog)
 end
 
 --- Re-render the currently open song after a settings change.
@@ -1849,6 +1881,7 @@ function Songbook:addToMainMenu(menu_items)
                     { text = _("Up a semitone"), callback = function() self:onSongbookTranspose(1) end },
                     { text = _("Down a semitone"), callback = function() self:onSongbookTranspose(-1) end },
                     { text = _("Original key"), callback = function() self:onSongbookTranspose(0) end },
+                    { text = _("Choose key…"), callback = function() self:showKeyChoice() end },
                 },
             },
             {

@@ -71,7 +71,8 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
   is open. Long-press a collection to rename or delete it (its songs stay on
   the device). Adding an online song downloads it. Gesture action:
   *Songbook: collections* (General).
-- **Transpose** (in the menu while a song is open): ±1 semitone / original key.
+- **Transpose** (in the menu while a song is open): ±1 semitone / original key,
+  or *Choose key…* to pick the key directly (from `{key}`, else the first chord).
   It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*) under Taps & gestures → General.
 - **Jam session**: *Share songs on the network* starts a small web server.
