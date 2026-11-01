@@ -50,6 +50,7 @@ local DEFAULTS = {
     jam_port = 8765,
     playlist_hide_added = true,
     autoscroll = false,
+    autoscroll_step = 8,   -- scroll mode moves 1/8 of the screen
     scroll_mode = true,
 }
 
@@ -446,14 +447,13 @@ end
 --
 -- The song's length is spread evenly over the document height, which gives
 -- the line being played. Once it gets `trigger` screens below the top of the
--- view, the view moves by `step` screens (a quarter screen in scroll mode,
--- so the played lines stay visible; a whole page in page mode). A manual move
--- re-anchors the timing at the new position.
+-- view, the view moves by `step` screens (1/`autoscroll_step` of the screen
+-- in scroll mode, keeping AUTOSCROLL_PLAYED screens of played lines visible;
+-- a whole page in page mode). A manual move re-anchors the timing at the new
+-- position.
 
-local AUTOSCROLL_MODES = {
-    scroll = { step = 0.25, trigger = 0.5 },
-    page = { step = 1, trigger = 0.9 },
-}
+local AUTOSCROLL_PAGE = { step = 1, trigger = 0.9, page = true }
+local AUTOSCROLL_PLAYED = 0.25
 local AUTOSCROLL_MIN_WAIT = 0.5   -- seconds
 
 local function now()
@@ -475,7 +475,11 @@ end
 --- pos, document height, screen height and mode of the open song.
 function Songbook:autoscrollView()
     local doc = self.ui.document
-    local mode = AUTOSCROLL_MODES[self.ui.view.view_mode] or AUTOSCROLL_MODES.scroll
+    local mode = AUTOSCROLL_PAGE
+    if self.ui.view.view_mode ~= "page" then
+        local step = 1 / self:get("autoscroll_step")
+        mode = { step = step, trigger = AUTOSCROLL_PLAYED + step }
+    end
     return doc:getCurrentPos(), doc.info.doc_height, self.ui.dimen.h, mode
 end
 
@@ -502,7 +506,7 @@ function Songbook:autoscrollStep()
     local doc = self.ui.document
     local pos, height, h, mode = self:autoscrollView()
     local at_end
-    if mode == AUTOSCROLL_MODES.page then
+    if mode.page then
         at_end = doc:getCurrentPage() >= doc:getPageCount()
     else
         at_end = pos + h >= height
@@ -604,7 +608,23 @@ function Songbook:showDurationDialog(touchmenu_instance)
 end
 
 function Songbook:onReaderReady()
+    if not self:currentSongId() then return end
+    self:showScrollProgress()
     if self:get("autoscroll") then self:startAutoscroll(true) end
+end
+
+--- The footer's progress is page / page count, which hardly moves for a song
+-- of a few pages in scroll mode: there it shows the scrolled part instead.
+function Songbook:showScrollProgress()
+    local footer = self.ui.view.footer
+    local page_progress = footer.getBookProgress
+    footer.getBookProgress = function(this)
+        local doc = self.ui.document
+        if self.ui.view.view_mode == "page" or doc:hasHiddenFlows() then return page_progress(this) end
+        local scrollable = doc.info.doc_height - self.ui.dimen.h
+        if scrollable <= 0 then return 1 end
+        return math.min(math.max(doc:getCurrentPos() / scrollable, 0), 1)
+    end
 end
 
 -- A move the autoscroll didn't make (page turn, pan, re-rendering).
@@ -2433,6 +2453,26 @@ function Songbook:addToMainMenu(menu_items)
                         help_text = _("Scroll songs that have a length ({duration} in the song file, or set in Autoscroll → Song length) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
                         checked_func = function() return self:get("autoscroll") end,
                         callback = function() self:set("autoscroll", not self:get("autoscroll")) end,
+                    },
+                    {
+                        text_func = function()
+                            return T(_("Autoscroll step: 1/%1 screen"), self:get("autoscroll_step"))
+                        end,
+                        keep_menu_open = true,
+                        callback = function(touchmenu_instance)
+                            UIManager:show(SpinWidget:new{
+                                title_text = _("Autoscroll step"),
+                                info_text = _("In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often."),
+                                value = self:get("autoscroll_step"),
+                                value_min = 2,
+                                value_max = 16,
+                                default_value = DEFAULTS.autoscroll_step,
+                                callback = function(spin)
+                                    self:set("autoscroll_step", spin.value)
+                                    if touchmenu_instance then touchmenu_instance:updateItems() end
+                                end,
+                            })
+                        end,
                         separator = true,
                     },
                     {

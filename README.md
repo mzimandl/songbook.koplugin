@@ -91,9 +91,9 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
   (*Songbook: transpose up/down*) under Taps & gestures → General.
 - **Autoscroll** (in the menu while a song is open): scrolls the song so that
   it ends with the song's length, `{duration: 3:45}` in the song file or
-  *Song length* set on the device. In scroll mode it moves a quarter screen at
-  a time, keeping the line being played in the upper half; in page mode it
-  turns pages. A manual page turn or scroll re-times it from there.
+  *Song length* set on the device. In scroll mode it moves an eighth of the
+  screen at a time (*Settings → Autoscroll step*), keeping the line being
+  played near the top; in page mode it turns pages. A manual page turn or scroll re-times it from there.
   Songs open in continuous (scroll) mode (*Settings → Continuous scroll mode*).
   *Settings → Autoscroll when a song opens* starts it by itself. Gesture
   actions (Reader): *Songbook: start/stop autoscroll*, *autoscroll faster /
@@ -132,7 +132,7 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
   - Show chords: lyrics-only mode.
   - Repeat chorus text: `{chorus}` prints the chorus instead of a label.
   - Continuous scroll mode: open songs in scroll mode.
-  - Autoscroll when a song opens.
+  - Autoscroll when a song opens; Autoscroll step (1/2 to 1/16 of the screen).
 
 ## Supported ChordPro
 

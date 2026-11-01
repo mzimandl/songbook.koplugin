@@ -217,7 +217,9 @@ local doc = plugin.ui.document
 local pos = 0
 doc.info = { doc_height = 3200 }
 doc.getCurrentPos = function() return pos end
-plugin.ui.view = { view_mode = "scroll" }
+doc.hasHiddenFlows = function() return false end
+plugin.ui.view = { view_mode = "scroll", footer = { getBookProgress = function() return 0.5 end } }
+settings_store.autoscroll_step = 4
 plugin.ui.dimen = { h = 800 }
 plugin.ui.handleEvent = function(_, ev)
     if ev.name == "GotoViewRel" then
@@ -258,6 +260,22 @@ check(plugin:isAutoscrolling() and standby == 1, "autoscroll starts when a song 
 plugin:onCloseDocument()
 check(not plugin:isAutoscrolling() and standby == 0 and scheduled == nil, "autoscroll stops with the song")
 settings_store.autoscroll = nil
+-- the footer shows the scrolled part in scroll mode, page progress in page mode
+local footer = plugin.ui.view.footer
+pos = 600
+check(footer:getBookProgress() == 0.25, "footer progress follows the scroll position")
+plugin.ui.view.view_mode = "page"
+check(footer:getBookProgress() == 0.5, "footer progress by pages in page mode")
+plugin.ui.view.view_mode = "scroll"
+-- the default step is an eighth of the screen, keeping a quarter screen of played lines
+settings_store.autoscroll_step = nil
+clock, pos = 300, 0
+plugin:startAutoscroll()
+check(scheduled_in == 18.75, "eighth-screen step waits for the played line at 3/8: " .. tostring(scheduled_in))
+clock = 318.75
+scheduled()
+check(pos == 100 and scheduled_in == 6.25, "autoscroll moves an eighth of the screen: " .. pos .. " " .. tostring(scheduled_in))
+plugin:stopAutoscroll()
 
 local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end

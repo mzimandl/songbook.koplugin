@@ -35,8 +35,9 @@
 
 ## Autoscroll
 - Per reader instance (`self.autoscroll`), stopped in onCloseDocument()/onSuspend; setting `autoscroll` starts it in onReaderReady(). Length = songDuration(uid): map `duration`, else ChordPro.duration(meta.duration).
-- The length is spread over the document height (played line); when it is `trigger` screens below the view top, GotoViewRel(`step`) runs (AUTOSCROLL_MODES: quarter screen in scroll mode, whole page in page mode). PosUpdate/PageUpdate not caused by it (`moving`) re-anchor the start time to the view.
+- The length is spread over the document height (played line); when it is `trigger` screens below the view top, GotoViewRel(`step`) runs (scroll mode: step = 1 / setting `autoscroll_step`, trigger = AUTOSCROLL_PLAYED + step; page mode: AUTOSCROLL_PAGE). PosUpdate/PageUpdate not caused by it (`moving`) re-anchor the start time to the view.
 - Setting `scroll_mode` (default on): openSong() writes `copt_view_mode = 1` into the rendered file's DocSettings unless it has one (ReaderConfig loads it before rendering), so a mode chosen in the reader stays.
+- KOReader's footer progress is page / page count; for songs in scroll mode onReaderReady() replaces the footer instance's getBookProgress() with the scrolled part (showScrollProgress()).
 - Speed gestures (SongbookAutoscrollSpeed) change the length by 10 % and save it for own songs.
 
 ## Gotchas
