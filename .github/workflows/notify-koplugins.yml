@@ -1,0 +1,23 @@
+# Asks koplugins to copy the new version into its ZenPM manifest right away
+# (its hourly schedule is only best effort). Needs secret KOPLUGINS_TOKEN:
+# a fine-grained token for mzimandl/koplugins with Contents: read and write.
+name: Notify koplugins
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [_meta.lua]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl --fail-with-body -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/mzimandl/koplugins/dispatches \
+            -d '{"event_type": "sync-versions"}'
+        env:
+          TOKEN: ${{ secrets.KOPLUGINS_TOKEN }}
