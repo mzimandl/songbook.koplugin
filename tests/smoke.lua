@@ -204,27 +204,31 @@ check(opened[#opened]:find("test@t%+0"), "reset transposition")
 -- the key dialog: test.cho is in C
 menu_item("transpose").callback()
 local key_dialog = shown[#shown]
-check(key_dialog.title == "Key: C (original key)" and #key_dialog.buttons == 4
+check(key_dialog.title == "Key: C (original key)" and #key_dialog.buttons == 5
     and key_dialog.buttons[1][3].text == "+1" and not key_dialog.buttons[1][2].enabled
     and key_dialog.buttons[2][1].text == "C" and key_dialog.buttons[2][1].font_bold,
     "key dialog marks the current key")
+check(key_dialog.buttons[5][2].text == "Apply" and not key_dialog.buttons[5][2].enabled, "Apply disabled until the key changes")
+local n_opened = #opened
 key_dialog.buttons[4][2].callback()   -- A
-check(opened[#opened]:find("test@t%-3"), "chosen key A is -3: " .. opened[#opened])
-plugin.ui.view = { footer = {} }
-plugin:onReaderReady()
 key_dialog = shown[#shown]
-check(key_dialog.title == "Key: A (-3)" and key_dialog.buttons[1][2].enabled, "key dialog shows again after a step")
+check(#opened == n_opened and key_dialog.title == "Key: A (-3)" and key_dialog.buttons[1][2].enabled
+    and key_dialog.buttons[4][2].font_bold, "a step only changes the dialog")
 key_dialog.buttons[1][3].callback()   -- +1
-check(opened[#opened]:find("test@t%-2"), "key dialog +1")
-plugin:onReaderReady()
+key_dialog = shown[#shown]
+check(#opened == n_opened and key_dialog.title == "Key: B (-2)", "dialog +1: " .. key_dialog.title)
+key_dialog.buttons[5][2].callback()   -- Apply
+check(#opened == n_opened + 1 and opened[#opened]:find("test@t%-2"), "Apply renders the chosen key")
+menu_item("transpose").callback()
+key_dialog = shown[#shown]
+check(key_dialog.title == "Key: B (-2)", "dialog opens with the saved key")
+key_dialog.buttons[1][2].callback()   -- Original key
+shown[#shown].buttons[5][1].callback()   -- Cancel
+check(#opened == n_opened + 1 and plugin:getMap("transpose").test == -2, "Cancel keeps the key")
+menu_item("transpose").callback()
 shown[#shown].buttons[1][2].callback()
+shown[#shown].buttons[5][2].callback()
 check(opened[#opened]:find("test@t%+0"), "key dialog original key")
-local n_shown = #shown
-plugin:openSong("test")
-plugin:onReaderReady()
-check(#shown == n_shown + 1 and shown[#shown].title == "Key: C (original key)", "dialog after the last step")
-plugin:onReaderReady()
-check(#shown == n_shown + 1, "key dialog not shown again once closed")
 plugin.ui.view = nil
 settings_store.show_chords = false
 check(menu_item("transpose").text_func() == "Transpose (chords hidden)", "transpose label without chords")

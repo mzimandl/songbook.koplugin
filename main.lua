@@ -408,66 +408,71 @@ function Songbook:preferScrollMode(path)
     end
 end
 
+--- Transposition wrapped to -11..11.
+local function wrap_shift(t)
+    if t > 11 then return t - 12 elseif t < -11 then return t + 12 end
+    return t
+end
+
 function Songbook:onSongbookTranspose(delta)
     local uid = self:currentSongId()
     if not uid then return end
     local t = 0
-    if delta ~= 0 then t = (self:getMap("transpose")[uid] or 0) + delta end
-    if t > 11 then t = t - 12 elseif t < -11 then t = t + 12 end
+    if delta ~= 0 then t = wrap_shift((self:getMap("transpose")[uid] or 0) + delta) end
     self:setMapValue("transpose", uid, t ~= 0 and t or nil)
     self:openSong(uid)
     return true
 end
 
--- uid of the song a step in the key dialog re-opens: the dialog shows again
--- when that song is ready (in the reader's new plugin instance).
-local reopen_key_dialog
-
 --- Transposition dialog of the current song: ±1 semitone, original key and
--- the keys to choose from (from {key}, else its first chord). It shows again
--- after every step, until closed.
+-- the keys to choose from (from {key}, else its first chord). The steps only
+-- change the key shown in the dialog; Apply re-renders the song.
 function Songbook:showKeyDialog()
     local uid = self:currentSongId()
     if not uid then return end
     local text = read_file(self:songPath(uid)) or ""
     local choices = Transpose.key_choices(ChordPro.parse_meta(text).key or ChordPro.first_chord(text),
         self:get("notation"))
-    local t = self:getMap("transpose")[uid] or 0
-    local current = t
-    if current > 6 then current = current - 12 elseif current < -5 then current = current + 12 end
+    local saved = self:getMap("transpose")[uid] or 0
     local dialog
-    local function step(fn)
-        return function()
-            UIManager:close(dialog)
-            reopen_key_dialog = uid
-            fn()
+    local function show(t)
+        local current = t
+        if current > 6 then current = current - 12 elseif current < -5 then current = current + 12 end
+        local function step(new_t)
+            return function()
+                UIManager:close(dialog)
+                show(wrap_shift(new_t))
+            end
         end
-    end
-    local buttons = {{
-        { text = "−1", callback = step(function() self:onSongbookTranspose(-1) end) },
-        { text = _("Original key"), enabled = t ~= 0, callback = step(function() self:onSongbookTranspose(0) end) },
-        { text = "+1", callback = step(function() self:onSongbookTranspose(1) end) },
-    }}
-    local key
-    local row = {}
-    for _i, c in ipairs(choices or {}) do
-        if c.shift == current then key = c.name end
-        table.insert(row, {
-            text = c.name,
-            font_bold = c.shift == current,
-            callback = step(function()
-                self:setMapValue("transpose", uid, c.shift ~= 0 and c.shift or nil)
+        local buttons = {{
+            { text = "−1", callback = step(t - 1) },
+            { text = _("Original key"), enabled = t ~= 0, callback = step(0) },
+            { text = "+1", callback = step(t + 1) },
+        }}
+        local key
+        local row = {}
+        for _i, c in ipairs(choices or {}) do
+            if c.shift == current then key = c.name end
+            table.insert(row, { text = c.name, font_bold = c.shift == current, callback = step(c.shift) })
+            if #row == 4 then table.insert(buttons, row); row = {} end
+        end
+        if #row > 0 then table.insert(buttons, row) end
+        table.insert(buttons, {
+            { text = _("Cancel"), callback = function() UIManager:close(dialog) end },
+            { text = _("Apply"), enabled = t ~= saved, callback = function()
+                UIManager:close(dialog)
+                self:setMapValue("transpose", uid, t ~= 0 and t or nil)
                 self:openSong(uid)
-            end),
+            end },
         })
-        if #row == 4 then table.insert(buttons, row); row = {} end
+        local shift = t ~= 0 and string.format("%+d", t) or _("original key")
+        dialog = ButtonDialog:new{
+            title = key and T(_("Key: %1 (%2)"), key, shift) or T(_("Transpose: %1"), shift),
+            buttons = buttons,
+        }
+        UIManager:show(dialog)
     end
-    local shift = t ~= 0 and string.format("%+d", t) or _("original key")
-    dialog = ButtonDialog:new{
-        title = key and T(_("Key: %1 (%2)"), key, shift) or T(_("Transpose: %1"), shift),
-        buttons = buttons,
-    }
-    UIManager:show(dialog)
+    show(saved)
     return true
 end
 
@@ -645,12 +650,9 @@ end
 
 function Songbook:onReaderReady()
     local uid = self:currentSongId()
-    local key_dialog = reopen_key_dialog
-    reopen_key_dialog = nil
     if not uid then return end
     self:showScrollProgress()
     if self:get("autoscroll") then self:startAutoscroll(true) end
-    if key_dialog == uid then self:showKeyDialog() end
 end
 
 --- The footer's progress is page / page count, which hardly moves for a song

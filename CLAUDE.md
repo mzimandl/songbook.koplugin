@@ -45,7 +45,7 @@
 - The Songbook menu is built when it opens (`sub_item_table_func` → mainMenu()): songMenu() first while a song is open (favorite/collections only for own songs), then libraryMenu() (Next song only while one is queued), Jam session, settingsMenu().
 - Full-screen lists use list_menu(); actions for the whole list go in its title bar ☰ menu (`actions` → show_actions()), not in rows. Rows above the songs are only Search (showList()) and the list's main action (Add songs…, New collection…, Add repository…).
 - Gesture "last song list": showList() with `opts.last` sets module-level `last_list` (kind, arg, query; page saved in closeList()); onSongbookLastList() reopens it through `restoring`.
-- Key dialog: a step sets `reopen_key_dialog` = uid and re-opens the song; onReaderReady() of the new instance shows the dialog again for that uid.
+- Key dialog: steps only re-show the dialog with the new key (nothing is rendered); Apply saves the transposition and re-opens the song.
 
 ## Gotchas
 - `_` is gettext: don't name a loop variable `_` when the loop body (or a closure in it) calls `_()`; use `_i` etc.

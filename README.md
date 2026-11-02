@@ -100,8 +100,8 @@ list* (General) opens the list you used last again, with its search and page.
   playlist* and *Songbook: next song in the playlist* (General).
 - **Transpose** (in the menu while a song is open): a dialog with −1 / +1,
   *Original key* and the keys to pick directly (from `{key}`, else the first
-  chord). It stays open while you try keys; tap outside it to close it. With
-  chords hidden it offers to show them.
+  chord). Pick the key step by step, then tap *Apply* to redraw the song
+  (*Cancel* keeps the old key). With chords hidden it offers to show them.
   The transposition is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*, *Songbook: transpose / choose key*) under Taps & gestures → Reader.
 - **Autoscroll** (in the menu while a song is open): *Start/Stop autoscroll*

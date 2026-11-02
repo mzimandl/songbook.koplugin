@@ -28,6 +28,7 @@ return {
     -- transposition
     ["Stopped following the jam session."] = "Sledování jam session ukončeno.",
     ["Original key"] = "Původní tónina",
+    ["Apply"] = "Použít",
     ["original key"] = "původní tónina",
     ["Key: %1 (%2)"] = "Tónina: %1 (%2)",
     ["Transpose: %1"] = "Transpozice: %1",
