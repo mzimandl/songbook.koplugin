@@ -777,6 +777,18 @@ check(song_action("favorite").text == "Remove from favorites" and plugin:isFavor
 plugin:onSongbookToggleFavorite()
 check(not plugin:isFavorite("user-songs/test"), "gesture toggles favorite off")
 check(song_action("playlist").text == "Add to playlist", "playlist action in a song")
+check(song_action("collections").text == "Add to collection…", "add to collection action in a song")
+local saved_playlist = settings_store.playlist
+plugin:savePlaylist({})
+check(song_action("next").text == "Next song" and song_action("next").enabled == false, "next song disabled with empty Up next")
+plugin:addToPlaylist("test")
+check(song_action("next").text == "Next song: Žluťoučký kůň" and song_action("next").enabled,
+    "next song in the song dialog: " .. song_action("next").text)
+local n_opened = #opened
+song_action("next").callback()
+check(#opened == n_opened + 1 and opened[#opened]:find("/test@"), "next song from the song dialog")
+settings_store.playlist = saved_playlist
+plugin:openSong("user-songs/test")
 
 -- online list: favoriting a song that isn't on the device downloads it first
 plugin:deleteSong("other-repo-dev/test")

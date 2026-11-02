@@ -2472,7 +2472,7 @@ end
 
 --- Actions for the song that is open (for show_actions(), each with an `id`):
 -- transposition, autoscroll, song length, favorite, collections, playlist and
--- next song. Songs received while following are not kept in favorites,
+-- next song in the playlist. Songs received while following are not kept in favorites,
 -- collections or the playlist.
 function Songbook:songActions()
     local uid = self:currentSongId()
@@ -2510,7 +2510,7 @@ function Songbook:songActions()
         })
         table.insert(actions, {
             id = "collections",
-            text = _("Collections…"),
+            text = _("Add to collection…"),
             callback = function() self:showSongCollections(song, function() end) end,
         })
         if not self:isFollowing() then
@@ -2518,14 +2518,14 @@ function Songbook:songActions()
             table.insert(actions, { id = "playlist", text = playlist.text, callback = playlist.callback })
         end
     end
+    -- always there, so the dialog keeps its layout; disabled with an empty Up next
     local next_song = self:nextInPlaylist()
-    if next_song and next_song.uid ~= uid then
-        table.insert(actions, {
-            id = "next",
-            text = T(_("Next song: %1"), next_song.title),
-            callback = function() self:openSong(next_song.uid) end,
-        })
-    end
+    table.insert(actions, {
+        id = "next",
+        text = next_song and T(_("Next song: %1"), next_song.title) or _("Next song"),
+        enabled = next_song ~= nil,
+        callback = function() self:openSong(next_song.uid) end,
+    })
     return actions
 end
 

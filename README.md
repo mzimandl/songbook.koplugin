@@ -61,8 +61,8 @@ come *Jam session* and *Settings*.
 
 While a song is open, the ☰ button in the bottom right corner (above the
 status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
-*Song length*, *Add to / Remove from favorites*, *Collections…*, *Add to
-playlist* and *Next song*. The gesture action *Songbook: song options*
+*Song length*, *Add to / Remove from favorites*, *Add to collection…*, *Add to
+playlist* and *Next song* (the first song of Up next; disabled while Up next is empty). The gesture action *Songbook: song options*
 (Reader) opens them too; *Settings → Display → Song button* hides the
 button. Taps in that corner beside the button still turn pages.
 
@@ -86,7 +86,7 @@ list* (General) opens the list you used last again, with its search and page.
 - **Collections**: your own named song lists (e.g. *Campfire*, *Christmas*).
   A song can be in several collections, from any repository. Create them in
   **Collections → New collection…**, or from a song: long-press it in a list
-  → *Collections…*, or *Collections…* in the song's options while a song
+  → *Collections…*, or *Add to collection…* in the song's options while a song
   is open. In a collection, *Add songs…* (☰ menu, or in an empty collection)
   lists your songs: tap to add or remove them. Long-press a song in a
   collection to remove it from that collection. Long-press a collection to rename or delete it (its songs stay on

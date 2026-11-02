@@ -90,6 +90,7 @@ return {
     ["New collection"] = "Nová kolekce",
     ["Collections: %1"] = "Kolekce: %1",
     ["Collections…"] = "Kolekce…",
+    ["Add to collection…"] = "Přidat do kolekce…",
     ["Collections"] = "Kolekce",
     ["Rename collection"] = "Přejmenovat kolekci",
     ["Delete collection \"%1\"?\nThe songs stay on the device."] = "Smazat kolekci „%1“?\nPísně zůstanou v zařízení.",
