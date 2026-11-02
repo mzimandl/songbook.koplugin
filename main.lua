@@ -9,6 +9,7 @@ locally to HTML (chords above lyrics) and open them in the reader.
 -- plugin folder to package.path while main.lua is being loaded.
 local ChordPro = require("songbook/chordpro")
 local Jam = require("songbook/jam")
+local L10n = require("songbook/l10n")
 local Render = require("songbook/render")
 local Repo = require("songbook/repo")
 local Transpose = require("songbook/transpose")
@@ -34,7 +35,13 @@ local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local time = require("ui/time")
 local util = require("util")
-local _ = require("gettext")
+local gettext = require("gettext")
+-- The plugin's strings are not in KOReader's catalog: its own catalog for
+-- KOReader's language first (songbook/l10n/<lang>.lua, required now, see above).
+local _ = L10n.wrap(gettext, L10n.catalog(gettext.current_lang, function(name)
+    local ok, catalog = pcall(require, "songbook/l10n/" .. name)
+    return ok and catalog or nil
+end))
 local T = require("ffi/util").template
 
 local Songbook = WidgetContainer:extend{

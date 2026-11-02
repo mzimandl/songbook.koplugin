@@ -344,5 +344,31 @@ eq(web:sub(1, 15), "<!DOCTYPE html>", "web render is html5")
 eq(web:find("viewport", 1, true) ~= nil, true, "web render has viewport")
 eq(Render.html(ChordPro.parse("{title: W}"), {}):find("prefers-color-scheme", 1, true), nil, "e-reader render has no web css")
 
+-- L10n: the plugin's own catalogs ------------------------------------------
+local L10n = require("songbook/l10n")
+eq(table.concat(L10n.languages("cs_CZ.UTF-8"), ","), "cs_CZ,cs", "catalog names for a locale")
+eq(#L10n.languages("C"), 0, "no catalog for C")
+local loaded = {}
+local cat = L10n.catalog("cs_CZ", function(name) loaded[#loaded + 1] = name; return name == "cs" and { Hi = "Ahoj" } or nil end)
+eq(table.concat(loaded, ",") .. " " .. cat.Hi, "cs_CZ,cs Ahoj", "catalog falls back to the base language")
+local tr = L10n.wrap(function(s) return "<" .. s .. ">" end, cat)
+eq(tr("Hi") .. tr("Bye"), "Ahoj<Bye>", "catalog first, then gettext")
+-- every _("…") of main.lua is translated, and the catalog has no stale entries
+local function msgids(path)
+    local src = io.open(path):read("*a")
+    local ids = {}
+    for lit in src:gmatch('_%(%s*(".-[^\\]")%s*%)') do ids[loadstring("return " .. lit)()] = true end
+    for lit in src:gmatch('_%(%s*%[%[(.-)%]%]%s*%)') do ids[lit] = true end
+    return ids
+end
+local used = msgids("main.lua")
+local cs = require("songbook/l10n/cs")
+local missing, stale = {}, {}
+for id in pairs(used) do if not cs[id] then missing[#missing + 1] = id end end
+for id in pairs(cs) do if not used[id] then stale[#stale + 1] = id end end
+table.sort(missing); table.sort(stale)
+eq(table.concat(missing, " | "), "", "all strings translated to Czech")
+eq(table.concat(stale, " | "), "", "no unused Czech translations")
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

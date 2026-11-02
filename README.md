@@ -13,6 +13,7 @@ songbook/chordpro.lua   ChordPro parser          (pure Lua, tested)
 songbook/transpose.lua  chord transposition      (pure Lua, tested)
 songbook/render.lua     song → HTML layout       (pure Lua, tested)
 songbook/repo.lua       index.json + HTTP fetch
+songbook/l10n.lua       translations (songbook/l10n/<lang>.lua, Czech: cs.lua)
 tests/                  off-device tests (LuaJIT, not used by the plugin)
 ```
 
@@ -158,6 +159,14 @@ list* (General) opens the list you used last again, with its search and page.
 | Comments | `{c:}` `{ci:}` `{cb:}`, `#` lines ignored |
 | Chords | `[Am]` inline, slash chords `[C/H]`, annotations `[*N.C.]` (never transposed) |
 | Czech | `Ami`, `Fis`, `Cis`, `Es`, `As`, `H`, `B` (= B♭). `Esus4`/`Asus2` are not read as flats. |
+
+## Translations
+
+KOReader's own catalog doesn't contain the plugin's strings, so the plugin
+keeps its translations in `songbook/l10n/<lang>.lua` (English text → translation)
+and picks the one for KOReader's language. Czech is included. To add a
+language, copy `cs.lua` to e.g. `de.lua` and translate the values.
+`tests/run.lua` checks that every string in `main.lua` has a Czech entry.
 
 ## Development
 

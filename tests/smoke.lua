@@ -15,7 +15,7 @@ local function class(t)
     return t
 end
 
-stub("gettext", function(s) return s end)
+stub("gettext", setmetatable({ current_lang = "C" }, { __call = function(_, s) return s end }))
 stub("ffi/util", { template = function(s, ...)
     local a = { ... }
     return (s:gsub("%%(%d)", function(i) return tostring(a[tonumber(i)]) end))
