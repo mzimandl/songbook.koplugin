@@ -150,13 +150,22 @@ plugin:savePlaylist({})
 
 local items = {}
 plugin:addToMainMenu(items)
-check(items.songbook and #items.songbook.sub_item_table == 9
-    and #items.songbook.sub_item_table[1].sub_item_table == 4, "menu built")
-check(items.songbook.sub_item_table[4].enabled_func() == false, "transpose disabled outside a song")
+-- The Songbook menu is built when it opens; items are found by `songbook_item`.
+local function menu_item(name)
+    for _i, item in ipairs(items.songbook.sub_item_table_func()) do
+        if item.songbook_item == name then return item end
+    end
+end
+check(#items.songbook.sub_item_table_func() == 7 and menu_item("my_songs") and menu_item("settings"), "menu built")
+check(menu_item("transpose") == nil and menu_item("next") == nil, "no song items outside a song")
 
--- empty library
+-- empty library: the list opens with a hint and a way to get songs
+local function last_shown() return shown[#shown] end
 plugin:onSongbookShowLocal()
 check(notes[#notes]:find("No songs yet", 1, true), "empty library message")
+check(last_shown().item_table[2].text == "No songs yet" and last_shown().item_table[3].text == "Browse online",
+    "empty library list")
+plugin:closeList()
 
 -- add a song and open it
 local f = io.open(root .. "/songbook/songs/test.cho", "w")
@@ -184,24 +193,44 @@ ReaderUI.instance = nil
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(items.songbook.sub_item_table[4].enabled_func() == true, "transpose enabled in a song")
+check(items.songbook.sub_item_table_func()[1].songbook_item == "transpose", "song items first in a song")
 plugin:onSongbookTranspose(1)
 plugin:onSongbookTranspose(1)
 check(opened[#opened]:find("test@t%+2"), "transposed render path")
 check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "chords transposed to D")
-check(items.songbook.sub_item_table[4].text_func() == "Transpose (+2)", "transpose label")
+check(menu_item("transpose").text_func() == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
--- choose the key: test.cho is in C
-check(items.songbook.sub_item_table[4].sub_item_table[4].text == "Choose key…", "choose key item")
-items.songbook.sub_item_table[4].sub_item_table[4].callback()
+-- the key dialog: test.cho is in C
+menu_item("transpose").callback()
 local key_dialog = shown[#shown]
-check(#key_dialog.buttons == 3 and key_dialog.buttons[1][1].text == "C" and key_dialog.buttons[1][1].font_bold,
+check(key_dialog.title == "Key: C (original key)" and #key_dialog.buttons == 4
+    and key_dialog.buttons[1][3].text == "+1" and not key_dialog.buttons[1][2].enabled
+    and key_dialog.buttons[2][1].text == "C" and key_dialog.buttons[2][1].font_bold,
     "key dialog marks the current key")
-key_dialog.buttons[3][2].callback()   -- A
+key_dialog.buttons[4][2].callback()   -- A
 check(opened[#opened]:find("test@t%-3"), "chosen key A is -3: " .. opened[#opened])
-key_dialog.buttons[1][1].callback()
-check(opened[#opened]:find("test@t%+0"), "chosen original key")
+plugin.ui.view = { footer = {} }
+plugin:onReaderReady()
+key_dialog = shown[#shown]
+check(key_dialog.title == "Key: A (-3)" and key_dialog.buttons[1][2].enabled, "key dialog shows again after a step")
+key_dialog.buttons[1][3].callback()   -- +1
+check(opened[#opened]:find("test@t%-2"), "key dialog +1")
+plugin:onReaderReady()
+shown[#shown].buttons[1][2].callback()
+check(opened[#opened]:find("test@t%+0"), "key dialog original key")
+local n_shown = #shown
+plugin:openSong("test")
+plugin:onReaderReady()
+check(#shown == n_shown + 1 and shown[#shown].title == "Key: C (original key)", "dialog after the last step")
+plugin:onReaderReady()
+check(#shown == n_shown + 1, "key dialog not shown again once closed")
+plugin.ui.view = nil
+settings_store.show_chords = false
+check(menu_item("transpose").text_func() == "Transpose (chords hidden)", "transpose label without chords")
+menu_item("transpose").callback()
+last_shown().ok_callback()
+check(settings_store.show_chords == true and opened[#opened]:find("%.c1%."), "transpose offers to show chords")
 doc_store[opened[#opened]].copt_view_mode = 0
 plugin:openSong("test")
 check(doc_store[opened[#opened]].copt_view_mode == 0, "chosen view mode is kept")
@@ -227,8 +256,9 @@ plugin.ui.handleEvent = function(_, ev)
         plugin:onPosUpdate(pos)
     end
 end
-local scroll_menu = items.songbook.sub_item_table[5]
-check(scroll_menu.enabled_func() and scroll_menu.sub_item_table[2].text_func() == "Song length", "no song length")
+local scroll_menu = menu_item("autoscroll")
+check(scroll_menu.sub_item_table[1].text_func() == "Start autoscroll"
+    and scroll_menu.sub_item_table[2].text_func() == "Song length", "no song length")
 scroll_menu.sub_item_table[1].callback()
 check(not plugin:isAutoscrolling() and notes[#notes]:find("no length", 1, true), "no autoscroll without a length")
 scroll_menu.sub_item_table[2].callback()
@@ -240,6 +270,7 @@ check(settings_store.duration.test == 180 and scroll_menu.sub_item_table[2].text
 clock = 100
 scroll_menu.sub_item_table[1].callback()
 check(plugin:isAutoscrolling() and standby == 1 and toasts[#toasts] == "Autoscroll: 3:00"
+    and scroll_menu.sub_item_table[1].text_func() == "Stop autoscroll"
     and scheduled_in == 22.5, "autoscroll waits until the played line is half way down: " .. tostring(scheduled_in))
 clock = 122.5
 scheduled()
@@ -281,7 +312,6 @@ local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end
 local input_text
 InputDialog.getInputText = function() return input_text end
-local function last_shown() return shown[#shown] end
 local function find_button(dialog, text)
     for _, row in ipairs(dialog.buttons) do
         for _, b in ipairs(row) do
@@ -291,7 +321,7 @@ local function find_button(dialog, text)
 end
 
 -- Jam session ------------------------------------------------------------------
-local jam_menu = items.songbook.sub_item_table[8]
+local jam_menu = menu_item("jam")
 local tmi = { updateItems = function() end }
 check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
 check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
@@ -334,7 +364,7 @@ code = jam_get("/songs/..~settings~x.cho")
 check(code == "404", "jam song file outside songs/")
 
 -- playlist: played songs and guests' requests
-local playlist_item = items.songbook.sub_item_table[2]
+local playlist_item = menu_item("playlist")
 local p = plugin:getPlaylist()
 check(#p.history == 1 and p.history[1].uid == "test" and #p.queue == 0, "played while sharing, transposing not repeated")
 check(playlist_item.text_func() == "Playlist", "playlist label")
@@ -352,18 +382,24 @@ check(body:find('"queue":[{"artist":"Lidová","at":', 1, true) and body:find('"b
 check(playlist_item.text_func() == "Playlist (1 up next)", "playlist label with requests")
 playlist_item.callback()
 local pl_menu = last_shown()
-check(pl_menu.title == "Playlist" and pl_menu.item_table[4].text == "Up next (1)", "playlist menu")
+check(pl_menu.title == "Playlist" and pl_menu.item_table[2].text == "Up next (1)", "playlist menu")
 local queued_item
 for _, item in ipairs(pl_menu.item_table) do if item.queued then queued_item = item end end
 check(queued_item and queued_item.text == "Žluťoučký kůň" and queued_item.mandatory == "Pavel", "queued song in playlist menu")
 queued_item.callback()
 p = plugin:getPlaylist()
 check(#p.queue == 0 and #p.history == 1, "playing a requested song removes it from the queue")
+local played_item
+for _, item in ipairs(pl_menu.item_table) do if item.played then played_item = item end end
+pl_menu.onMenuHold(pl_menu, played_item)
+check(find_button(last_shown(), "Add to Up next"), "played song can be queued again")
 input_text = "Jam test"
-pl_menu.item_table[2].callback()
+pl_menu:onLeftButtonTap()
+find_button(last_shown(), "Save played songs as collection…").callback()
 find_button(last_shown(), "Save").callback()
 check(plugin:isInCollection("Jam test", "test"), "played songs saved as collection")
-pl_menu.item_table[3].callback()
+pl_menu:onLeftButtonTap()
+find_button(last_shown(), "Clear playlist").callback()
 last_shown().ok_callback()
 p = plugin:getPlaylist()
 check(#p.history == 0 and #p.queue == 0, "playlist cleared")
@@ -380,25 +416,32 @@ local function picker_item(uid)
         if item.song and item.song.uid == uid then return item end
     end
 end
-check(picker_list.title == "Add to playlist" and picker_list.item_table[2].text == "Show songs already in the playlist"
-    and picker_list.item_table[3].text == "Druhá" and picker_list.item_table[4].text == "Žluťoučký kůň", "playlist picker")
+local function toggle_hidden(list)
+    (list or picker_list):onLeftButtonTap()
+    local dialog = last_shown()
+    local b = find_button(dialog, "Show songs already in the playlist")
+        or find_button(dialog, "Hide songs already in the playlist")
+    b.callback()
+    return b.text
+end
+check(picker_list.title == "Add to playlist" and picker_list.item_table[2].text == "Druhá"
+    and picker_list.item_table[3].text == "Žluťoučký kůň", "playlist picker")
 picker_item("second").callback()
 p = plugin:getPlaylist()
 check(#p.queue == 1 and p.queue[1].uid == "second" and picker_item("second") == nil, "picked song added and hidden")
-check(pl_menu.item_table[4].text == "Up next (1)", "open playlist refreshed after adding")
-picker_list.item_table[2].callback()
-check(plugin:get("playlist_hide_added") == false and picker_list.item_table[2].text == "Hide songs already in the playlist"
+check(pl_menu.item_table[2].text == "Up next (1)", "open playlist refreshed after adding")
+check(toggle_hidden() == "Show songs already in the playlist" and plugin:get("playlist_hide_added") == false
     and picker_item("second").mandatory == "up next", "songs in the playlist shown again")
 picker_item("second").callback()
 check(#plugin:getPlaylist().queue == 0 and picker_item("second").mandatory == "", "tapping a queued song removes it")
-picker_list.item_table[2].callback()
+toggle_hidden()
 
 -- next song from the playlist
-local next_item = items.songbook.sub_item_table[3]
-check(next_item.enabled_func() == false and next_item.text_func() == "Next song", "no next song")
+check(menu_item("next") == nil, "no next song")
 plugin:addToPlaylist("second")
 plugin:addToPlaylist("test")
-check(next_item.enabled_func() and next_item.text_func() == "Next song: Druhá", "next song label")
+local next_item = menu_item("next")
+check(next_item and next_item.enabled_func() and next_item.text_func() == "Next song: Druhá", "next song label")
 playlist_item.callback()
 pl_menu = last_shown()
 local test_item
@@ -478,8 +521,8 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")
-check(plugin:currentSongId() == "jam/repo_song-a" and not items.songbook.sub_item_table[6].enabled_func()
-    and not items.songbook.sub_item_table[7].enabled_func(), "followed song can't be favorited or collected")
+check(plugin:currentSongId() == "jam/repo_song-a" and menu_item("transpose") and not menu_item("favorite")
+    and not menu_item("collections"), "followed song can't be favorited or collected")
 -- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
@@ -509,22 +552,22 @@ decoded.IX = { songs = { { id = "repo_song-a", title = "Hostova", file = "songs/
                          { id = "c", title = "Cizí", file = "songs/c.cho" } } }
 remote_pl.item_table[1].callback()
 local rpick = last_shown()
-check(rpick.title == "Request from 10.0.0.2:8765" and #rpick.item_table == 3 and rpick.item_table[3].text == "Cizí",
+check(rpick.title == "Request from 10.0.0.2:8765" and #rpick.item_table == 2 and rpick.item_table[2].text == "Cizí",
     "followed songbook's songs not in its playlist")
 responses[host .. "queue/add?id=c"] = "R3"
 decoded.R3 = { ok = true }
-rpick.item_table[3].callback()
+rpick.item_table[2].callback()
 check(requested[#requested - 1] == host .. "queue/add?id=c" and requested[#requested] == host .. "playlist.json",
     "picked song requested from the followed songbook")
-rpick.item_table[2].callback()
-check(#rpick.item_table == 5 and rpick.item_table[4].text == "Druhá" and rpick.item_table[4].mandatory == "up next"
-    and rpick.item_table[5].mandatory == "played", "followed songbook's playlist marked")
+toggle_hidden(rpick)
+check(#rpick.item_table == 4 and rpick.item_table[3].text == "Druhá" and rpick.item_table[3].mandatory == "up next"
+    and rpick.item_table[4].mandatory == "played", "followed songbook's playlist marked")
 local n_requested = #requested
-rpick.item_table[4].callback()
+rpick.item_table[3].callback()
 check(notes[#notes] == "This song is already requested." and requested[n_requested + 1] ~= host .. "queue/add?id=repo_b",
     "queued song not requested again")
-rpick.item_table[2].callback()
-check(next_item.enabled_func() == false, "no next song while following")
+toggle_hidden(rpick)
+check(menu_item("next") == nil, "no next song while following")
 local switched = 0
 remote_pl.switchItemTable = function(self, t, items) switched = switched + 1; self.item_table = items end
 scheduled()
@@ -568,11 +611,12 @@ check(#servers == 1 and servers[1].url == "https://example.com/songs" and server
 check(requested[#requested] == "https://example.com/songs/index.json", "plain server url used as is")
 local menu = last_shown()
 check(menu.title == "Test repo", "single repository list titled by index name: " .. tostring(menu.title))
-check(menu.item_table[2].text == "Download all (1)" and menu.item_table[3].text == "Test", "online list item")
-check(menu.item_table[3].mandatory == "", "local song with same id is not 'saved': " .. tostring(menu.item_table[3].mandatory))
+check(menu.item_table[2].text == "Test", "online list item")
+check(menu.item_table[2].mandatory == "", "local song with same id is not 'saved': " .. tostring(menu.item_table[2].mandatory))
 
 -- tap downloads into songs/<key>/ and opens it
-menu.item_table[3].callback()
+menu.page = 1
+menu.item_table[2].callback()
 check(io.open(root .. "/songbook/songs/example.com-songs/test.cho"), "downloaded into repository folder")
 check(plugin:getMap("downloaded")["example.com-songs/test"] == "1", "downloaded map keyed by uid")
 check(opened[#opened]:find("/rendered/example.com%-songs~test@t%+0"), "rendered name uses ~: " .. opened[#opened])
@@ -581,26 +625,30 @@ check(plugin:currentSongId() == "example.com-songs/test", "currentSongId returns
 plugin:onSongbookTranspose(1)
 check(plugin:getMap("transpose")["example.com-songs/test"] == 1, "transpose stored per uid")
 check(plugin:getMap("transpose")["test"] == nil, "local song with same id unaffected")
+-- the gesture "last song list" opens that list again
+plugin:onSongbookLastList()
+check(last_shown().title == "Test repo" and last_shown() ~= menu, "last song list opened again")
+plugin:closeList()
 
 -- second repository: browsing shows a picker, github url fetched from raw
 plugin:addServer("https://github.com/user/songs")
 plugin:browseOnline()
 local picker = last_shown()
-check(#picker.item_table == 3 and picker.item_table[3].text == "All repositories", "repository picker")
-picker.item_table[2].callback()
+check(#picker.item_table == 3 and picker.item_table[1].text == "All repositories", "repository picker")
+picker.item_table[3].callback()
 check(requested[#requested] == "https://raw.githubusercontent.com/user/songs/HEAD/index.json",
     "github url -> raw: " .. tostring(requested[#requested]))
 plugin:browseOnline()
-last_shown().item_table[3].callback()
+last_shown().item_table[1].callback()
 menu = last_shown()
-check(menu.title == "All repositories" and #menu.item_table == 4, "all repositories list")
-check(menu.item_table[3].mandatory:find("Test repo", 1, true), "merged list shows repository name")
--- "Download all" downloads the missing songs of the listed repositories
-check(menu.item_table[2].text == "Download all (1)" and menu.item_table[2].bold, "download all in the online list")
-menu.item_table[2].callback()
+check(menu.title == "All repositories" and #menu.item_table == 3, "all repositories list")
+check(menu.item_table[2].mandatory:find("Test repo", 1, true), "merged list shows repository name")
+-- "Download all" (title bar menu) downloads the missing songs of the listed repositories
+menu:onLeftButtonTap()
+find_button(last_shown(), "Download all (1)").callback()
 check(notes[#notes] == "Downloaded: 1, up to date: 1, failed: 0", "download all summary: " .. notes[#notes])
-check(menu.item_table[2].text == "All songs downloaded" and not menu.item_table[2].callback,
-    "online list refreshed after download all")
+menu:onLeftButtonTap()
+check(find_button(last_shown(), "All songs downloaded").enabled == false, "nothing left to download")
 
 -- My songs lists songs from everywhere with their source
 local all = plugin:listLocal()
@@ -612,7 +660,7 @@ check(sources["test"] == "local" and sources["example.com-songs/test"] == "Test 
 -- long repository names are shortened so the song title stays readable
 index_name = "Velmi dlouhý název repozitáře písní"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })   -- picks up the new name
-check(last_shown().item_table[3].mandatory == "saved", "single repository list shows no repository name")
+check(last_shown().item_table[2].mandatory == "saved", "single repository list shows no repository name")
 plugin:onSongbookShowLocal()
 local long_item
 for _, item in ipairs(last_shown().item_table) do
@@ -622,29 +670,30 @@ check(long_item and long_item.mandatory == "Velmi dlouh…", "long repository na
 index_name = "Test repo"
 plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 
--- settings submenu: add, rename, remove
-local repos_item = items.songbook.sub_item_table[9].sub_item_table[1]
+-- repository list (Settings, or the title bar menu of online lists): add, rename, remove
+local repos_item = menu_item("settings").sub_item_table[1]
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
-local tm = { updateItems = function() end }
-tm.item_table = repos_item.sub_item_table_func()
-check(#tm.item_table == 3 and tm.item_table[3].text == "Add repository…", "repositories submenu")
+repos_item.callback()
+local tm = last_shown()
+check(tm.title == "Song repositories" and #tm.item_table == 3 and tm.item_table[3].text == "Add repository…",
+    "repository list")
 input_text = "https://github.com/other/repo/tree/dev"
-tm.item_table[3].callback(tm)
+tm.item_table[3].callback()
 last_shown().buttons[1][2].callback()
-check(#tm.item_table == 4 and tm.item_table[3].text_func() == "other/repo (dev)", "submenu refreshed after add")
+check(#tm.item_table == 4 and tm.item_table[3].text == "other/repo (dev)", "list refreshed after add")
 
-tm.item_table[1].callback(tm)
+tm.item_table[1].callback()
 input_text = "Moje písně"
 find_button(last_shown(), "Rename").callback()
 last_shown().buttons[1][2].callback()
-check(tm.item_table[1].text_func() == "Moje písně", "renamed repository")
-tm.item_table[1].callback(tm)
+check(tm.item_table[1].text == "Moje písně", "renamed repository")
+tm.item_table[1].callback()
 input_text = ""
 find_button(last_shown(), "Rename").callback()
 last_shown().buttons[1][2].callback()
-check(tm.item_table[1].text_func() == "Test repo", "empty name falls back to index name")
+check(tm.item_table[1].text == "Test repo", "empty name falls back to index name")
 
-tm.item_table[1].callback(tm)
+tm.item_table[1].callback()
 find_button(last_shown(), "Remove").callback()
 find_button(last_shown(), "Remove and delete its songs").callback()
 check(#plugin:getServers() == 2 and #tm.item_table == 3, "repository removed")
@@ -678,12 +727,12 @@ plugin:onSongbookShowFavorites()
 list = last_shown()
 check(list.title == "Favorites" and #list.item_table == 2 and item_for(list, "test"), "favorites list")
 find_button(hold(list, "test"), "Remove from favorites").callback()
-check(not plugin:isFavorite("test") and list.item_table[2].text == "No songs", "favorite removed, list refreshed")
+check(not plugin:isFavorite("test") and list.item_table[2].text == "No favorites yet", "favorite removed, list refreshed")
 
 -- reader menu item and gesture toggle the open song
-local fav_item = items.songbook.sub_item_table[6]
 plugin:openSong("user-songs/test")
-check(fav_item.enabled_func() and not fav_item.checked_func(), "favorite item enabled in a song")
+local fav_item = menu_item("favorite")
+check(fav_item and not fav_item.checked_func(), "favorite item in a song")
 fav_item.callback()
 check(fav_item.checked_func() and plugin:isFavorite("user-songs/test"), "favorite from reader menu")
 plugin:onSongbookToggleFavorite()
@@ -744,7 +793,20 @@ picker.item_table[1].callback()
 list = last_shown()
 check(list.title == "Táborák" and #list.item_table == 2 and item_for(list, "test"), "collection song list")
 plugin:showCollection("Vánoce")
-check(notes[#notes]:find("This collection is empty", 1, true), "empty collection message")
+local empty_list = last_shown()
+check(notes[#notes]:find("Long-press a song", 1, true) and empty_list.item_table[2].text == "This collection is empty",
+    "empty collection message")
+-- "Add songs…" picks songs into the collection, and the collection list shows them
+empty_list.item_table[3].callback()
+local coll_picker = last_shown()
+check(coll_picker.title == 'Add to "Vánoce"', "collection picker")
+item_for(coll_picker, "test").callback()
+check(plugin:isInCollection("Vánoce", "test") and item_for(coll_picker, "test").mandatory:find("✓", 1, true),
+    "song picked into the collection")
+coll_picker:onClose()
+check(item_for(empty_list, "test"), "collection list refreshed after picking")
+find_button(hold(empty_list, "test"), 'Remove from "Vánoce"').callback()
+check(not plugin:isInCollection("Vánoce", "test") and not item_for(empty_list, "test"), "song removed from this collection")
 
 -- rename and delete
 plugin:onSongbookShowCollections()
@@ -765,9 +827,9 @@ last_shown().ok_callback()
 check(#plugin:getCollections() == 1 and #picker.item_table == 2, "collection deleted")
 
 -- reader menu: add the open song to a collection
-local coll_item = items.songbook.sub_item_table[7]
 plugin:openSong("user-songs/test")
-check(coll_item.enabled_func() and coll_item.keep_menu_open, "add to collection enabled in a song")
+local coll_item = menu_item("collections")
+check(coll_item and coll_item.keep_menu_open, "add to collection in a song")
 coll_item.callback()
 check(last_shown().title == "Collections: Downloaded", "collections dialog for open song: " .. tostring(last_shown().title))
 find_button(last_shown(), "Oheň").callback()
@@ -784,9 +846,9 @@ plugin:deleteSong("other-repo-dev/test")
 check(not plugin:isInCollection("Oheň", "other-repo-dev/test"), "deleting a song removes it from collections")
 
 -- lists open over the Songbook menu; opening a song closes them and the menu
-local main_items = items.songbook.sub_item_table[1].sub_item_table
-check(main_items[1].keep_menu_open and main_items[2].keep_menu_open and main_items[3].keep_menu_open
-    and main_items[4].keep_menu_open, "lists keep the songbook menu open")
+check(menu_item("my_songs").keep_menu_open and menu_item("favorites").keep_menu_open
+    and menu_item("collections_list").keep_menu_open and menu_item("online").keep_menu_open
+    and menu_item("playlist").keep_menu_open, "lists keep the songbook menu open")
 local UIManager = require("ui/uimanager")
 local closed, menu_closed = {}, false
 local old_close = UIManager.close

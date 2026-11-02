@@ -2,7 +2,7 @@
 - Repo root is the plugin folder (songbook.koplugin); pure-Lua modules in songbook/ must not require KOReader modules (testable off-device).
 - Only main.lua and Repo.fetch() touch KOReader APIs. Verify API names against koreader/koreader source before using them.
 - LuaJIT 2.1 / Lua 5.1: no utf8 library, use Render.width() / Render.truncate() for character counts.
-- Tests: `luajit tests/run.lua` and `luajit tests/smoke.lua` must pass before finishing any change (`lua5.1` works too when luajit isn't installed). smoke.lua stubs KOReader modules and addresses menu items by index (`items.songbook.sub_item_table[n]`), so update it when the menu changes.
+- Tests: `luajit tests/run.lua` and `luajit tests/smoke.lua` must pass before finishing any change (`lua5.1` works too when luajit isn't installed). smoke.lua stubs KOReader modules and finds Songbook menu items with menu_item(name) by their `songbook_item` field, so give new top-level items one.
 - Czech notation: H = B natural, B = B flat. Chords are never transposed when marked [*...].
 - Distributed through ZenPM from mzimandl/koplugins (manifest.json, installs the master branch zip). ZenPM offers an update only when `version` in _meta.lua grows: bump it for every change that should reach devices; a workflow in koplugins copies it into the manifest.
 - Song format: ChordPro (.cho), server = static index.json + songs/. The song server is a separate repo (mzimandl/songbook-library); its tools/build_index.py writes index.json (optional "name" from songbook.json).
@@ -40,10 +40,16 @@
 - KOReader's footer progress is page / page count; for songs in scroll mode onReaderReady() replaces the footer instance's getBookProgress() with the scrolled part (showScrollProgress()).
 - Speed gestures (SongbookAutoscrollSpeed) change the length by 10 % and save it for own songs.
 
+## Menu and lists
+- The Songbook menu is built when it opens (`sub_item_table_func` → mainMenu()): songMenu() first while a song is open (favorite/collections only for own songs), then libraryMenu() (Next song only while one is queued), Jam session, settingsMenu().
+- Full-screen lists use list_menu(); actions for the whole list go in its title bar ☰ menu (`actions` → show_actions()), not in rows. Rows above the songs are only Search (showList()) and the list's main action (Add songs…, New collection…, Add repository…).
+- Gesture "last song list": showList() with `opts.last` sets module-level `last_list` (kind, arg, query; page saved in closeList()); onSongbookLastList() reopens it through `restoring`.
+- Key dialog: a step sets `reopen_key_dialog` = uid and re-opens the song; onReaderReady() of the new instance shows the dialog again for that uid.
+
 ## Gotchas
 - `_` is gettext: don't name a loop variable `_` when the loop body (or a closure in it) calls `_()`; use `_i` etc.
 - KOReader's Menu gives `mandatory` (right-hand text) all the width it needs and truncates the title, so keep `mandatory` short (see details() in main.lua).
 - KOReader's Menu calls `close_callback` after every item tap, not only on close.
-- Song lists open over the kept-open Songbook menu (`keep_menu_open`); the collections menu / repository picker stays under its song list via setParentList(). Song callbacks call closeList(), which closes the list, its parent and the main menu.
+- Song lists open over the kept-open Songbook menu (`keep_menu_open`) and over each other; every list is registered with trackList(). Song callbacks call closeList(), which closes all of them and the main menu.
 - Jam.json() encodes an empty table as `[]` (lists may be empty; objects never are).
 - TouchMenu items with `keep_menu_open` don't redraw by themselves: call `touchmenu_instance:updateItems()` (or replace `touchmenu_instance.item_table` for submenus built by `sub_item_table_func`).

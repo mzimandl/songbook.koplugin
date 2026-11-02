@@ -184,6 +184,12 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_collections",
         { category = "none", event = "SongbookShowCollections",
           title = _("Songbook: collections"), general = true })
+    Dispatcher:registerAction("songbook_key",
+        { category = "none", event = "SongbookShowKeyDialog",
+          title = _("Songbook: transpose / choose key"), reader = true })
+    Dispatcher:registerAction("songbook_last_list",
+        { category = "none", event = "SongbookLastList",
+          title = _("Songbook: last song list"), general = true })
     Dispatcher:registerAction("songbook_toggle_favorite",
         { category = "none", event = "SongbookToggleFavorite",
           title = _("Songbook: add/remove favorite"), reader = true })
@@ -406,36 +412,59 @@ function Songbook:onSongbookTranspose(delta)
     return true
 end
 
---- Pick the key the current song is played in (from {key}, else its first chord).
-function Songbook:showKeyChoice()
+-- uid of the song a step in the key dialog re-opens: the dialog shows again
+-- when that song is ready (in the reader's new plugin instance).
+local reopen_key_dialog
+
+--- Transposition dialog of the current song: ±1 semitone, original key and
+-- the keys to choose from (from {key}, else its first chord). It shows again
+-- after every step, until closed.
+function Songbook:showKeyDialog()
     local uid = self:currentSongId()
     if not uid then return end
     local text = read_file(self:songPath(uid)) or ""
     local choices = Transpose.key_choices(ChordPro.parse_meta(text).key or ChordPro.first_chord(text),
         self:get("notation"))
-    if not choices then
-        notify(_("The song's key is not known."))
-        return
-    end
-    local current = self:getMap("transpose")[uid] or 0
+    local t = self:getMap("transpose")[uid] or 0
+    local current = t
     if current > 6 then current = current - 12 elseif current < -5 then current = current + 12 end
     local dialog
-    local buttons, row = {}, {}
-    for _i, c in ipairs(choices) do
+    local function step(fn)
+        return function()
+            UIManager:close(dialog)
+            reopen_key_dialog = uid
+            fn()
+        end
+    end
+    local buttons = {{
+        { text = "−1", callback = step(function() self:onSongbookTranspose(-1) end) },
+        { text = _("Original key"), enabled = t ~= 0, callback = step(function() self:onSongbookTranspose(0) end) },
+        { text = "+1", callback = step(function() self:onSongbookTranspose(1) end) },
+    }}
+    local key
+    local row = {}
+    for _i, c in ipairs(choices or {}) do
+        if c.shift == current then key = c.name end
         table.insert(row, {
             text = c.name,
             font_bold = c.shift == current,
-            callback = function()
-                UIManager:close(dialog)
+            callback = step(function()
                 self:setMapValue("transpose", uid, c.shift ~= 0 and c.shift or nil)
                 self:openSong(uid)
-            end,
+            end),
         })
         if #row == 4 then table.insert(buttons, row); row = {} end
     end
-    dialog = ButtonDialog:new{ title = _("Key"), buttons = buttons }
+    local shift = t ~= 0 and string.format("%+d", t) or _("original key")
+    dialog = ButtonDialog:new{
+        title = key and T(_("Key: %1 (%2)"), key, shift) or T(_("Transpose: %1"), shift),
+        buttons = buttons,
+    }
     UIManager:show(dialog)
+    return true
 end
+
+Songbook.onSongbookShowKeyDialog = Songbook.showKeyDialog
 
 --- Re-render the currently open song after a settings change.
 function Songbook:refreshCurrent()
@@ -608,9 +637,13 @@ function Songbook:showDurationDialog(touchmenu_instance)
 end
 
 function Songbook:onReaderReady()
-    if not self:currentSongId() then return end
+    local uid = self:currentSongId()
+    local key_dialog = reopen_key_dialog
+    reopen_key_dialog = nil
+    if not uid then return end
     self:showScrollProgress()
     if self:get("autoscroll") then self:startAutoscroll(true) end
+    if key_dialog == uid then self:showKeyDialog() end
 end
 
 --- The footer's progress is page / page count, which hardly moves for a song
@@ -695,13 +728,64 @@ local function matches(song, query)
         or (song.artist and lower(song.artist):find(query, 1, true))
 end
 
+--- Dialog with one button per action: { text, callback, enabled }.
+-- The dialog closes before the callback runs.
+local function show_actions(title, actions)
+    local dialog
+    local buttons = {}
+    for _i, a in ipairs(actions) do
+        table.insert(buttons, {{
+            text = a.text,
+            enabled = a.enabled ~= false,
+            callback = function()
+                UIManager:close(dialog)
+                a.callback()
+            end,
+        }})
+    end
+    dialog = ButtonDialog:new{ title = title, buttons = buttons }
+    UIManager:show(dialog)
+    return dialog
+end
+
+--- Full-screen Menu; with `actions` (function -> list for show_actions) the
+-- title bar gets a menu button with them.
+local function list_menu(title, item_table, actions, fields)
+    local menu = Menu:new{
+        title = title,
+        item_table = item_table,
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        width = Screen:getWidth(),
+        height = Screen:getHeight(),
+        title_bar_left_icon = actions and "appbar.menu" or nil,
+        onLeftButtonTap = actions and function() show_actions(title, actions()) end or nil,
+    }
+    for k, v in pairs(fields or {}) do menu[k] = v end
+    return menu
+end
+
+-- The song list opened last, to open it again with the gesture "last song
+-- list": { kind = "local" | "favorites" | "collection" | "online" | "playlist",
+-- arg, query, page }. Module-level like `jam`: the song opens in a new
+-- plugin instance.
+local last_list
+-- Set while the last list is being opened again: its query and page.
+local restoring
+
 --- Generic searchable song list.
 -- get_songs() -> songs; make_item(song, refresh) -> menu item.
 -- on_hold(song, refresh): refresh() rebuilds the list (keeping the search).
 -- on_close(): called when the list is closed with × (not when a song is opened).
--- header(refresh): optional, -> extra menu item shown below the search.
-function Songbook:showList(title, get_songs, make_item, on_hold, on_close, header)
-    local menu, query, refresh
+-- actions(refresh): optional, -> actions of the title bar menu (see show_actions).
+-- opts: optional { last = last_list entry to keep the search and page in,
+--   empty = { text, action = { text, callback(refresh) } } shown when there are no songs }.
+function Songbook:showList(title, get_songs, make_item, on_hold, on_close, actions, opts)
+    opts = opts or {}
+    local last = opts.last
+    local menu, refresh
+    local query = restoring and restoring.query
     local function build()
         local items = {
             {
@@ -710,15 +794,15 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, heade
                 callback = function()
                     self:askSearch(query, function(q)
                         query = q ~= "" and q or nil
+                        if last then last.query = query end
                         menu:switchItemTable(title, build())
                     end)
                 end,
             },
         }
-        if header then table.insert(items, header(refresh)) end
         local first = #items
         local favorites = self:getMap("favorites")
-        for _, song in ipairs(get_songs()) do
+        for _i, song in ipairs(get_songs()) do
             if matches(song, query) then
                 local item = make_item(song, refresh)
                 item.song = song
@@ -727,7 +811,12 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, heade
             end
         end
         if #items == first then
-            table.insert(items, { text = _("No songs"), select_enabled = false })
+            local empty = not query and opts.empty
+            table.insert(items, { text = empty and empty.text or _("No songs"), dim = true, select_enabled = false })
+            if empty and empty.action then
+                table.insert(items, { text = empty.action.text, bold = true,
+                    callback = function() empty.action.callback(refresh) end })
+            end
         end
         return items
     end
@@ -735,19 +824,19 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, heade
         menu:switchItemTable(title, build())
     end
 
-    menu = Menu:new{
-        title = title,
-        item_table = build(),
-        covers_fullscreen = true,
-        is_borderless = true,
-        is_popout = false,
-        width = Screen:getWidth(),
-        height = Screen:getHeight(),
+    menu = list_menu(title, build(), actions and function() return actions(refresh) end, {
         onMenuHold = function(_menu, item)
             if item.song and on_hold then on_hold(item.song, refresh) end
             return true
         end,
-    }
+    })
+    menu.last = last
+    if last then
+        last.query = query
+        last_list = last
+    end
+    if restoring and restoring.page and menu.onGotoPage then menu:onGotoPage(restoring.page) end
+    restoring = nil
     -- The search callback must not close the list; song callbacks do.
     menu.close_callback = nil
     if on_close then
@@ -758,7 +847,7 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, heade
             return handled
         end
     end
-    self.list_menu = menu
+    self:trackList(menu)
     UIManager:show(menu)
     return menu
 end
@@ -782,22 +871,20 @@ function Songbook:askSearch(current, cb)
     dialog:onShowKeyboard()
 end
 
--- Lists are opened with the Songbook menu kept open (and the collection or
--- repository picker under a song list), so closing a list with × goes back.
--- Opening a song closes them all.
-function Songbook:setParentList(menu)
-    self.parent_list = menu
+-- Lists are opened with the Songbook menu kept open (and one list over
+-- another, e.g. a collection over the collections), so closing a list with ×
+-- goes back. Opening a song closes them all.
+function Songbook:trackList(menu)
+    self.lists = self.lists or {}
+    table.insert(self.lists, menu)
 end
 
 function Songbook:closeList()
-    if self.list_menu then
-        UIManager:close(self.list_menu)
-        self.list_menu = nil
+    for _i, menu in ipairs(self.lists or {}) do
+        if menu.last then menu.last.page = menu.page end
+        if UIManager:isWidgetShown(menu) then UIManager:close(menu) end
     end
-    if self.parent_list then
-        UIManager:close(self.parent_list)
-        self.parent_list = nil
-    end
+    self.lists = nil
     local menu = self.ui and self.ui.menu
     if menu and menu.onCloseReaderMenu then
         menu:onCloseReaderMenu()
@@ -1024,67 +1111,74 @@ function Songbook:onSongbookShowCollections()
         })
         return items
     end
-    menu = Menu:new{
-        title = _("Collections"),
-        item_table = build(),
-        covers_fullscreen = true,
-        is_borderless = true,
-        is_popout = false,
-        width = Screen:getWidth(),
-        height = Screen:getHeight(),
+    menu = list_menu(_("Collections"), build(), nil, {
         onMenuHold = function(_menu, item)
             if not item.collection then return true end
             local name = item.collection
-            local dialog
-            dialog = ButtonDialog:new{
-                title = name,
-                buttons = {{
-                    { text = _("Rename"), callback = function()
-                        UIManager:close(dialog)
-                        self:askCollectionName(_("Rename collection"), name, function(new)
-                            local ok, err = self:renameCollection(name, new)
-                            if not ok then notify(err) return end
+            show_actions(name, {
+                { text = _("Rename"), callback = function()
+                    self:askCollectionName(_("Rename collection"), name, function(new)
+                        local ok, err = self:renameCollection(name, new)
+                        if not ok then notify(err) return end
+                        menu:switchItemTable(nil, build())
+                    end)
+                end },
+                { text = _("Delete"), callback = function()
+                    UIManager:show(ConfirmBox:new{
+                        text = T(_("Delete collection \"%1\"?\nThe songs stay on the device."), name),
+                        ok_text = _("Delete"),
+                        ok_callback = function()
+                            self:deleteCollection(name)
                             menu:switchItemTable(nil, build())
-                        end)
-                    end },
-                    { text = _("Delete"), callback = function()
-                        UIManager:close(dialog)
-                        UIManager:show(ConfirmBox:new{
-                            text = T(_("Delete collection \"%1\"?\nThe songs stay on the device."), name),
-                            ok_text = _("Delete"),
-                            ok_callback = function()
-                                self:deleteCollection(name)
-                                menu:switchItemTable(nil, build())
-                            end,
-                        })
-                    end },
-                }},
-            }
-            UIManager:show(dialog)
+                        end,
+                    })
+                end },
+            })
             return true
         end,
-    }
-    self:setParentList(menu)
+    })
+    self:trackList(menu)
     UIManager:show(menu)
     return true
 end
 
 function Songbook:showCollection(name, on_close)
-    return self:showLocal(name, function(song) return self:isInCollection(name, song.uid) end,
-        _("This collection is empty. Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."),
-        on_close)
+    return self:showLocal(name, function(song) return self:isInCollection(name, song.uid) end, {
+        text = _("This collection is empty"),
+        help = _("Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."),
+        action = { text = _("Add songs…"), callback = function(refresh) self:showCollectionPicker(name, refresh) end },
+    }, on_close, { kind = "collection", arg = name }, name)
+end
+
+--- Songs on the device to put into collection `name`: a tap adds or removes
+-- a song. on_close(): called when the picker is closed.
+function Songbook:showCollectionPicker(name, on_close)
+    self:showList(T(_("Add to \"%1\""), name), function() return self:listLocal() end, function(song, refresh)
+        local on = self:isInCollection(name, song.uid)
+        return {
+            text = song.title,
+            mandatory = details(song.artist, song.source, on and "✓" or nil),
+            callback = function()
+                self:setInCollection(name, song.uid, not on)
+                refresh()
+            end,
+        }
+    end, nil, on_close)
 end
 
 -- Song lists on the device -----------------------------------------------------
 
---- List of songs on the device. filter(song) limits the list (nil = all);
--- empty_text is shown instead of an empty list; on_close as in showList().
-function Songbook:showLocal(title, filter, empty_text, on_close)
+--- List of songs on the device. filter(song) limits the list (nil = all).
+-- empty = { text, help, action } for an empty list: `text` is shown in it,
+-- `help` once as a message, `action` (see showList()) below the text.
+-- on_close as in showList(); last: see last_list; collection: name of the
+-- collection the list shows (its songs can be removed from it).
+function Songbook:showLocal(title, filter, empty, on_close, last, collection)
     local function load()
         local songs = self:listLocal()
         if not filter then return songs end
         local out = {}
-        for _, song in ipairs(songs) do
+        for _i, song in ipairs(songs) do
             if filter(song) then table.insert(out, song) end
         end
         return out
@@ -1096,10 +1190,7 @@ function Songbook:showLocal(title, filter, empty_text, on_close)
         first = nil
         return songs
     end
-    if #first == 0 then
-        notify(empty_text)
-        return true
-    end
+    if #first == 0 and empty.help then notify(empty.help) end
     self:showList(title, get_songs, function(song)
         return {
             text = song.title,
@@ -1113,35 +1204,86 @@ function Songbook:showLocal(title, filter, empty_text, on_close)
         local dialog
         local function close() UIManager:close(dialog) end
         local buttons = {
+            { self:playlistButton(song, close) },
             { self:favoriteButton(song, close, refresh) },
             { self:collectionsButton(song, close, refresh) },
-            {{ text = _("Delete"), callback = function()
-                close()
-                UIManager:show(ConfirmBox:new{
-                    text = T(_("Delete \"%1\"?"), song.title),
-                    ok_text = _("Delete"),
-                    ok_callback = function()
-                        self:deleteSong(song.uid)
-                        refresh()
-                    end,
-                })
-            end }},
         }
-        table.insert(buttons, 1, { self:playlistButton(song, close) })
+        if collection then
+            table.insert(buttons, {{ text = T(_("Remove from \"%1\""), collection), callback = function()
+                close()
+                self:setInCollection(collection, song.uid, false)
+                refresh()
+            end }})
+        end
+        table.insert(buttons, {{ text = _("Delete from device"), callback = function()
+            close()
+            UIManager:show(ConfirmBox:new{
+                text = T(_("Delete \"%1\"?"), song.title),
+                ok_text = _("Delete"),
+                ok_callback = function()
+                    self:deleteSong(song.uid)
+                    refresh()
+                end,
+            })
+        end }})
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
-    end, on_close)
+    end, on_close, collection and function(refresh)
+        return {{ text = _("Add songs…"), callback = function() self:showCollectionPicker(collection, refresh) end }}
+    end, { last = last, empty = empty })
     return true
 end
 
 function Songbook:onSongbookShowLocal()
-    return self:showLocal(_("My songs"), nil,
-        T(_("No songs yet. Download some via \"Browse online\", or copy .cho files to:\n%1"), self.songs_dir))
+    return self:showLocal(_("My songs"), nil, {
+        text = _("No songs yet"),
+        help = T(_("No songs yet. Download some via \"Browse online\", or copy .cho files to:\n%1"), self.songs_dir),
+        action = { text = _("Browse online"), callback = function() self:browseOnline() end },
+    }, nil, { kind = "local" })
 end
 
 function Songbook:onSongbookShowFavorites()
-    return self:showLocal(_("Favorites"), function(song) return self:isFavorite(song.uid) end,
-        _("No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."))
+    return self:showLocal(_("Favorites"), function(song) return self:isFavorite(song.uid) end, {
+        text = _("No favorites yet"),
+        help = _("No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."),
+        action = { text = _("My songs"), callback = function() self:onSongbookShowLocal() end },
+    }, nil, { kind = "favorites" })
+end
+
+--- Open the song list opened last again, with its search and page.
+function Songbook:onSongbookLastList()
+    local last = last_list
+    if not last then return self:onSongbookShowLocal() end
+    restoring = last
+    if last.kind == "favorites" then
+        self:onSongbookShowFavorites()
+    elseif last.kind == "collection" and self:findCollection(last.arg) then
+        self:showCollection(last.arg)
+    elseif last.kind == "online" then
+        local servers = {}
+        for _i, key in ipairs(last.arg) do
+            local server = self:findServer(key)
+            if server then table.insert(servers, server) end
+        end
+        if #servers > 0 then
+            -- runWhenOnline() may wait for Wi-Fi, so restore the list in its callback
+            NetworkMgr:runWhenOnline(function()
+                restoring = last
+                self:showOnlineSongs(servers)
+                restoring = nil
+            end)
+        else
+            restoring = nil
+            self:browseOnline()
+        end
+    elseif last.kind == "playlist" then
+        restoring = nil
+        self:onSongbookShowPlaylist()
+    else
+        self:onSongbookShowLocal()
+    end
+    restoring = nil
+    return true
 end
 
 -- Online -------------------------------------------------------------------
@@ -1210,28 +1352,25 @@ function Songbook:browseOnline()
             return
         end
         local picker
-        local items = {}
-        for _, server in ipairs(servers) do
+        local items = {{
+            text = _("All repositories"),
+            bold = true,
+            callback = function() self:showOnlineSongs(servers) end,
+        }}
+        for _i, server in ipairs(servers) do
             table.insert(items, {
                 text = self:serverName(server),
                 callback = function() self:showOnlineSongs({ server }) end,
             })
         end
-        table.insert(items, {
-            text = _("All repositories"),
-            bold = true,
-            callback = function() self:showOnlineSongs(servers) end,
-        })
-        picker = Menu:new{
-            title = _("Song repositories"),
-            item_table = items,
-            covers_fullscreen = true,
-            is_borderless = true,
-            is_popout = false,
-            width = Screen:getWidth(),
-            height = Screen:getHeight(),
-        }
-        self:setParentList(picker)
+        picker = list_menu(_("Song repositories"), items, function()
+            return {{ text = _("Manage repositories…"), callback = function()
+                -- the picker would show the old list
+                UIManager:close(picker)
+                self:showRepositories()
+            end }}
+        end)
+        self:trackList(picker)
         UIManager:show(picker)
     end)
 end
@@ -1260,21 +1399,25 @@ function Songbook:showOnlineSongs(servers)
         return self:isUpToDate(song) and _("saved") or _("update")
     end
     local title = multi and _("All repositories") or self:serverName(servers[1])
-    local function download_all(refresh)
+    local function actions(refresh)
         local n = 0
         for _i, song in ipairs(songs) do
             if not self:isUpToDate(song) then n = n + 1 end
         end
-        if n == 0 then return { text = _("All songs downloaded"), select_enabled = false } end
         return {
-            text = T(_("Download all (%1)"), n),
-            bold = true,
-            callback = function()
-                self:downloadSongs(songs)
-                refresh()
-            end,
+            {
+                text = n > 0 and T(_("Download all (%1)"), n) or _("All songs downloaded"),
+                enabled = n > 0,
+                callback = function()
+                    self:downloadSongs(songs)
+                    refresh()
+                end,
+            },
+            { text = _("Manage repositories…"), callback = function() self:showRepositories() end },
         }
     end
+    local keys = {}
+    for _i, server in ipairs(servers) do table.insert(keys, server.key) end
     self:showList(title, function() return songs end, function(song)
         return {
             text = song.title,
@@ -1321,7 +1464,7 @@ function Songbook:showOnlineSongs(servers)
         }
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
-    end, nil, download_all)
+    end, nil, actions, { last = { kind = "online", arg = keys } })
 end
 
 --- Download the songs of `songs` that aren't up to date and report how it went.
@@ -1409,37 +1552,35 @@ function Songbook:removeServer(key, delete_songs)
     os.remove(dir)
 end
 
---- Items of the "Song repositories" settings submenu.
-function Songbook:serversMenu()
-    -- Rebuild the open submenu after a change, so it shows the current list.
-    local function refresh(touchmenu_instance)
-        if touchmenu_instance then
-            touchmenu_instance.item_table = self:serversMenu()
-            touchmenu_instance:updateItems()
+--- List of the song repositories: tap one to edit or remove it.
+function Songbook:showRepositories()
+    local menu
+    local function build()
+        local items = {}
+        for _i, server in ipairs(self:getServers()) do
+            table.insert(items, {
+                text = self:serverName(server),
+                callback = function()
+                    self:showServerActions(server, function() menu:switchItemTable(nil, build()) end)
+                end,
+            })
         end
-    end
-    local items = {}
-    for _, server in ipairs(self:getServers()) do
         table.insert(items, {
-            text_func = function() return self:serverName(server) end,
-            keep_menu_open = true,
-            callback = function(touchmenu_instance)
-                self:showServerActions(server, function() refresh(touchmenu_instance) end)
+            text = _("Add repository…"),
+            bold = true,
+            callback = function()
+                self:askServerUrl(_("Add song repository"), "", function(url)
+                    self:addServer(url)
+                    menu:switchItemTable(nil, build())
+                end)
             end,
         })
+        return items
     end
-    table.insert(items, {
-        text = _("Add repository…"),
-        keep_menu_open = true,
-        separator = #items > 0 or nil,
-        callback = function(touchmenu_instance)
-            self:askServerUrl(_("Add song repository"), "", function(url)
-                self:addServer(url)
-                refresh(touchmenu_instance)
-            end)
-        end,
-    })
-    return items
+    menu = list_menu(_("Song repositories"), build())
+    self:trackList(menu)
+    UIManager:show(menu)
+    return true
 end
 
 function Songbook:showServerActions(server, on_changed)
@@ -1721,27 +1862,10 @@ function Songbook:onSongbookShowPlaylist()
                 callback = function() self:showPlaylistPicker() end,
             },
         }
-        if not remote then
-            table.insert(items, {
-                text = _("Save played songs as collection…"),
-                bold = true,
-                callback = function() self:savePlaylistAsCollection() end,
-            })
-            table.insert(items, {
-                text = _("Clear playlist"),
-                bold = true,
-                callback = function()
-                    UIManager:show(ConfirmBox:new{
-                        text = _("Clear the list of played and requested songs?"),
-                        ok_text = _("Clear"),
-                        ok_callback = function() self:savePlaylist({}) end,
-                    })
-                end,
-            })
-        end
         table.insert(items, { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false })
         local function add(entry, mandatory, queued)
-            local item = { text = entry.title, mandatory = mandatory, entry = entry, queued = queued }
+            local item = { text = entry.title, mandatory = mandatory, entry = entry, queued = queued,
+                           played = not queued }
             -- the other songbook's songs may not be on this device
             if not remote then
                 item.callback = function()
@@ -1760,35 +1884,39 @@ function Songbook:onSongbookShowPlaylist()
         end
         return items
     end
-    menu = Menu:new{
-        title = title,
-        item_table = build(),
-        covers_fullscreen = true,
-        is_borderless = true,
-        is_popout = false,
-        width = Screen:getWidth(),
-        height = Screen:getHeight(),
+    local actions = not remote and function()
+        return {
+            { text = _("Save played songs as collection…"), callback = function() self:savePlaylistAsCollection() end },
+            { text = _("Clear playlist"), callback = function()
+                UIManager:show(ConfirmBox:new{
+                    text = _("Clear the list of played and requested songs?"),
+                    ok_text = _("Clear"),
+                    ok_callback = function() self:savePlaylist({}) end,
+                })
+            end },
+        }
+    end or nil
+    menu = list_menu(title, build(), actions, {
         onMenuHold = function(_menu, item)
-            if remote or not item.queued then return true end
+            if remote or not item.entry then return true end
             local uid = item.entry.uid
-            local dialog
-            dialog = ButtonDialog:new{
-                title = item.entry.title,
-                buttons = {
-                    {{ text = _("Play next"), callback = function()
-                        UIManager:close(dialog)
-                        self:playNextInPlaylist(uid)
-                    end }},
-                    {{ text = _("Remove from playlist"), callback = function()
-                        UIManager:close(dialog)
-                        self:removeFromPlaylist(uid)
-                    end }},
-                },
-            }
-            UIManager:show(dialog)
+            if item.played then
+                if self:isQueued(uid) then return true end
+                show_actions(item.entry.title, {
+                    { text = _("Add to Up next"), callback = function()
+                        local entry, err = self:addToPlaylist(uid)
+                        if not entry then notify(request_error(err)) end
+                    end },
+                })
+                return true
+            end
+            show_actions(item.entry.title, {
+                { text = _("Play next"), callback = function() self:playNextInPlaylist(uid) end },
+                { text = _("Remove from playlist"), callback = function() self:removeFromPlaylist(uid) end },
+            })
             return true
         end,
-    }
+    })
     -- Menu calls close_callback after every tap; song items close the list themselves.
     menu.close_callback = nil
     -- Called after our playlist changes, and on every poll while following.
@@ -1804,7 +1932,8 @@ function Songbook:onSongbookShowPlaylist()
         end
         menu:switchItemTable(title, build())
     end
-    self:setParentList(menu)
+    if not remote then last_list = { kind = "playlist" } end
+    self:trackList(menu)
     UIManager:show(menu)
     return true
 end
@@ -1863,14 +1992,13 @@ function Songbook:showPlaylistPicker()
         }
     end, nil, nil, function(refresh)
         local hide = self:get("playlist_hide_added")
-        return {
+        return {{
             text = hide and _("Show songs already in the playlist") or _("Hide songs already in the playlist"),
-            bold = true,
             callback = function()
                 self:set("playlist_hide_added", not hide)
                 refresh()
             end,
-        }
+        }}
     end)
 end
 
@@ -2269,225 +2397,271 @@ function Songbook:setAndRefresh(key, value)
     self:refreshCurrent()
 end
 
+--- Items for the song that is open: transposition, autoscroll, favorite, collections.
+function Songbook:songMenu()
+    local uid = self:currentSongId()
+    local own = self:currentOwnSongId()
+    local items = {
+        {
+            songbook_item = "transpose",
+            text_func = function()
+                if not self:get("show_chords") then return _("Transpose (chords hidden)") end
+                local t = self:getMap("transpose")[uid] or 0
+                return t ~= 0 and T(_("Transpose (%1)"), string.format("%+d", t)) or _("Transpose")
+            end,
+            callback = function()
+                if self:get("show_chords") then return self:showKeyDialog() end
+                UIManager:show(ConfirmBox:new{
+                    text = _("Chords are hidden. Show them?"),
+                    ok_text = _("Show chords"),
+                    ok_callback = function() self:setAndRefresh("show_chords", true) end,
+                })
+            end,
+        },
+        {
+            songbook_item = "autoscroll",
+            text = _("Autoscroll"),
+            checked_func = function() return self:isAutoscrolling() end,
+            sub_item_table = {
+                {
+                    text_func = function()
+                        return self:isAutoscrolling() and _("Stop autoscroll") or _("Start autoscroll")
+                    end,
+                    callback = function() self:onSongbookAutoscroll() end,
+                },
+                {
+                    text_func = function()
+                        local secs = self:songDuration(uid)
+                        return secs and T(_("Song length: %1"), ChordPro.format_duration(secs))
+                            or _("Song length")
+                    end,
+                    enabled = own ~= nil,
+                    keep_menu_open = true,
+                    callback = function(touchmenu_instance) self:showDurationDialog(touchmenu_instance) end,
+                },
+            },
+        },
+    }
+    -- songs received while following are not kept in favorites or collections
+    if own then
+        table.insert(items, {
+            songbook_item = "favorite",
+            text = _("Favorite"),
+            checked_func = function() return self:isFavorite(own) end,
+            callback = function() self:setFavorite(own, not self:isFavorite(own)) end,
+        })
+        table.insert(items, {
+            songbook_item = "collections",
+            text = _("Add to collection…"),
+            keep_menu_open = true,
+            callback = function()
+                local _key, id = split_uid(own)
+                local meta = ChordPro.parse_meta(read_file(self:songPath(own)) or "")
+                self:showSongCollections({ uid = own, title = meta.title or id }, function() end)
+            end,
+        })
+    end
+    return items
+end
+
+--- Items of the song library: the song lists, playlist and next song.
+function Songbook:libraryMenu()
+    local items = {
+        {
+            songbook_item = "my_songs",
+            text = _("My songs"),
+            keep_menu_open = true,
+            callback = function() self:onSongbookShowLocal() end,
+        },
+        {
+            songbook_item = "favorites",
+            text = _("Favorites"),
+            keep_menu_open = true,
+            callback = function() self:onSongbookShowFavorites() end,
+        },
+        {
+            songbook_item = "collections_list",
+            text = _("Collections"),
+            keep_menu_open = true,
+            callback = function() self:onSongbookShowCollections() end,
+        },
+        {
+            songbook_item = "online",
+            text = _("Browse online"),
+            keep_menu_open = true,
+            callback = function() self:browseOnline() end,
+            separator = true,
+        },
+        {
+            songbook_item = "playlist",
+            text_func = function()
+                if self:isFollowing() then return _("Playlist (jam session)") end
+                local n = #self:getPlaylist().queue
+                return n > 0 and T(_("Playlist (%1 up next)"), n) or _("Playlist")
+            end,
+            keep_menu_open = true,
+            callback = function() self:onSongbookShowPlaylist() end,
+        },
+    }
+    -- only while there is one: the playlist item shows how many are queued
+    if self:nextInPlaylist() then
+        table.insert(items, {
+            songbook_item = "next",
+            text_func = function()
+                local e = self:nextInPlaylist()
+                return e and T(_("Next song: %1"), Render.truncate(e.title, 24)) or _("Next song")
+            end,
+            enabled_func = function() return self:nextInPlaylist() ~= nil end,
+            callback = function() self:onSongbookNextSong() end,
+        })
+    end
+    items[#items].separator = true
+    return items
+end
+
+function Songbook:settingsMenu()
+    return {
+        {
+            text_func = function()
+                return T(_("Song repositories (%1)"), #self:getServers())
+            end,
+            keep_menu_open = true,
+            callback = function() self:showRepositories() end,
+        },
+        {
+            text = _("Display"),
+            sub_item_table = {
+                {
+                    text = _("Chord notation"),
+                    sub_item_table = {
+                        {
+                            text = _("Czech/German (H, B = Bb)"),
+                            radio = true,
+                            checked_func = function() return self:get("notation") == "cz" end,
+                            callback = function() self:setAndRefresh("notation", "cz") end,
+                        },
+                        {
+                            text = _("English (B, Bb)"),
+                            radio = true,
+                            checked_func = function() return self:get("notation") == "en" end,
+                            callback = function() self:setAndRefresh("notation", "en") end,
+                        },
+                    },
+                },
+                {
+                    text_func = function()
+                        return T(_("Line width: %1 characters"), self:get("max_cols"))
+                    end,
+                    keep_menu_open = true,
+                    callback = function(touchmenu_instance)
+                        UIManager:show(SpinWidget:new{
+                            title_text = _("Line width"),
+                            info_text = _("Lines with chords wrap at word boundaries above this width. Lower it if lines are cut off at the right edge."),
+                            value = self:get("max_cols"),
+                            value_min = 16,
+                            value_max = 160,
+                            default_value = DEFAULTS.max_cols,
+                            callback = function(spin)
+                                self:setAndRefresh("max_cols", spin.value)
+                                if touchmenu_instance then touchmenu_instance:updateItems() end
+                            end,
+                        })
+                    end,
+                },
+                {
+                    text = _("Show chords"),
+                    checked_func = function() return self:get("show_chords") end,
+                    callback = function() self:setAndRefresh("show_chords", not self:get("show_chords")) end,
+                },
+                {
+                    text = _("Repeat chorus text"),
+                    help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
+                    checked_func = function() return self:get("repeat_chorus") end,
+                    callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
+                },
+            },
+        },
+        {
+            text = _("Scrolling"),
+            sub_item_table = {
+                {
+                    text = _("Continuous scroll mode"),
+                    help_text = _("Open songs in continuous (scroll) mode, which autoscroll moves by a part of the screen. Turn it off to use the reader's own view mode."),
+                    checked_func = function() return self:get("scroll_mode") end,
+                    callback = function() self:set("scroll_mode", not self:get("scroll_mode")) end,
+                },
+                {
+                    text = _("Autoscroll when a song opens"),
+                    help_text = _("Scroll songs that have a length ({duration} in the song file, or set in Autoscroll → Song length) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
+                    checked_func = function() return self:get("autoscroll") end,
+                    callback = function() self:set("autoscroll", not self:get("autoscroll")) end,
+                },
+                {
+                    text_func = function()
+                        return T(_("Autoscroll step: 1/%1 screen"), self:get("autoscroll_step"))
+                    end,
+                    keep_menu_open = true,
+                    callback = function(touchmenu_instance)
+                        UIManager:show(SpinWidget:new{
+                            title_text = _("Autoscroll step"),
+                            info_text = _("In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often."),
+                            value = self:get("autoscroll_step"),
+                            value_min = 2,
+                            value_max = 16,
+                            default_value = DEFAULTS.autoscroll_step,
+                            callback = function(spin)
+                                self:set("autoscroll_step", spin.value)
+                                if touchmenu_instance then touchmenu_instance:updateItems() end
+                            end,
+                        })
+                    end,
+                },
+            },
+            separator = true,
+        },
+        {
+            text = _("Songs folder"),
+            keep_menu_open = true,
+            callback = function()
+                UIManager:show(InfoMessage:new{
+                    text = T(_("Downloaded songs are stored in:\n%1\n\nYou can also copy your own .cho files there."),
+                        self.songs_dir),
+                })
+            end,
+        },
+    }
+end
+
+--- The Songbook menu: the open song's items first, then the library, jam
+-- session and settings. Built when it opens, so it fits the open document.
+function Songbook:mainMenu()
+    local items = {}
+    if self:currentSongId() then
+        items = self:songMenu()
+        items[#items].separator = true
+    end
+    for _i, item in ipairs(self:libraryMenu()) do table.insert(items, item) end
+    table.insert(items, {
+        songbook_item = "jam",
+        text_func = function()
+            if self:isJamRunning() then return _("Jam session (sharing)") end
+            return self:isFollowing() and _("Jam session (following)") or _("Jam session")
+        end,
+        sub_item_table = self:jamMenu(),
+    })
+    table.insert(items, {
+        songbook_item = "settings",
+        text = _("Settings"),
+        sub_item_table = self:settingsMenu(),
+    })
+    return items
+end
+
 function Songbook:addToMainMenu(menu_items)
     menu_items.songbook = {
         text = _("Songbook"),
         sorting_hint = "tools",
-        sub_item_table = {
-            {
-                text = _("Songs"),
-                sub_item_table = {
-                    {
-                        text = _("Browse online"),
-                        keep_menu_open = true,
-                        callback = function() self:browseOnline() end,
-                    },
-                    {
-                        text = _("My songs"),
-                        keep_menu_open = true,
-                        callback = function() self:onSongbookShowLocal() end,
-                    },
-                    {
-                        text = _("Favorites"),
-                        keep_menu_open = true,
-                        callback = function() self:onSongbookShowFavorites() end,
-                    },
-                    {
-                        text = _("Collections"),
-                        keep_menu_open = true,
-                        callback = function() self:onSongbookShowCollections() end,
-                    },
-                },
-            },
-            {
-                text_func = function()
-                    if self:isFollowing() then return _("Playlist (jam session)") end
-                    local n = #self:getPlaylist().queue
-                    return n > 0 and T(_("Playlist (%1 up next)"), n) or _("Playlist")
-                end,
-                keep_menu_open = true,
-                callback = function() self:onSongbookShowPlaylist() end,
-            },
-            {
-                text_func = function()
-                    local e = self:nextInPlaylist()
-                    return e and T(_("Next song: %1"), Render.truncate(e.title, 24)) or _("Next song")
-                end,
-                enabled_func = function() return self:nextInPlaylist() ~= nil end,
-                callback = function() self:onSongbookNextSong() end,
-            },
-            {
-                text_func = function()
-                    local id = self:currentSongId()
-                    local t = id and self:getMap("transpose")[id] or 0
-                    return t ~= 0 and T(_("Transpose (%1)"), string.format("%+d", t)) or _("Transpose")
-                end,
-                enabled_func = function() return self:currentSongId() ~= nil and self:get("show_chords") end,
-                sub_item_table = {
-                    { text = _("Up a semitone"), callback = function() self:onSongbookTranspose(1) end },
-                    { text = _("Down a semitone"), callback = function() self:onSongbookTranspose(-1) end },
-                    { text = _("Original key"), callback = function() self:onSongbookTranspose(0) end },
-                    { text = _("Choose key…"), callback = function() self:showKeyChoice() end },
-                },
-            },
-            {
-                text = _("Autoscroll"),
-                enabled_func = function() return self:currentSongId() ~= nil end,
-                checked_func = function() return self:isAutoscrolling() end,
-                sub_item_table = {
-                    {
-                        text = _("Scroll"),
-                        checked_func = function() return self:isAutoscrolling() end,
-                        callback = function() self:onSongbookAutoscroll() end,
-                    },
-                    {
-                        text_func = function()
-                            local uid = self:currentSongId()
-                            local secs = uid and self:songDuration(uid)
-                            return secs and T(_("Song length: %1"), ChordPro.format_duration(secs))
-                                or _("Song length")
-                        end,
-                        enabled_func = function() return self:currentOwnSongId() ~= nil end,
-                        keep_menu_open = true,
-                        callback = function(touchmenu_instance) self:showDurationDialog(touchmenu_instance) end,
-                    },
-                },
-            },
-            {
-                text = _("Favorite"),
-                enabled_func = function() return self:currentOwnSongId() ~= nil end,
-                checked_func = function()
-                    local uid = self:currentOwnSongId()
-                    return uid ~= nil and self:isFavorite(uid)
-                end,
-                callback = function()
-                    local uid = self:currentOwnSongId()
-                    if uid then self:setFavorite(uid, not self:isFavorite(uid)) end
-                end,
-            },
-            {
-                text = _("Add to collection…"),
-                enabled_func = function() return self:currentOwnSongId() ~= nil end,
-                keep_menu_open = true,
-                callback = function()
-                    local uid = self:currentOwnSongId()
-                    if not uid then return end
-                    local _key, id = split_uid(uid)
-                    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
-                    self:showSongCollections({ uid = uid, title = meta.title or id }, function() end)
-                end,
-                separator = true,
-            },
-            {
-                text_func = function()
-                    if self:isJamRunning() then return _("Jam session (sharing)") end
-                    return self:isFollowing() and _("Jam session (following)") or _("Jam session")
-                end,
-                sub_item_table = self:jamMenu(),
-            },
-            {
-                text = _("Settings"),
-                sub_item_table = {
-                    {
-                        text_func = function()
-                            return T(_("Song repositories (%1)"), #self:getServers())
-                        end,
-                        sub_item_table_func = function() return self:serversMenu() end,
-                    },
-                    {
-                        text = _("Chord notation"),
-                        sub_item_table = {
-                            {
-                                text = _("Czech/German (H, B = Bb)"),
-                                radio = true,
-                                checked_func = function() return self:get("notation") == "cz" end,
-                                callback = function() self:setAndRefresh("notation", "cz") end,
-                            },
-                            {
-                                text = _("English (B, Bb)"),
-                                radio = true,
-                                checked_func = function() return self:get("notation") == "en" end,
-                                callback = function() self:setAndRefresh("notation", "en") end,
-                            },
-                        },
-                    },
-                    {
-                        text_func = function()
-                            return T(_("Line width: %1 characters"), self:get("max_cols"))
-                        end,
-                        keep_menu_open = true,
-                        callback = function(touchmenu_instance)
-                            UIManager:show(SpinWidget:new{
-                                title_text = _("Line width"),
-                                info_text = _("Lines with chords wrap at word boundaries above this width. Lower it if lines are cut off at the right edge."),
-                                value = self:get("max_cols"),
-                                value_min = 16,
-                                value_max = 160,
-                                default_value = DEFAULTS.max_cols,
-                                callback = function(spin)
-                                    self:setAndRefresh("max_cols", spin.value)
-                                    if touchmenu_instance then touchmenu_instance:updateItems() end
-                                end,
-                            })
-                        end,
-                    },
-                    {
-                        text = _("Show chords"),
-                        checked_func = function() return self:get("show_chords") end,
-                        callback = function() self:setAndRefresh("show_chords", not self:get("show_chords")) end,
-                    },
-                    {
-                        text = _("Repeat chorus text"),
-                        help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
-                        checked_func = function() return self:get("repeat_chorus") end,
-                        callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
-                    },
-                    {
-                        text = _("Continuous scroll mode"),
-                        help_text = _("Open songs in continuous (scroll) mode, which autoscroll moves by a quarter screen. Turn it off to use the reader's own view mode."),
-                        checked_func = function() return self:get("scroll_mode") end,
-                        callback = function() self:set("scroll_mode", not self:get("scroll_mode")) end,
-                    },
-                    {
-                        text = _("Autoscroll when a song opens"),
-                        help_text = _("Scroll songs that have a length ({duration} in the song file, or set in Autoscroll → Song length) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
-                        checked_func = function() return self:get("autoscroll") end,
-                        callback = function() self:set("autoscroll", not self:get("autoscroll")) end,
-                    },
-                    {
-                        text_func = function()
-                            return T(_("Autoscroll step: 1/%1 screen"), self:get("autoscroll_step"))
-                        end,
-                        keep_menu_open = true,
-                        callback = function(touchmenu_instance)
-                            UIManager:show(SpinWidget:new{
-                                title_text = _("Autoscroll step"),
-                                info_text = _("In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often."),
-                                value = self:get("autoscroll_step"),
-                                value_min = 2,
-                                value_max = 16,
-                                default_value = DEFAULTS.autoscroll_step,
-                                callback = function(spin)
-                                    self:set("autoscroll_step", spin.value)
-                                    if touchmenu_instance then touchmenu_instance:updateItems() end
-                                end,
-                            })
-                        end,
-                        separator = true,
-                    },
-                    {
-                        text = _("Songs folder"),
-                        keep_menu_open = true,
-                        callback = function()
-                            UIManager:show(InfoMessage:new{
-                                text = T(_("Downloaded songs are stored in:\n%1\n\nYou can also copy your own .cho files there."),
-                                    self.songs_dir),
-                            })
-                        end,
-                    },
-                },
-            },
-        },
+        sub_item_table_func = function() return self:mainMenu() end,
     }
 end
 

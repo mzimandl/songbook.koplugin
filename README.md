@@ -26,7 +26,8 @@ tests/                  off-device tests (LuaJIT, not used by the plugin)
 2. Restart KOReader → **Tools → Songbook**.
 3. On the first start the sample repository
    [Songbook Library](https://github.com/mzimandl/songbook-library) is already added.
-   **Settings → Song repositories → Add repository…** → enter another song server
+   **Settings → Song repositories → Add repository…** (or the ☰ menu of an online
+   list → *Manage repositories…*) → enter another song server
    address. You can add several. For a GitHub repository the ordinary address
    is enough:
    - `https://github.com/<user>/<repo>`: default branch, `index.json` in the repo root
@@ -53,49 +54,62 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 
 ## Using it
 
-The song lists (Browse online, My songs, Favorites, Collections) are in the
-**Songs** submenu of the Songbook menu.
+The Songbook menu changes with what is open. While a song is open, its
+items come first: *Transpose*, *Autoscroll*, *Favorite* and *Add to
+collection…*. Below them are the song lists (My songs, Favorites, Collections,
+Browse online), the *Playlist* and, when a song is queued, *Next song*. Then
+come *Jam session* and *Settings*.
+
+Every song list starts with search. Actions for the whole list are in the ☰
+menu at the left of the title bar. The gesture action *Songbook: last song
+list* (General) opens the list you used last again, with its search and page.
 
 - **Browse online**: with more than one repository, pick one first, or
-  *All repositories* for one combined list. Tap a song to download (if new or
+  *All repositories* (at the top) for one combined list. Tap a song to download (if new or
   changed) and open it. Long-press to add to favorites or collections, or to force re-download.
-  The first list item is search, the second *Download all* (the songs of the
-  shown repositories that are new or changed, for offline use).
+  The ☰ menu has *Download all* (the songs of the shown repositories that are
+  new or changed, for offline use) and *Manage repositories…*.
 - **My songs**: downloaded songs from all repositories, plus any `.cho` you copy
   to `koreader/songbook/songs/`. Each song shows which repository it came
-  from. Long-press to add to favorites or collections, or to delete.
+  from. Long-press to add to favorites or collections, or to delete. An empty
+  list offers *Browse online*.
 - **Favorites**: songs marked with ★. Add or remove them by long-pressing a
   song in any list, or with **Favorite** in the Songbook menu while a song is
   open. Favoriting an online song downloads it. Gesture actions:
   *Songbook: favorites* (General) and *Songbook: add/remove favorite* (Reader).
 - **Collections**: your own named song lists (e.g. *Campfire*, *Christmas*).
   A song can be in several collections, from any repository. Create them in
-  **Songs → Collections → New collection…**, or from a song: long-press it in a list
+  **Collections → New collection…**, or from a song: long-press it in a list
   → *Collections…*, or **Add to collection…** in the Songbook menu while a song
-  is open. Long-press a collection to rename or delete it (its songs stay on
+  is open. In a collection, *Add songs…* (☰ menu, or in an empty collection)
+  lists your songs: tap to add or remove them. Long-press a song in a
+  collection to remove it from that collection. Long-press a collection to rename or delete it (its songs stay on
   the device). Adding an online song downloads it. Gesture action:
   *Songbook: collections* (General).
 - **Playlist**: *Up next* and *Played*. Every song you open is recorded as
   played (a song from Up next leaves it). Add songs with *Add songs…* in the
   playlist (tap a song to add it, tap again to remove; songs already in the
-  playlist are hidden, *Show songs already in the playlist* lists them too),
+  playlist are hidden, *Show songs already in the playlist* in its ☰ menu lists them too),
   or by long-pressing a song in any list → *Add to playlist*. **Next song** in
   the Songbook menu opens the first song of Up next. In the playlist, tap a
   song to play it, long-press a song of Up next to move it to the top (*Play
-  next*) or remove it. *Save played songs as collection…* keeps the evening's
-  set list; *Clear playlist* starts over. Gesture actions: *Songbook:
+  next*) or remove it, long-press a played song to queue it again (*Add to Up
+  next*). The ☰ menu has *Save played songs as collection…*, which keeps the evening's
+  set list, and *Clear playlist*, which starts over. Gesture actions: *Songbook:
   playlist* and *Songbook: next song in the playlist* (General).
-- **Transpose** (in the menu while a song is open): ±1 semitone / original key,
-  or *Choose key…* to pick the key directly (from `{key}`, else the first chord).
-  It is saved per song (separately for the same song from two repositories). It is also available as gesture actions
-  (*Songbook: transpose up/down*) under Taps & gestures → General.
-- **Autoscroll** (in the menu while a song is open): scrolls the song so that
-  it ends with the song's length, `{duration: 3:45}` in the song file or
+- **Transpose** (in the menu while a song is open): a dialog with −1 / +1,
+  *Original key* and the keys to pick directly (from `{key}`, else the first
+  chord). It stays open while you try keys; tap outside it to close it. With
+  chords hidden it offers to show them.
+  The transposition is saved per song (separately for the same song from two repositories). It is also available as gesture actions
+  (*Songbook: transpose up/down*, *Songbook: transpose / choose key*) under Taps & gestures → Reader.
+- **Autoscroll** (in the menu while a song is open): *Start/Stop autoscroll*
+  scrolls the song so that it ends with the song's length, `{duration: 3:45}` in the song file or
   *Song length* set on the device. In scroll mode it moves an eighth of the
-  screen at a time (*Settings → Autoscroll step*), keeping the line being
+  screen at a time (*Settings → Scrolling → Autoscroll step*), keeping the line being
   played near the top; in page mode it turns pages. A manual page turn or scroll re-times it from there.
-  Songs open in continuous (scroll) mode (*Settings → Continuous scroll mode*).
-  *Settings → Autoscroll when a song opens* starts it by itself. Gesture
+  Songs open in continuous (scroll) mode (*Settings → Scrolling → Continuous scroll mode*).
+  *Settings → Scrolling → Autoscroll when a song opens* starts it by itself. Gesture
   actions (Reader): *Songbook: start/stop autoscroll*, *autoscroll faster /
   slower* (±10 %, the new length is kept for the song).
 - **Jam session**: *Share songs on the network* starts a small web server.
@@ -127,12 +141,12 @@ The song lists (Browse online, My songs, Favorites, Collections) are in the
 - **Settings**:
   - Song repositories: add, edit the URL, rename or remove. Removing asks
     whether to delete the songs downloaded from it.
-  - Chord notation: Czech (H, B = B♭) or English.
-  - Line width: wrap column. Lower it if lines are cut off on the right.
-  - Show chords: lyrics-only mode.
-  - Repeat chorus text: `{chorus}` prints the chorus instead of a label.
-  - Continuous scroll mode: open songs in scroll mode.
-  - Autoscroll when a song opens; Autoscroll step (1/2 to 1/16 of the screen).
+  - Display: chord notation (Czech H, B = B♭, or English), line width (wrap
+    column; lower it if lines are cut off on the right), show chords
+    (lyrics-only mode), repeat chorus text (`{chorus}` prints the chorus
+    instead of a label).
+  - Scrolling: continuous scroll mode (open songs in scroll mode), autoscroll
+    when a song opens, autoscroll step (1/2 to 1/16 of the screen).
 
 ## Supported ChordPro
 
