@@ -59,6 +59,7 @@ local DEFAULTS = {
     autoscroll = false,
     autoscroll_step = 8,   -- scroll mode moves 1/8 of the screen
     scroll_mode = true,
+    song_button = true,
 }
 
 -- Song repository added on the first start (until then `servers` is unset).
@@ -194,6 +195,9 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_key",
         { category = "none", event = "SongbookShowKeyDialog",
           title = _("Songbook: transpose / choose key"), reader = true })
+    Dispatcher:registerAction("songbook_song_dialog",
+        { category = "none", event = "SongbookSongDialog",
+          title = _("Songbook: song options"), reader = true })
     Dispatcher:registerAction("songbook_last_list",
         { category = "none", event = "SongbookLastList",
           title = _("Songbook: last song list"), general = true })
@@ -426,10 +430,19 @@ end
 
 --- Transposition dialog of the current song: ±1 semitone, original key and
 -- the keys to choose from (from {key}, else its first chord). The steps only
--- change the key shown in the dialog; Apply re-renders the song.
+-- change the key shown in the dialog; Apply re-renders the song. With chords
+-- hidden it offers to show them instead.
 function Songbook:showKeyDialog()
     local uid = self:currentSongId()
     if not uid then return end
+    if not self:get("show_chords") then
+        UIManager:show(ConfirmBox:new{
+            text = _("Chords are hidden. Show them?"),
+            ok_text = _("Show chords"),
+            ok_callback = function() self:setAndRefresh("show_chords", true) end,
+        })
+        return true
+    end
     local text = read_file(self:songPath(uid)) or ""
     local choices = Transpose.key_choices(ChordPro.parse_meta(text).key or ChordPro.first_chord(text),
         self:get("notation"))
@@ -570,7 +583,7 @@ function Songbook:startAutoscroll(quiet)
     if not uid or self.autoscroll then return end
     local duration = self:songDuration(uid)
     if not duration then
-        if not quiet then notify(_("This song has no length. Set it in Autoscroll → Song length.")) end
+        if not quiet then notify(_("This song has no length. Set it with Song length in the song's options.")) end
         return
     end
     self.autoscroll = { uid = uid, duration = duration }
@@ -651,8 +664,59 @@ end
 function Songbook:onReaderReady()
     local uid = self:currentSongId()
     if not uid then return end
+    if self:get("song_button") then self:addSongButton() end
     self:showScrollProgress()
     if self:get("autoscroll") then self:startAutoscroll(true) end
+end
+
+-- Corner of the screen the song button's tap zone covers; taps there that
+-- miss the button go on to the reader (page turns, corner gestures).
+local SONG_BUTTON_ZONE = { ratio_x = 0.75, ratio_y = 0.75, ratio_w = 0.25, ratio_h = 0.25 }
+
+--- Button in the bottom right corner of an open song, above the footer: a
+-- tap opens showSongDialog(). Drawn as a view module, so on every repaint.
+function Songbook:addSongButton()
+    local Blitbuffer = require("ffi/blitbuffer")
+    local FrameContainer = require("ui/widget/container/framecontainer")
+    local Geom = require("ui/geometry")
+    local IconWidget = require("ui/widget/iconwidget")
+    local Size = require("ui/size")
+    local Screen = Device.screen
+    local size = math.ceil(math.min(Screen:getWidth(), Screen:getHeight()) / 16)
+    local frame = FrameContainer:new{
+        bordersize = Size.border.button,
+        radius = Size.radius.button,
+        padding = Size.padding.small,
+        background = Blitbuffer.COLOR_WHITE,
+        IconWidget:new{ icon = "appbar.menu", width = size, height = size },
+    }
+    local view = self.ui.view
+    local button = {}
+    function button:paintTo(bb, x, y)
+        local frame_size = frame:getSize()
+        local footer_h = view.footer_visible and view.footer:getHeight() or 0
+        local margin = Size.margin.default * 2
+        self.rect = Geom:new{
+            x = x + Screen:getWidth() - frame_size.w - margin,
+            y = y + Screen:getHeight() - footer_h - frame_size.h - margin,
+            w = frame_size.w,
+            h = frame_size.h,
+        }
+        frame:paintTo(bb, self.rect.x, self.rect.y)
+    end
+    view:registerViewModule("songbook_button", button)
+    self.ui:registerTouchZones({{
+        id = "songbook_button",
+        ges = "tap",
+        screen_zone = SONG_BUTTON_ZONE,
+        overrides = { "tap_link", "readerhighlight_tap", "readerfooter_tap", "readerconfigmenu_ext_tap",
+            "readerconfigmenu_tap", "tap_forward", "tap_backward", "tap_right_bottom_corner" },
+        handler = function(ges)
+            if not (button.rect and ges.pos:intersectWith(button.rect)) then return end
+            self:showSongDialog()
+            return true
+        end,
+    }})
 end
 
 --- The footer's progress is page / page count, which hardly moves for a song
@@ -1154,7 +1218,7 @@ end
 function Songbook:showCollection(name, on_close)
     return self:showLocal(name, function(song) return self:isInCollection(name, song.uid) end, {
         text = _("This collection is empty"),
-        help = _("Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."),
+        help = _("Long-press a song in a list and choose \"Collections…\", or use the song button while a song is open."),
         action = { text = _("Add songs…"), callback = function(refresh) self:showCollectionPicker(name, refresh) end },
     }, on_close, { kind = "collection", arg = name }, name)
 end
@@ -1254,7 +1318,7 @@ end
 function Songbook:onSongbookShowFavorites()
     return self:showLocal(_("Favorites"), function(song) return self:isFavorite(song.uid) end, {
         text = _("No favorites yet"),
-        help = _("No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."),
+        help = _("No favorites yet. Long-press a song in a list to add it, or use the song button while a song is open."),
         action = { text = _("My songs"), callback = function() self:onSongbookShowLocal() end },
     }, nil, { kind = "favorites" })
 end
@@ -2406,72 +2470,78 @@ function Songbook:setAndRefresh(key, value)
     self:refreshCurrent()
 end
 
---- Items for the song that is open: transposition, autoscroll, favorite, collections.
-function Songbook:songMenu()
+--- Actions for the song that is open (for show_actions(), each with an `id`):
+-- transposition, autoscroll, song length, favorite, collections, playlist and
+-- next song. Songs received while following are not kept in favorites,
+-- collections or the playlist.
+function Songbook:songActions()
     local uid = self:currentSongId()
+    if not uid then return {} end
     local own = self:currentOwnSongId()
-    local items = {
+    local t = self:getMap("transpose")[uid] or 0
+    local secs = self:songDuration(uid)
+    local actions = {
         {
-            songbook_item = "transpose",
-            text_func = function()
-                if not self:get("show_chords") then return _("Transpose (chords hidden)") end
-                local t = self:getMap("transpose")[uid] or 0
-                return t ~= 0 and T(_("Transpose (%1)"), string.format("%+d", t)) or _("Transpose")
-            end,
-            callback = function()
-                if self:get("show_chords") then return self:showKeyDialog() end
-                UIManager:show(ConfirmBox:new{
-                    text = _("Chords are hidden. Show them?"),
-                    ok_text = _("Show chords"),
-                    ok_callback = function() self:setAndRefresh("show_chords", true) end,
-                })
-            end,
+            id = "transpose",
+            text = not self:get("show_chords") and _("Transpose (chords hidden)")
+                or t ~= 0 and T(_("Transpose (%1)"), string.format("%+d", t)) or _("Transpose"),
+            callback = function() self:showKeyDialog() end,
         },
         {
-            songbook_item = "autoscroll",
-            text = _("Autoscroll"),
-            checked_func = function() return self:isAutoscrolling() end,
-            sub_item_table = {
-                {
-                    text_func = function()
-                        return self:isAutoscrolling() and _("Stop autoscroll") or _("Start autoscroll")
-                    end,
-                    callback = function() self:onSongbookAutoscroll() end,
-                },
-                {
-                    text_func = function()
-                        local secs = self:songDuration(uid)
-                        return secs and T(_("Song length: %1"), ChordPro.format_duration(secs))
-                            or _("Song length")
-                    end,
-                    enabled = own ~= nil,
-                    keep_menu_open = true,
-                    callback = function(touchmenu_instance) self:showDurationDialog(touchmenu_instance) end,
-                },
-            },
+            id = "autoscroll",
+            text = self:isAutoscrolling() and _("Stop autoscroll") or _("Start autoscroll"),
+            callback = function() self:onSongbookAutoscroll() end,
+        },
+        {
+            id = "duration",
+            text = secs and T(_("Song length: %1"), ChordPro.format_duration(secs)) or _("Song length"),
+            enabled = own ~= nil,
+            callback = function() self:showDurationDialog() end,
         },
     }
-    -- songs received while following are not kept in favorites or collections
     if own then
-        table.insert(items, {
-            songbook_item = "favorite",
-            text = _("Favorite"),
-            checked_func = function() return self:isFavorite(own) end,
-            callback = function() self:setFavorite(own, not self:isFavorite(own)) end,
+        local _key, id = split_uid(own)
+        local meta = ChordPro.parse_meta(read_file(self:songPath(own)) or "")
+        local song = { uid = own, title = meta.title or id }
+        table.insert(actions, {
+            id = "favorite",
+            text = self:isFavorite(own) and _("Remove from favorites") or _("Add to favorites"),
+            callback = function() self:onSongbookToggleFavorite() end,
         })
-        table.insert(items, {
-            songbook_item = "collections",
-            text = _("Add to collection…"),
-            keep_menu_open = true,
-            callback = function()
-                local _key, id = split_uid(own)
-                local meta = ChordPro.parse_meta(read_file(self:songPath(own)) or "")
-                self:showSongCollections({ uid = own, title = meta.title or id }, function() end)
-            end,
+        table.insert(actions, {
+            id = "collections",
+            text = _("Collections…"),
+            callback = function() self:showSongCollections(song, function() end) end,
+        })
+        if not self:isFollowing() then
+            local playlist = self:playlistButton(song, function() end)
+            table.insert(actions, { id = "playlist", text = playlist.text, callback = playlist.callback })
+        end
+    end
+    local next_song = self:nextInPlaylist()
+    if next_song and next_song.uid ~= uid then
+        table.insert(actions, {
+            id = "next",
+            text = T(_("Next song: %1"), next_song.title),
+            callback = function() self:openSong(next_song.uid) end,
         })
     end
-    return items
+    return actions
 end
+
+--- Dialog of the open song (song button, gesture "song options").
+function Songbook:showSongDialog()
+    local uid = self:currentSongId()
+    if not uid then return end
+    local _key, id = split_uid(uid)
+    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+    local title = meta.title or id
+    if meta.artist then title = title .. " – " .. meta.artist end
+    show_actions(title, self:songActions())
+    return true
+end
+
+Songbook.onSongbookSongDialog = Songbook.showSongDialog
 
 --- Items of the song library: the song lists, playlist and next song.
 function Songbook:libraryMenu()
@@ -2583,6 +2653,12 @@ function Songbook:settingsMenu()
                     callback = function() self:setAndRefresh("show_chords", not self:get("show_chords")) end,
                 },
                 {
+                    text = _("Song button"),
+                    help_text = _("A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as the gesture action \"Songbook: song options\"."),
+                    checked_func = function() return self:get("song_button") end,
+                    callback = function() self:setAndRefresh("song_button", not self:get("song_button")) end,
+                },
+                {
                     text = _("Repeat chorus text"),
                     help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
                     checked_func = function() return self:get("repeat_chorus") end,
@@ -2601,7 +2677,7 @@ function Songbook:settingsMenu()
                 },
                 {
                     text = _("Autoscroll when a song opens"),
-                    help_text = _("Scroll songs that have a length ({duration} in the song file, or set in Autoscroll → Song length) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
+                    help_text = _("Scroll songs that have a length ({duration} in the song file, or set with Song length in the song's options) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
                     checked_func = function() return self:get("autoscroll") end,
                     callback = function() self:set("autoscroll", not self:get("autoscroll")) end,
                 },
@@ -2641,15 +2717,11 @@ function Songbook:settingsMenu()
     }
 end
 
---- The Songbook menu: the open song's items first, then the library, jam
--- session and settings. Built when it opens, so it fits the open document.
+--- The Songbook menu: the library, jam session and settings (the open song's
+-- actions are in showSongDialog()). Built when it opens, so Next song shows
+-- only while a song is queued.
 function Songbook:mainMenu()
-    local items = {}
-    if self:currentSongId() then
-        items = self:songMenu()
-        items[#items].separator = true
-    end
-    for _i, item in ipairs(self:libraryMenu()) do table.insert(items, item) end
+    local items = self:libraryMenu()
     table.insert(items, {
         songbook_item = "jam",
         text_func = function()

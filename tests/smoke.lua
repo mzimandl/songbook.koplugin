@@ -116,6 +116,12 @@ stub("socket.http", { request = function(req)
     table.insert(req.sink, responses[req.url] or "{title: Downloaded}\n[Am]La")
     return 1, 200, {}, "HTTP/1.1 200 OK"
 end })
+stub("ffi/blitbuffer", { COLOR_WHITE = 0 })
+stub("ui/geometry", { new = function(_, o) return o end })
+stub("ui/size", { border = { button = 1 }, radius = { button = 2 }, padding = { small = 2 }, margin = { default = 5 } })
+stub("ui/widget/iconwidget", class())
+stub("ui/widget/container/framecontainer", class({ getSize = function() return { w = 50, h = 50 } end,
+    paintTo = function() end }))
 local ReaderUI = { showReader = function(_, path) table.insert(opened, path) end }
 stub("apps/reader/readerui", ReaderUI)
 local ReadHistory = { hist = { { file = "/books/book.epub", time = 1 } } }
@@ -157,7 +163,13 @@ local function menu_item(name)
     end
 end
 check(#items.songbook.sub_item_table_func() == 7 and menu_item("my_songs") and menu_item("settings"), "menu built")
-check(menu_item("transpose") == nil and menu_item("next") == nil, "no song items outside a song")
+-- actions of the open song (song button / song options dialog), found by `id`
+local function song_action(id)
+    for _i, a in ipairs(plugin:songActions()) do
+        if a.id == id then return a end
+    end
+end
+check(#plugin:songActions() == 0 and menu_item("next") == nil, "no song actions outside a song")
 
 -- empty library: the list opens with a hint and a way to get songs
 local function last_shown() return shown[#shown] end
@@ -193,16 +205,38 @@ ReaderUI.instance = nil
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(items.songbook.sub_item_table_func()[1].songbook_item == "transpose", "song items first in a song")
+check(#items.songbook.sub_item_table_func() == 7 and menu_item("transpose") == nil, "no song items in the menu")
+-- the song button: bottom right, above the footer; taps elsewhere in its zone go on
+local zones, modules = {}, {}
+plugin.ui.registerTouchZones = function(_, z) for _i, zone in ipairs(z) do zones[zone.id] = zone end end
+plugin.ui.view = { footer_visible = true, footer = { getHeight = function() return 20 end },
+    registerViewModule = function(_, name, m) modules[name] = m end }
+plugin:onReaderReady()
+local song_button = modules.songbook_button
+song_button:paintTo(nil, 0, 0)
+check(song_button.rect.x == 600 - 50 - 10 and song_button.rect.y == 800 - 20 - 50 - 10, "song button above the footer")
+local function point(x, y) return { intersectWith = function(_, r) return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h end } end
+local n_shown = #shown
+check(not zones.songbook_button.handler({ pos = point(460, 700) }) and #shown == n_shown, "tap beside the song button goes on")
+check(zones.songbook_button.handler({ pos = point(560, 730) }) and shown[#shown].title == "Žluťoučký kůň – Lidová" and #shown == n_shown + 1,
+    "song button opens the song dialog: " .. tostring(shown[#shown].title))
+check(shown[#shown].buttons[1][1].text == "Transpose" and shown[#shown].buttons[2][1].text == "Start autoscroll",
+    "song dialog actions")
+settings_store.song_button = false
+modules = {}
+plugin:onReaderReady()
+check(modules.songbook_button == nil, "song button can be turned off")
+settings_store.song_button = nil
+plugin.ui.view = nil
 plugin:onSongbookTranspose(1)
 plugin:onSongbookTranspose(1)
 check(opened[#opened]:find("test@t%+2"), "transposed render path")
 check(io.open(opened[#opened]):read("*a"):find('<span class="c">D', 1, true), "chords transposed to D")
-check(menu_item("transpose").text_func() == "Transpose (+2)", "transpose label")
+check(song_action("transpose").text == "Transpose (+2)", "transpose label")
 plugin:onSongbookTranspose(0)
 check(opened[#opened]:find("test@t%+0"), "reset transposition")
 -- the key dialog: test.cho is in C
-menu_item("transpose").callback()
+song_action("transpose").callback()
 local key_dialog = shown[#shown]
 check(key_dialog.title == "Key: C (original key)" and #key_dialog.buttons == 5
     and key_dialog.buttons[1][3].text == "+1" and not key_dialog.buttons[1][2].enabled
@@ -219,20 +253,20 @@ key_dialog = shown[#shown]
 check(#opened == n_opened and key_dialog.title == "Key: B (-2)", "dialog +1: " .. key_dialog.title)
 key_dialog.buttons[5][2].callback()   -- Apply
 check(#opened == n_opened + 1 and opened[#opened]:find("test@t%-2"), "Apply renders the chosen key")
-menu_item("transpose").callback()
+song_action("transpose").callback()
 key_dialog = shown[#shown]
 check(key_dialog.title == "Key: B (-2)", "dialog opens with the saved key")
 key_dialog.buttons[1][2].callback()   -- Original key
 shown[#shown].buttons[5][1].callback()   -- Cancel
 check(#opened == n_opened + 1 and plugin:getMap("transpose").test == -2, "Cancel keeps the key")
-menu_item("transpose").callback()
+song_action("transpose").callback()
 shown[#shown].buttons[1][2].callback()
 shown[#shown].buttons[5][2].callback()
 check(opened[#opened]:find("test@t%+0"), "key dialog original key")
 plugin.ui.view = nil
 settings_store.show_chords = false
-check(menu_item("transpose").text_func() == "Transpose (chords hidden)", "transpose label without chords")
-menu_item("transpose").callback()
+check(song_action("transpose").text == "Transpose (chords hidden)", "transpose label without chords")
+song_action("transpose").callback()
 last_shown().ok_callback()
 check(settings_store.show_chords == true and opened[#opened]:find("%.c1%."), "transpose offers to show chords")
 doc_store[opened[#opened]].copt_view_mode = 0
@@ -251,7 +285,8 @@ local pos = 0
 doc.info = { doc_height = 3200 }
 doc.getCurrentPos = function() return pos end
 doc.hasHiddenFlows = function() return false end
-plugin.ui.view = { view_mode = "scroll", footer = { getBookProgress = function() return 0.5 end } }
+plugin.ui.view = { view_mode = "scroll", footer = { getBookProgress = function() return 0.5 end },
+    registerViewModule = function() end }
 settings_store.autoscroll_step = 4
 plugin.ui.dimen = { h = 800 }
 plugin.ui.handleEvent = function(_, ev)
@@ -260,21 +295,20 @@ plugin.ui.handleEvent = function(_, ev)
         plugin:onPosUpdate(pos)
     end
 end
-local scroll_menu = menu_item("autoscroll")
-check(scroll_menu.sub_item_table[1].text_func() == "Start autoscroll"
-    and scroll_menu.sub_item_table[2].text_func() == "Song length", "no song length")
-scroll_menu.sub_item_table[1].callback()
+check(song_action("autoscroll").text == "Start autoscroll"
+    and song_action("duration").text == "Song length", "no song length")
+song_action("autoscroll").callback()
 check(not plugin:isAutoscrolling() and notes[#notes]:find("no length", 1, true), "no autoscroll without a length")
-scroll_menu.sub_item_table[2].callback()
+song_action("duration").callback()
 check(shown[#shown].ok_always_enabled and shown[#shown].left_value == 3 and shown[#shown].right_value == 0,
     "the default length can be applied as it is")
 shown[#shown].callback(3, 0)
-check(settings_store.duration.test == 180 and scroll_menu.sub_item_table[2].text_func() == "Song length: 3:00",
+check(settings_store.duration.test == 180 and song_action("duration").text == "Song length: 3:00",
     "song length set")
 clock = 100
-scroll_menu.sub_item_table[1].callback()
+song_action("autoscroll").callback()
 check(plugin:isAutoscrolling() and standby == 1 and toasts[#toasts] == "Autoscroll: 3:00"
-    and scroll_menu.sub_item_table[1].text_func() == "Stop autoscroll"
+    and song_action("autoscroll").text == "Stop autoscroll"
     and scheduled_in == 22.5, "autoscroll waits until the played line is half way down: " .. tostring(scheduled_in))
 clock = 122.5
 scheduled()
@@ -525,8 +559,9 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")
-check(plugin:currentSongId() == "jam/repo_song-a" and menu_item("transpose") and not menu_item("favorite")
-    and not menu_item("collections"), "followed song can't be favorited or collected")
+check(plugin:currentSongId() == "jam/repo_song-a" and song_action("transpose") and not song_action("favorite")
+    and not song_action("collections") and not song_action("playlist"),
+    "followed song can't be favorited, collected or queued")
 -- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
@@ -733,14 +768,15 @@ check(list.title == "Favorites" and #list.item_table == 2 and item_for(list, "te
 find_button(hold(list, "test"), "Remove from favorites").callback()
 check(not plugin:isFavorite("test") and list.item_table[2].text == "No favorites yet", "favorite removed, list refreshed")
 
--- reader menu item and gesture toggle the open song
+-- song dialog and gesture toggle the open song
 plugin:openSong("user-songs/test")
-local fav_item = menu_item("favorite")
-check(fav_item and not fav_item.checked_func(), "favorite item in a song")
-fav_item.callback()
-check(fav_item.checked_func() and plugin:isFavorite("user-songs/test"), "favorite from reader menu")
+check(song_action("favorite").text == "Add to favorites", "favorite action in a song")
+song_action("favorite").callback()
+check(song_action("favorite").text == "Remove from favorites" and plugin:isFavorite("user-songs/test"),
+    "favorite from the song dialog")
 plugin:onSongbookToggleFavorite()
 check(not plugin:isFavorite("user-songs/test"), "gesture toggles favorite off")
+check(song_action("playlist").text == "Add to playlist", "playlist action in a song")
 
 -- online list: favoriting a song that isn't on the device downloads it first
 plugin:deleteSong("other-repo-dev/test")
@@ -830,11 +866,9 @@ find_button(last_shown(), "Delete").callback()
 last_shown().ok_callback()
 check(#plugin:getCollections() == 1 and #picker.item_table == 2, "collection deleted")
 
--- reader menu: add the open song to a collection
+-- song dialog: add the open song to a collection
 plugin:openSong("user-songs/test")
-local coll_item = menu_item("collections")
-check(coll_item and coll_item.keep_menu_open, "add to collection in a song")
-coll_item.callback()
+song_action("collections").callback()
 check(last_shown().title == "Collections: Downloaded", "collections dialog for open song: " .. tostring(last_shown().title))
 find_button(last_shown(), "Oheň").callback()
 check(plugin:isInCollection("Oheň", "user-songs/test"), "open song added to collection")

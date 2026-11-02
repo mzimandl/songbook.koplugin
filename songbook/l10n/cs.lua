@@ -9,6 +9,7 @@ return {
     ["Songbook: collections"] = "Zpěvník: kolekce",
     ["Songbook: transpose / choose key"] = "Zpěvník: transpozice / volba tóniny",
     ["Songbook: last song list"] = "Zpěvník: poslední seznam písní",
+    ["Songbook: song options"] = "Zpěvník: volby písně",
     ["Songbook: add/remove favorite"] = "Zpěvník: přidat/odebrat z oblíbených",
     ["Songbook: playlist"] = "Zpěvník: playlist",
     ["Songbook: next song in the playlist"] = "Zpěvník: další píseň z playlistu",
@@ -39,10 +40,9 @@ return {
     ["Show chords"] = "Zobrazit akordy",
 
     -- autoscroll
-    ["This song has no length. Set it in Autoscroll → Song length."] = "Píseň nemá délku. Nastavte ji v Posouvání → Délka písně.",
+    ["This song has no length. Set it with Song length in the song's options."] = "Píseň nemá délku. Nastavte ji položkou Délka písně ve volbách písně.",
     ["Autoscroll: %1"] = "Posouvání: %1",
     ["Autoscroll stopped"] = "Posouvání zastaveno",
-    ["Autoscroll"] = "Posouvání",
     ["Stop autoscroll"] = "Zastavit posouvání",
     ["Start autoscroll"] = "Spustit posouvání",
     ["Song length"] = "Délka písně",
@@ -75,14 +75,13 @@ return {
 
     -- favorites
     ["Favorites"] = "Oblíbené",
-    ["Favorite"] = "Oblíbená",
     ["Added to favorites."] = "Přidáno do oblíbených.",
     ["Removed from favorites."] = "Odebráno z oblíbených.",
     ["Remove from favorites"] = "Odebrat z oblíbených",
     ["Add to favorites"] = "Přidat do oblíbených",
     ["No favorites yet"] = "Zatím žádné oblíbené",
-    ["No favorites yet. Long-press a song in a list to add it, or use the Songbook menu while a song is open."] =
-        "Zatím žádné oblíbené. Přidejte píseň dlouhým podržením v seznamu, nebo v menu Zpěvníku při otevřené písni.",
+    ["No favorites yet. Long-press a song in a list to add it, or use the song button while a song is open."] =
+        "Zatím žádné oblíbené. Přidejte píseň dlouhým podržením v seznamu, nebo tlačítkem písně při otevřené písni.",
 
     -- collections
     ["A collection named \"%1\" already exists."] = "Kolekce „%1“ už existuje.",
@@ -95,12 +94,11 @@ return {
     ["Rename collection"] = "Přejmenovat kolekci",
     ["Delete collection \"%1\"?\nThe songs stay on the device."] = "Smazat kolekci „%1“?\nPísně zůstanou v zařízení.",
     ["This collection is empty"] = "Kolekce je prázdná",
-    ["Long-press a song in a list and choose \"Collections…\", or use the Songbook menu while a song is open."] =
-        "Podržte píseň v seznamu a zvolte „Kolekce…“, nebo použijte menu Zpěvníku při otevřené písni.",
+    ["Long-press a song in a list and choose \"Collections…\", or use the song button while a song is open."] =
+        "Podržte píseň v seznamu a zvolte „Kolekce…“, nebo použijte tlačítko písně při otevřené písni.",
     ["Add songs…"] = "Přidat písně…",
     ["Add to \"%1\""] = "Přidat do „%1“",
     ["Remove from \"%1\""] = "Odebrat z „%1“",
-    ["Add to collection…"] = "Přidat do kolekce…",
 
     -- online
     ["Loading song list: %1…"] = "Načítám seznam písní: %1…",
@@ -224,6 +222,9 @@ return {
     ["Line width"] = "Šířka řádku",
     ["Lines with chords wrap at word boundaries above this width. Lower it if lines are cut off at the right edge."] =
         "Řádky s akordy se nad touto šířkou zalamují mezi slovy. Snižte ji, pokud se řádky ořezávají na pravém okraji.",
+    ["Song button"] = "Tlačítko písně",
+    ["A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as the gesture action \"Songbook: song options\"."] =
+        "Tlačítko v pravém dolním rohu otevřené písně otevře volby písně: transpozici, posouvání, oblíbené, kolekce a playlist. Jsou dostupné i jako akce gesta „Zpěvník: volby písně“.",
     ["Repeat chorus text"] = "Opakovat text refrénu",
     ["Print the whole chorus where the song says {chorus}, instead of just a label."] =
         "Kde píseň uvádí {chorus}, vypsat celý refrén místo pouhého označení.",
@@ -232,8 +233,8 @@ return {
     ["Open songs in continuous (scroll) mode, which autoscroll moves by a part of the screen. Turn it off to use the reader's own view mode."] =
         "Otevírat písně v plynulém režimu, kde je posouvání posune vždy o část obrazovky. Vypněte, chcete-li režim zobrazení čtečky.",
     ["Autoscroll when a song opens"] = "Posouvat po otevření písně",
-    ["Scroll songs that have a length ({duration} in the song file, or set in Autoscroll → Song length) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."] =
-        "Posouvat písně, které mají délku ({duration} v souboru, nebo nastavenou v Posouvání → Délka písně), tak, aby skončily s písní. Gesty lze posouvání spustit, zastavit, zrychlit nebo zpomalit; změněná délka se u písně uloží.",
+    ["Scroll songs that have a length ({duration} in the song file, or set with Song length in the song's options) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."] =
+        "Posouvat písně, které mají délku ({duration} v souboru, nebo nastavenou položkou Délka písně ve volbách písně), tak, aby skončily s písní. Gesty lze posouvání spustit, zastavit, zrychlit nebo zpomalit; změněná délka se u písně uloží.",
     ["Autoscroll step: 1/%1 screen"] = "Krok posouvání: 1/%1 obrazovky",
     ["Autoscroll step"] = "Krok posouvání",
     ["In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often."] =

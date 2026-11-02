@@ -55,11 +55,16 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 
 ## Using it
 
-The Songbook menu changes with what is open. While a song is open, its
-items come first: *Transpose*, *Autoscroll*, *Favorite* and *Add to
-collection…*. Below them are the song lists (My songs, Favorites, Collections,
+The Songbook menu has the song lists (My songs, Favorites, Collections,
 Browse online), the *Playlist* and, when a song is queued, *Next song*. Then
 come *Jam session* and *Settings*.
+
+While a song is open, the ☰ button in the bottom right corner (above the
+status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
+*Song length*, *Add to / Remove from favorites*, *Collections…*, *Add to
+playlist* and *Next song*. The gesture action *Songbook: song options*
+(Reader) opens them too; *Settings → Display → Song button* hides the
+button. Taps in that corner beside the button still turn pages.
 
 Every song list starts with search. Actions for the whole list are in the ☰
 menu at the left of the title bar. The gesture action *Songbook: last song
@@ -75,13 +80,13 @@ list* (General) opens the list you used last again, with its search and page.
   from. Long-press to add to favorites or collections, or to delete. An empty
   list offers *Browse online*.
 - **Favorites**: songs marked with ★. Add or remove them by long-pressing a
-  song in any list, or with **Favorite** in the Songbook menu while a song is
+  song in any list, or in the song's options (song button) while a song is
   open. Favoriting an online song downloads it. Gesture actions:
   *Songbook: favorites* (General) and *Songbook: add/remove favorite* (Reader).
 - **Collections**: your own named song lists (e.g. *Campfire*, *Christmas*).
   A song can be in several collections, from any repository. Create them in
   **Collections → New collection…**, or from a song: long-press it in a list
-  → *Collections…*, or **Add to collection…** in the Songbook menu while a song
+  → *Collections…*, or *Collections…* in the song's options while a song
   is open. In a collection, *Add songs…* (☰ menu, or in an empty collection)
   lists your songs: tap to add or remove them. Long-press a song in a
   collection to remove it from that collection. Long-press a collection to rename or delete it (its songs stay on
@@ -91,20 +96,21 @@ list* (General) opens the list you used last again, with its search and page.
   played (a song from Up next leaves it). Add songs with *Add songs…* in the
   playlist (tap a song to add it, tap again to remove; songs already in the
   playlist are hidden, *Show songs already in the playlist* in its ☰ menu lists them too),
-  or by long-pressing a song in any list → *Add to playlist*. **Next song** in
-  the Songbook menu opens the first song of Up next. In the playlist, tap a
+  or by long-pressing a song in any list → *Add to playlist* (or in the song's
+  options for the open song). **Next song** in the Songbook menu or in the
+  song's options opens the first song of Up next. In the playlist, tap a
   song to play it, long-press a song of Up next to move it to the top (*Play
   next*) or remove it, long-press a played song to queue it again (*Add to Up
   next*). The ☰ menu has *Save played songs as collection…*, which keeps the evening's
   set list, and *Clear playlist*, which starts over. Gesture actions: *Songbook:
   playlist* and *Songbook: next song in the playlist* (General).
-- **Transpose** (in the menu while a song is open): a dialog with −1 / +1,
+- **Transpose** (in the song's options): a dialog with −1 / +1,
   *Original key* and the keys to pick directly (from `{key}`, else the first
   chord). Pick the key step by step, then tap *Apply* to redraw the song
   (*Cancel* keeps the old key). With chords hidden it offers to show them.
   The transposition is saved per song (separately for the same song from two repositories). It is also available as gesture actions
   (*Songbook: transpose up/down*, *Songbook: transpose / choose key*) under Taps & gestures → Reader.
-- **Autoscroll** (in the menu while a song is open): *Start/Stop autoscroll*
+- **Autoscroll** (in the song's options): *Start/Stop autoscroll*
   scrolls the song so that it ends with the song's length, `{duration: 3:45}` in the song file or
   *Song length* set on the device. In scroll mode it moves an eighth of the
   screen at a time (*Settings → Scrolling → Autoscroll step*), keeping the line being
@@ -144,8 +150,8 @@ list* (General) opens the list you used last again, with its search and page.
     whether to delete the songs downloaded from it.
   - Display: chord notation (Czech H, B = B♭, or English), line width (wrap
     column; lower it if lines are cut off on the right), show chords
-    (lyrics-only mode), repeat chorus text (`{chorus}` prints the chorus
-    instead of a label).
+    (lyrics-only mode), song button (hide the ☰ button of an open song),
+    repeat chorus text (`{chorus}` prints the chorus instead of a label).
   - Scrolling: continuous scroll mode (open songs in scroll mode), autoscroll
     when a song opens, autoscroll step (1/2 to 1/16 of the screen).
 
