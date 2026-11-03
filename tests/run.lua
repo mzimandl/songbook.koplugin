@@ -309,19 +309,26 @@ eq(Jam.add_request(queue, { uid = "a" }), true, "jam request added")
 eq(select(2, Jam.add_request(queue, { uid = "a" })), "queued", "jam request duplicate")
 for i = 2, Jam.MAX_QUEUE do Jam.add_request(queue, { uid = "s" .. i }) end
 eq(select(2, Jam.add_request(queue, { uid = "z" })), "full", "jam queue full")
-eq(Jam.played(history, queue, { uid = "a" }), true, "jam played changes playlist")
-eq(#queue .. " " .. #history, (Jam.MAX_QUEUE - 1) .. " 1", "jam played leaves queue")
-eq(Jam.played(history, queue, { uid = "a" }), false, "jam same song again not repeated")
-Jam.played(history, queue, { uid = "b" })
-Jam.played(history, queue, { uid = "a" })
+local p = { history = history, queue = queue }
+eq(Jam.play(p, { uid = "a" }), true, "jam play changes playlist")
+eq(#queue .. " " .. #history .. " " .. p.now.uid, (Jam.MAX_QUEUE - 1) .. " 0 a", "jam play leaves queue, now playing")
+eq(Jam.play(p, { uid = "a" }), false, "jam play the song now playing again")
+Jam.play(p, { uid = "b" })
+eq(#history .. " " .. history[1].uid .. " " .. p.now.uid, "1 a b", "jam previous song goes to played")
+eq(Jam.finish(p), true, "jam finish")
+eq(#history .. " " .. history[2].uid .. " " .. tostring(p.now), "2 b nil", "jam finished song played")
+eq(Jam.finish(p), false, "jam finish with nothing playing")
+Jam.play(p, { uid = "a" })
+Jam.finish(p)
 eq(#history, 3, "jam song played again later")
-for i = 1, Jam.MAX_HISTORY do Jam.played(history, queue, { uid = "h" .. i }) end
+for i = 1, Jam.MAX_HISTORY do Jam.play(p, { uid = "h" .. i }) end
+Jam.finish(p)
 eq(#history .. " " .. history[#history].uid, Jam.MAX_HISTORY .. " h" .. Jam.MAX_HISTORY, "jam history capped")
 eq(Jam.json({}), "[]", "jam json empty array")
-ctx.playlist = function() return { history = {}, queue = { { uid = "r/x", title = "X", by = "Eva" } } } end
+ctx.playlist = function() return { now = { uid = "r/n", title = "N" }, history = {}, queue = { { uid = "r/x", title = "X", by = "Eva" } } } end
 local requested_by
 ctx.request = function(uid, by) requested_by = by; return uid == "r/x" or nil, "missing" end
-eq(handle("/playlist.json"):match("\r\n\r\n(.*)$"), '{"history":[],"queue":[{"by":"Eva","title":"X","uid":"r/x"}]}', "jam playlist json")
+eq(handle("/playlist.json"):match("\r\n\r\n(.*)$"), '{"history":[],"now":{"title":"N","uid":"r/n"},"queue":[{"by":"Eva","title":"X","uid":"r/x"}]}', "jam playlist json")
 eq(handle("/queue/add?uid=r%2Fx&by=%20Eva%20"):match("\r\n\r\n(.*)$"), '{"ok":true}', "jam request ok")
 eq(requested_by, "Eva", "jam request name cleaned")
 eq(handle("/queue/add?uid=q"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}', "jam request error")
@@ -329,6 +336,8 @@ eq(handle("/queue/add"):match("\r\n\r\n(.*)$"), '{"error":"missing","ok":false}'
 eq(page:find("%%1", 1, true), nil, "jam page percent signs unescaped")
 local pl = Jam.parse_playlist("", decode_table({ queue = { { title = "A", by = "Eva", at = "5" }, { by = "x" }, 7 } }))
 eq(#pl.queue .. " " .. #pl.history .. " " .. pl.queue[1].by .. " " .. pl.queue[1].at, "1 0 Eva 5", "jam parse playlist")
+eq(pl.now, nil, "jam parse playlist without now (older songbooks)")
+eq(Jam.parse_playlist("", decode_table({ now = { title = "N", uid = "r/n" } })).now.uid, "r/n", "jam parse playlist now")
 eq(Jam.parse_playlist("", function() error("bad") end), nil, "jam parse playlist bad json")
 eq(Jam.find_id({ { uid = "a" }, { uid = "r/x" } }, "r_x"), "r/x", "jam find id")
 eq(Jam.find_id({ { uid = "a" } }, "b"), nil, "jam find id missing")

@@ -56,15 +56,18 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 ## Using it
 
 The Songbook menu has the song lists (My songs, Favorites, Collections,
-Browse online), the *Playlist* and, when a song is queued, *Next song*. Then
-come *Jam session* and *Settings*.
+Browse online), the *Playlist*, *Now playing* while a song is playing and
+*Next song* while one is queued. Then come *Jam session* and *Settings*.
 
 While a song is open, the ☰ button in the bottom right corner (above the
 status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
 *Song length*, *Add to / Remove from favorites*, *Add to collection…*, *Add to
-playlist* and *Next song* (the first song of Up next; disabled while Up next is empty). The gesture action *Songbook: song options*
-(Reader) opens them too; *Settings → Display → Song button* hides the
-button. Taps in that corner beside the button still turn pages.
+playlist*, *Play now* / *Finished*, *Open now playing* (while another song is
+playing) and *Next song* (the first song of Up next; disabled while Up next is
+empty). The button is inverted while the open song is the one now playing.
+The gesture action *Songbook: song options* (Reader) opens them too;
+*Settings → Display → Song button* hides the button. Taps in that corner
+beside the button still turn pages.
 
 Every song list starts with search. Actions for the whole list are in the ☰
 menu at the left of the title bar. The gesture action *Songbook: last song
@@ -92,17 +95,25 @@ list* (General) opens the list you used last again, with its search and page.
   collection to remove it from that collection. Long-press a collection to rename or delete it (its songs stay on
   the device). Adding an online song downloads it. Gesture action:
   *Songbook: collections* (General).
-- **Playlist**: *Up next* and *Played*. Every song you open is recorded as
-  played (a song from Up next leaves it). Add songs with *Add songs…* in the
+- **Playlist**: *Now playing*, *Up next* and *Played*. Opening a song only
+  shows it, so you can look for the next song while playing. *Play now* (in
+  the song's options, by long-pressing a song in a list, or a tap on a song of
+  Up next) makes it the song now playing; the jam session shares only that
+  one. When another song starts playing, or you tap *Finished*, it goes to
+  Played. *Settings → Opening a song plays it* makes every song you open the
+  song now playing. *Open now playing* (song's options, Songbook menu, a tap
+  on it in the playlist, gesture *Songbook: open the song now playing*) goes
+  back to it. Add songs with *Add songs…* in the
   playlist (tap a song to add it, tap again to remove; songs already in the
   playlist are hidden, *Show songs already in the playlist* in its ☰ menu lists them too),
   or by long-pressing a song in any list → *Add to playlist* (or in the song's
   options for the open song). **Next song** in the Songbook menu or in the
-  song's options opens the first song of Up next. In the playlist, tap a
-  song to play it, long-press a song of Up next to move it to the top (*Play
-  next*) or remove it, long-press a played song to queue it again (*Add to Up
-  next*). The ☰ menu has *Save played songs as collection…*, which keeps the evening's
-  set list, and *Clear playlist*, which starts over. Gesture actions: *Songbook:
+  song's options plays the first song of Up next. In the playlist, tap a
+  song of Up next to play it or a played song to open it, long-press a song
+  of Up next to move it to the top (*Play next*) or remove it, long-press a
+  played song to queue it again (*Add to Up next*), long-press the song now
+  playing to finish it. The ☰ menu has *Save played songs as collection…*, which keeps the evening's
+  set list (with the song now playing), and *Clear playlist*, which starts over. Gesture actions: *Songbook:
   playlist* and *Songbook: next song in the playlist* (General).
 - **Transpose** (in the song's options): a dialog with −1 / +1,
   *Original key* and the keys to pick directly (from `{key}`, else the first
@@ -116,13 +127,14 @@ list* (General) opens the list you used last again, with its search and page.
   screen at a time (*Settings → Scrolling → Autoscroll step*), keeping the line being
   played near the top; in page mode it turns pages. A manual page turn or scroll re-times it from there.
   Songs open in continuous (scroll) mode (*Settings → Scrolling → Continuous scroll mode*).
-  *Settings → Scrolling → Autoscroll when a song opens* starts it by itself. Gesture
+  *Settings → Scrolling → Autoscroll when a song starts playing* starts it by itself
+  (not for songs that are only open). Gesture
   actions (Reader): *Songbook: start/stop autoscroll*, *autoscroll faster /
   slower* (±10 %, the new length is kept for the song).
 - **Jam session**: *Share songs on the network* starts a small web server.
   Guests on the same Wi-Fi open the shown address (tap it for a QR code) in a
-  phone browser and see the song you are playing; it changes when you open
-  another song or transpose. Each guest can transpose, switch notation, hide
+  phone browser and see the song now playing (not the one you only have
+  open); it changes when another song starts playing or you transpose it. Each guest can transpose, switch notation, hide
   chords and change the font size for themselves; lines wrap to the phone's
   width. The default port is 8765 (changeable while not sharing). The device
   does not go to standby while sharing. There is no password: share only on
@@ -135,12 +147,13 @@ list* (General) opens the list you used last again, with its search and page.
     one from its repository, or one both of you have from the same
     repository).
   - *Follow another songbook…*: enter the address shown on another reader
-    (e.g. `192.168.1.5`, port 8765 is added). Every song it opens opens on
+    (e.g. `192.168.1.5`, port 8765 is added). Every song it plays opens on
     yours too, in its key; you can still transpose it yourself until it
-    changes song or key. Followed songs are kept apart (`songs/jam/`, not in
+    changes song or key. While you have one of your own songs open, a new
+    song is only announced (*Now playing: …*); *Open now playing* goes to it. Followed songs are kept apart (`songs/jam/`, not in
     My songs, removed when you follow again); to keep one, download it with
-    *Browse their songs*. Following stops when you open a song of your own,
-    or when the other reader is unreachable for a while. Following clears
+    *Browse their songs*. Following stops in the Jam session menu, or when the
+    other reader is unreachable for a while. Following clears
     your playlist: *Playlist* shows the other reader's one, and *Request
     songs…* there lists its songs to ask for.
   - *Browse their songs*: adds the followed reader as a song repository, so
@@ -152,8 +165,9 @@ list* (General) opens the list you used last again, with its search and page.
     column; lower it if lines are cut off on the right), show chords
     (lyrics-only mode), song button (hide the ☰ button of an open song),
     repeat chorus text (`{chorus}` prints the chorus instead of a label).
+  - Opening a song plays it (off: opening only shows a song).
   - Scrolling: continuous scroll mode (open songs in scroll mode), autoscroll
-    when a song opens, autoscroll step (1/2 to 1/16 of the screen).
+    when a song starts playing, autoscroll step (1/2 to 1/16 of the screen).
 
 ## Supported ChordPro
 

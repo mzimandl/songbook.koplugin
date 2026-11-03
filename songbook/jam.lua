@@ -9,7 +9,7 @@ ctx = {
   songs     = function() -> list of { uid=, title=, artist=, key=, updated= } (all songs on the device)
   song_file = function(uid) -> ChordPro text or nil
   name      = repository name for /index.json,
-  playlist  = function() -> { history = {entry...}, queue = {entry...} }
+  playlist  = function() -> { now = entry or nil, history = {entry...}, queue = {entry...} }
   request   = function(uid, by) -> true or nil, error ("queued", "full", "missing")
   labels    = see DEFAULT_LABELS,
   css       = stylesheet for the song inside the page,
@@ -18,12 +18,12 @@ ctx = {
 
 Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
   /             guest page, polls /state.json and loads /song.html on change
-  /state.json   what is being played; "rev" changes with the song or the host's options
-  /song.html    current song; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords), ?w= columns
-  /song.cho     current song source
+  /state.json   the song now playing; "rev" changes with the song or the host's options
+  /song.html    song now playing; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords), ?w= columns
+  /song.cho     source of the song now playing
   /index.json   all songs in the song repository format, so the host can be added as a repository
   /songs/<file> one song of the index ("~" stands for "/" in the uid)
-  /playlist.json  played songs and guests' requests; entry = { uid, title, artist, by, at }
+  /playlist.json  now playing, played songs and guests' requests; entry = { uid, title, artist, by, at }
   /queue/add?uid=&by=  request a song -> { ok = true } or { ok = false, error = }
                        (?id= instead of uid: the song's id in /index.json, used by following songbooks)
 
@@ -236,6 +236,7 @@ button.on { background: #8883; }
 </div>
 <div id="song"><p>%s</p></div>
 <div id="list" hidden>
+<h2 id="h_now"></h2><ul id="now"></ul>
 <h2 id="h_queue"></h2><ul id="queue"></ul>
 <h2 id="h_request"></h2>
 <input id="name" maxlength="30"/><input id="search" type="search"/>
@@ -299,6 +300,7 @@ function fill(ul, list, extra) {
 }
 function loadPlaylist() {
   fetch("/playlist.json", { cache: "no-store" }).then(json).then(function (p) {
+    fill($("now"), p.now ? [p.now] : [], function () { return ""; });
     fill($("queue"), p.queue, function (e) { return e.by; });
     fill($("history"), p.history.slice().reverse(), function (e) {
       var t = new Date(e.at * 1000);
@@ -363,6 +365,7 @@ $("search").oninput = showSongs;
 $("name").value = P.by;
 $("name").placeholder = L.your_name;
 $("search").placeholder = L.search;
+$("h_now").textContent = L.now_playing;
 $("h_queue").textContent = L.up_next;
 $("h_request").textContent = L.request;
 $("h_history").textContent = L.played;
@@ -374,7 +377,7 @@ bar(); poll();
 
 local DEFAULT_LABELS = {
     title = "Songbook", waiting = "Waiting for a song…", offline = "Connection lost", chords = "Chords",
-    song = "Song", playlist = "Playlist", up_next = "Up next", played = "Played",
+    song = "Song", playlist = "Playlist", now_playing = "Now playing", up_next = "Up next", played = "Played",
     request = "Request a song", your_name = "Your name", search = "Search", nothing = "Nothing yet",
     requested = "Requested: %1", queued = "This song is already requested.",
     full = "Too many requests, try again later.", missing = "This song is not available.",
@@ -417,43 +420,59 @@ function M.add_request(queue, entry, max)
     return true
 end
 
---- Record a played song: append it to history (unless it is the last one
--- already, e.g. after transposing) and drop it from the queue.
+local function add_history(history, entry)
+    history[#history + 1] = entry
+    while #history > M.MAX_HISTORY do table.remove(history, 1) end
+end
+
+--- Make `entry` the song now playing of playlist `p` ({ now, history, queue }):
+-- the previous one goes to history, the new one leaves the queue.
 -- Returns true when the playlist changed.
-function M.played(history, queue, entry)
+function M.play(p, entry)
     local changed = false
-    for i = #queue, 1, -1 do
-        if queue[i].uid == entry.uid then
-            table.remove(queue, i)
+    for i = #p.queue, 1, -1 do
+        if p.queue[i].uid == entry.uid then
+            table.remove(p.queue, i)
             changed = true
         end
     end
-    local last = history[#history]
-    if not (last and last.uid == entry.uid) then
-        history[#history + 1] = entry
-        while #history > M.MAX_HISTORY do table.remove(history, 1) end
-        changed = true
-    end
-    return changed
+    if p.now and p.now.uid == entry.uid then return changed end
+    if p.now then add_history(p.history, p.now) end
+    p.now = entry
+    return true
 end
 
---- Decode /playlist.json of another songbook into { history, queue }, or nil.
+--- The song now playing has finished: it goes to history. Returns true when
+-- something was playing.
+function M.finish(p)
+    if not p.now then return false end
+    add_history(p.history, p.now)
+    p.now = nil
+    return true
+end
+
+local function parse_entry(e)
+    if type(e) ~= "table" or type(e.title) ~= "string" then return nil end
+    return {
+        uid = type(e.uid) == "string" and e.uid or nil,
+        title = e.title,
+        artist = type(e.artist) == "string" and e.artist or nil,
+        by = type(e.by) == "string" and e.by or nil,
+        at = tonumber(e.at),
+    }
+end
+
+--- Decode /playlist.json of another songbook into { now, history, queue }, or
+-- nil. Songbooks before Now playing send no `now`.
 function M.parse_playlist(body, decode)
     local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" then return nil end
-    local p = {}
+    local p = { now = parse_entry(data.now) }
     for _, name in ipairs({ "history", "queue" }) do
         p[name] = {}
         for _, e in ipairs(type(data[name]) == "table" and data[name] or {}) do
-            if type(e) == "table" and type(e.title) == "string" then
-                table.insert(p[name], {
-                    uid = type(e.uid) == "string" and e.uid or nil,
-                    title = e.title,
-                    artist = type(e.artist) == "string" and e.artist or nil,
-                    by = type(e.by) == "string" and e.by or nil,
-                    at = tonumber(e.at),
-                })
-            end
+            local entry = parse_entry(e)
+            if entry then table.insert(p[name], entry) end
         end
     end
     return p
@@ -487,7 +506,7 @@ function M.handle(req, ctx)
     elseif path == "/playlist.json" then
         local p = ctx.playlist()
         return M.response(200, "application/json; charset=utf-8",
-            M.json({ history = p.history or {}, queue = p.queue or {} }))
+            M.json({ now = p.now, history = p.history or {}, queue = p.queue or {} }))
     elseif path == "/queue/add" then
         local ok, err = nil, "missing"
         local uid = req.query.uid

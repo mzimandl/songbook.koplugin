@@ -60,6 +60,7 @@ local DEFAULTS = {
     autoscroll_step = 8,   -- scroll mode moves 1/8 of the screen
     scroll_mode = true,
     song_button = true,
+    play_on_open = false,
 }
 
 -- Song repository added on the first start (until then `servers` is unset).
@@ -207,6 +208,9 @@ function Songbook:onDispatcherRegisterActions()
     Dispatcher:registerAction("songbook_playlist",
         { category = "none", event = "SongbookShowPlaylist",
           title = _("Songbook: playlist"), general = true })
+    Dispatcher:registerAction("songbook_now_playing",
+        { category = "none", event = "SongbookOpenNowPlaying",
+          title = _("Songbook: open the song now playing"), general = true })
     Dispatcher:registerAction("songbook_next_song",
         { category = "none", event = "SongbookNextSong",
           title = _("Songbook: next song in the playlist"), general = true })
@@ -387,12 +391,8 @@ function Songbook:openSong(uid)
         notify(err)
         return
     end
-    if jam.follow and split_uid(uid) ~= JAM_KEY then
-        self:stopFollowing()
-        notify(_("Stopped following the jam session."))
-    end
     -- while following, the followed songbook's playlist is used
-    if not jam.follow then self:playlistPlayed(uid) end
+    if not jam.follow and self:get("play_on_open") then self:playlistPlay(uid) end
     if self:get("scroll_mode") then self:preferScrollMode(path) end
     if self.ui.document then
         self.ui:switchDocument(path)
@@ -666,7 +666,7 @@ function Songbook:onReaderReady()
     if not uid then return end
     if self:get("song_button") then self:addSongButton() end
     self:showScrollProgress()
-    if self:get("autoscroll") then self:startAutoscroll(true) end
+    if self:get("autoscroll") and self:nowPlayingUid() == uid then self:startAutoscroll(true) end
 end
 
 -- Corner of the screen the song button's tap zone covers; taps there that
@@ -683,16 +683,23 @@ function Songbook:addSongButton()
     local Size = require("ui/size")
     local Screen = Device.screen
     local size = math.ceil(math.min(Screen:getWidth(), Screen:getHeight()) / 16)
-    local frame = FrameContainer:new{
-        bordersize = Size.border.button,
-        radius = Size.radius.button,
-        padding = Size.padding.small,
-        background = Blitbuffer.COLOR_WHITE,
-        IconWidget:new{ icon = "appbar.menu", width = size, height = size },
-    }
+    local function make_frame(playing)
+        return FrameContainer:new{
+            bordersize = Size.border.button,
+            radius = Size.radius.button,
+            padding = Size.padding.small,
+            background = playing and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_WHITE,
+            IconWidget:new{ icon = "appbar.menu", width = size, height = size, invert = playing },
+        }
+    end
+    -- inverted while the open song is the one now playing
+    local frames = { [false] = make_frame(false), [true] = make_frame(true) }
     local view = self.ui.view
+    local plugin = self
     local button = {}
     function button:paintTo(bb, x, y)
+        local uid = plugin:currentSongId()
+        local frame = frames[uid ~= nil and uid == plugin:nowPlayingUid()]
         local frame_size = frame:getSize()
         local footer_h = view.footer_visible and view.footer:getHeight() or 0
         local margin = Size.margin.default * 2
@@ -705,6 +712,7 @@ function Songbook:addSongButton()
         frame:paintTo(bb, self.rect.x, self.rect.y)
     end
     view:registerViewModule("songbook_button", button)
+    self.song_button = button
     self.ui:registerTouchZones({{
         id = "songbook_button",
         ges = "tap",
@@ -717,6 +725,12 @@ function Songbook:addSongButton()
             return true
         end,
     }})
+end
+
+--- Redraw the song button after the song now playing changed.
+function Songbook:repaintSongButton()
+    local rect = self.song_button and self.song_button.rect
+    if rect then UIManager:setDirty(self.ui, function() return "ui", rect end) end
 end
 
 --- The footer's progress is page / page count, which hardly moves for a song
@@ -1277,6 +1291,7 @@ function Songbook:showLocal(title, filter, empty, on_close, last, collection)
         local dialog
         local function close() UIManager:close(dialog) end
         local buttons = {
+            { self:playNowButton(song, close) },
             { self:playlistButton(song, close) },
             { self:favoriteButton(song, close, refresh) },
             { self:collectionsButton(song, close, refresh) },
@@ -1524,6 +1539,7 @@ function Songbook:showOnlineSongs(servers)
         end
         local buttons = {
             -- favorites, collections and our playlist hold songs on the device, so download first
+            { self:playNowButton(song, close, ensure_downloaded) },
             { self:playlistButton(song, close, ensure_downloaded) },
             { self:favoriteButton(song, close, refresh, ensure_downloaded) },
             { self:collectionsButton(song, close, refresh, ensure_downloaded) },
@@ -1731,11 +1747,13 @@ end
 
 -- Playlist -------------------------------------------------------------------
 --
--- Up next (queue) and played songs (history), kept in the settings until
--- cleared: { history = { entry... }, queue = { entry... } }, entry =
--- { uid, title, artist, by, at }. Every song opened is recorded as played.
--- While sharing, guests see it and add requests; while following, the
--- followed songbook's playlist is used instead (our own is cleared).
+-- Now playing, Up next (queue) and played songs (history), kept in the
+-- settings until cleared: { now = entry, history = { entry... }, queue =
+-- { entry... } }, entry = { uid, title, artist, by, at }. Opening a song only
+-- shows it; Play now (or opening with setting `play_on_open`) makes it the
+-- song now playing, which the jam session shares. While sharing, guests see
+-- the playlist and add requests; while following, the followed songbook's
+-- playlist is used instead (our own is cleared).
 
 function Songbook:getPlaylist()
     local p = self.settings:readSetting("playlist") or {}
@@ -1756,12 +1774,64 @@ function Songbook:playlistEntry(uid, by)
     return { uid = uid, title = meta.title or id, artist = meta.artist, by = by, at = os.time() }
 end
 
-function Songbook:playlistPlayed(uid)
+--- Make `uid` the song now playing (without opening it).
+function Songbook:playlistPlay(uid)
     if split_uid(uid) == JAM_KEY then return end
     local entry = self:playlistEntry(uid)
     if not entry then return end
     local p = self:getPlaylist()
-    if Jam.played(p.history, p.queue, entry) then self:savePlaylist(p) end
+    if Jam.play(p, entry) then self:savePlaylist(p) end
+end
+
+--- uid of the song now playing: ours, or while following the followed
+-- songbook's (as saved in songs/jam/). nil when nothing is playing.
+function Songbook:nowPlayingUid()
+    if jam.follow then
+        return jam.follow.uid and make_uid(JAM_KEY, Jam.song_id(jam.follow.uid))
+    end
+    local now = self:getPlaylist().now
+    return now and now.uid
+end
+
+--- Play `uid` now: it becomes the song now playing and opens (when it isn't
+-- open already; then autoscroll starts as for a song that opens).
+function Songbook:playSong(uid)
+    self:playlistPlay(uid)
+    if self:currentSongId() ~= uid then return self:openSong(uid) end
+    if self:get("autoscroll") and not self:isAutoscrolling() then self:startAutoscroll(true) end
+    self:repaintSongButton()
+end
+
+--- The song now playing has finished: it goes to Played.
+function Songbook:finishPlaying()
+    local p = self:getPlaylist()
+    local uid = p.now and p.now.uid
+    if not Jam.finish(p) then return end
+    self:savePlaylist(p)
+    if uid == self:currentSongId() then self:stopAutoscroll() end
+    self:repaintSongButton()
+end
+
+--- Title of the song now playing, or nil.
+function Songbook:nowPlayingTitle()
+    if not jam.follow then
+        local now = self:getPlaylist().now
+        return now and now.title
+    end
+    local uid = self:nowPlayingUid()
+    if not uid then return nil end
+    local _key, id = split_uid(uid)
+    return ChordPro.parse_meta(read_file(self:songPath(uid)) or "").title or id
+end
+
+function Songbook:onSongbookOpenNowPlaying()
+    local uid = self:nowPlayingUid()
+    if uid and lfs.attributes(self:songPath(uid), "mode") == "file" then
+        if self:currentSongId() ~= uid then self:openSong(uid) end
+    else
+        notify(_("No song is playing."))
+    end
+    return true
 end
 
 function Songbook:isQueued(uid)
@@ -1831,7 +1901,7 @@ end
 function Songbook:onSongbookNextSong()
     local e = self:nextInPlaylist()
     if e then
-        self:openSong(e.uid)
+        self:playSong(e.uid)
     elseif self:isFollowing() then
         notify(_("While following, the other songbook chooses the songs."))
     else
@@ -1865,6 +1935,21 @@ function Songbook:playlistButton(song, close, before)
             if before and not before() then return end
             local entry, err = self:addToPlaylist(song.uid)
             notify(entry and T(_("Added to playlist: %1"), entry.title) or request_error(err))
+        end,
+    }
+end
+
+--- "Play now" for a song's long-press dialog (not while following: the
+-- followed songbook chooses the songs then). `before` as in favoriteButton().
+function Songbook:playNowButton(song, close, before)
+    return {
+        text = _("Play now"),
+        enabled = not self:isFollowing(),
+        callback = function()
+            close()
+            if before and not before() then return end
+            self:closeList()
+            self:playSong(song.uid)
         end,
     }
 end
@@ -1935,15 +2020,32 @@ function Songbook:onSongbookShowPlaylist()
                 callback = function() self:showPlaylistPicker() end,
             },
         }
+        table.insert(items, { text = _("Now playing"), bold = true, select_enabled = false })
+        if p.now then
+            -- while following, the song now playing is on this device (songs/jam/)
+            table.insert(items, {
+                text = "▶ " .. p.now.title,
+                mandatory = p.now.at and os.date("%H:%M", p.now.at) or "",
+                entry = p.now,
+                now = true,
+                callback = function()
+                    self:closeList()
+                    self:onSongbookOpenNowPlaying()
+                end,
+            })
+        else
+            table.insert(items, { text = _("Nothing is playing"), dim = true, select_enabled = false })
+        end
         table.insert(items, { text = T(_("Up next (%1)"), #p.queue), bold = true, select_enabled = false })
+        -- a tap plays a song of Up next and opens a played one; the other
+        -- songbook's songs may not be on this device
         local function add(entry, mandatory, queued)
             local item = { text = entry.title, mandatory = mandatory, entry = entry, queued = queued,
                            played = not queued }
-            -- the other songbook's songs may not be on this device
             if not remote then
                 item.callback = function()
                     self:closeList()
-                    self:openSong(entry.uid)
+                    if queued then self:playSong(entry.uid) else self:openSong(entry.uid) end
                 end
             end
             table.insert(items, item)
@@ -1973,10 +2075,20 @@ function Songbook:onSongbookShowPlaylist()
         onMenuHold = function(_menu, item)
             if remote or not item.entry then return true end
             local uid = item.entry.uid
-            if item.played then
-                if self:isQueued(uid) then return true end
+            if item.now then
                 show_actions(item.entry.title, {
-                    { text = _("Add to Up next"), callback = function()
+                    { text = _("Finished"), callback = function() self:finishPlaying() end },
+                })
+                return true
+            end
+            local play_now = { text = _("Play now"), callback = function()
+                self:closeList()
+                self:playSong(uid)
+            end }
+            if item.played then
+                show_actions(item.entry.title, {
+                    play_now,
+                    { text = _("Add to Up next"), enabled = not self:isQueued(uid), callback = function()
                         local entry, err = self:addToPlaylist(uid)
                         if not entry then notify(request_error(err)) end
                     end },
@@ -1984,6 +2096,7 @@ function Songbook:onSongbookShowPlaylist()
                 return true
             end
             show_actions(item.entry.title, {
+                play_now,
                 { text = _("Play next"), callback = function() self:playNextInPlaylist(uid) end },
                 { text = _("Remove from playlist"), callback = function() self:removeFromPlaylist(uid) end },
             })
@@ -2034,6 +2147,7 @@ function Songbook:showPlaylistPicker()
         queued, played = {}, {}
         for _i, e in ipairs(p.queue) do if e.uid then queued[entry_key(e)] = true end end
         for _i, e in ipairs(p.history) do if e.uid then played[entry_key(e)] = true end end
+        if p.now and p.now.uid then played[entry_key(p.now)] = true end
         if not self:get("playlist_hide_added") then return all end
         local songs = {}
         for _i, song in ipairs(all) do
@@ -2076,7 +2190,9 @@ function Songbook:showPlaylistPicker()
 end
 
 function Songbook:savePlaylistAsCollection()
-    local history = self:getPlaylist().history
+    local p = self:getPlaylist()
+    local history = { unpack(p.history) }
+    if p.now then table.insert(history, p.now) end
     if #history == 0 then
         notify(_("No songs have been played yet."))
         return
@@ -2096,9 +2212,8 @@ end
 
 -- Jam session -------------------------------------------------------------------
 --
--- Shares the song being played as a web page on the local network (see
--- songbook/jam.lua). The shared song is the open one, or the last one opened
--- when the reader is closed.
+-- Shares the song now playing as a web page on the local network (see
+-- songbook/jam.lua); songs that are only open are not shared.
 
 -- Address of the network interface used for outgoing traffic; connecting a UDP
 -- socket sends nothing.
@@ -2132,9 +2247,8 @@ local function serve_jam(data, client)
 end
 
 function Songbook:jamSong()
-    local uid = self:currentSongId() or jam.uid
+    local uid = self:nowPlayingUid()
     if uid and not lfs.attributes(self:songPath(uid), "mode") then uid = nil end
-    jam.uid = uid
     return uid
 end
 
@@ -2219,7 +2333,8 @@ function Songbook:startJam()
         labels = {
             title = _("Songbook"), waiting = _("Waiting for a song…"),
             offline = _("Connection lost"), chords = _("Chords"),
-            song = _("Song"), playlist = _("Playlist"), up_next = _("Up next"), played = _("Played"),
+            song = _("Song"), playlist = _("Playlist"), now_playing = _("Now playing"),
+            up_next = _("Up next"), played = _("Played"),
             request = _("Request a song"), your_name = _("Your name"), search = _("Search"),
             nothing = _("Nothing yet"), requested = _("Requested: %1"),
             queued = _("This song is already requested."), full = _("Too many requests, try again later."),
@@ -2241,8 +2356,9 @@ function Songbook:stopJam()
     jam.server, jam.queue, jam.context = nil, nil, nil
 end
 
--- Following another songbook: poll its /state.json and open each new song
--- (saved to songs/jam/) in the host's key.
+-- Following another songbook: poll its /state.json and open each song it
+-- plays (saved to songs/jam/) in the host's key. While another song is open
+-- (browsing), a new song is only announced; Open now playing goes to it.
 local follow_poll
 
 function Songbook:isFollowing()
@@ -2278,11 +2394,19 @@ function Songbook:followStep()
         if not write_file(self:songPath(uid), cho) then return self:followFailed() end
     end
     -- Other changes of the host's options don't concern us.
-    local same = state.uid == f.uid and state.transpose == f.transpose
+    local new_song = state.uid ~= f.uid
+    local same = not new_song and state.transpose == f.transpose
+    local open = self:currentSongId()
+    -- the first song after following starts opens too
+    local following_open = open == nil or f.uid == nil or open == self:nowPlayingUid()
     f.failures, f.rev, f.uid, f.transpose = 0, state.rev, state.uid, state.transpose
     if same then return end
     self:setMapValue("transpose", uid, state.transpose ~= 0 and state.transpose or nil)
-    self:openSong(uid)
+    if following_open then
+        self:openSong(uid)
+    elseif new_song then
+        Notification:notify(T(_("Now playing: %1"), self:nowPlayingTitle()))
+    end
 end
 
 follow_poll = function()
@@ -2471,8 +2595,8 @@ function Songbook:setAndRefresh(key, value)
 end
 
 --- Actions for the song that is open (for show_actions(), each with an `id`):
--- transposition, autoscroll, song length, favorite, collections, playlist and
--- next song in the playlist. Songs received while following are not kept in favorites,
+-- transposition, autoscroll, song length, favorite, collections, playlist,
+-- Play now / Finished, Open now playing and next song in the playlist. Songs received while following are not kept in favorites,
 -- collections or the playlist.
 function Songbook:songActions()
     local uid = self:currentSongId()
@@ -2517,6 +2641,21 @@ function Songbook:songActions()
             local playlist = self:playlistButton(song, function() end)
             table.insert(actions, { id = "playlist", text = playlist.text, callback = playlist.callback })
         end
+    end
+    local now_uid = self:nowPlayingUid()
+    if own and not self:isFollowing() then
+        if now_uid == uid then
+            table.insert(actions, { id = "play", text = _("Finished"), callback = function() self:finishPlaying() end })
+        else
+            table.insert(actions, { id = "play", text = _("Play now"), callback = function() self:playSong(uid) end })
+        end
+    end
+    if now_uid and now_uid ~= uid then
+        table.insert(actions, {
+            id = "now_playing",
+            text = T(_("Open now playing: %1"), self:nowPlayingTitle() or ""),
+            callback = function() self:onSongbookOpenNowPlaying() end,
+        })
     end
     -- always there, so the dialog keeps its layout; disabled with an empty Up next
     local next_song = self:nextInPlaylist()
@@ -2582,6 +2721,15 @@ function Songbook:libraryMenu()
             callback = function() self:onSongbookShowPlaylist() end,
         },
     }
+    if self:nowPlayingUid() then
+        table.insert(items, {
+            songbook_item = "now_playing",
+            text_func = function()
+                return T(_("Now playing: %1"), Render.truncate(self:nowPlayingTitle() or "", 24))
+            end,
+            callback = function() self:onSongbookOpenNowPlaying() end,
+        })
+    end
     -- only while there is one: the playlist item shows how many are queued
     if self:nextInPlaylist() then
         table.insert(items, {
@@ -2667,6 +2815,12 @@ function Songbook:settingsMenu()
             },
         },
         {
+            text = _("Opening a song plays it"),
+            help_text = _("A song you open becomes the song now playing: the jam session shares it and it goes to Played afterwards. Otherwise opening only shows the song, and Play now in the song's options plays it."),
+            checked_func = function() return self:get("play_on_open") end,
+            callback = function() self:set("play_on_open", not self:get("play_on_open")) end,
+        },
+        {
             text = _("Scrolling"),
             sub_item_table = {
                 {
@@ -2676,7 +2830,7 @@ function Songbook:settingsMenu()
                     callback = function() self:set("scroll_mode", not self:get("scroll_mode")) end,
                 },
                 {
-                    text = _("Autoscroll when a song opens"),
+                    text = _("Autoscroll when a song starts playing"),
                     help_text = _("Scroll songs that have a length ({duration} in the song file, or set with Song length in the song's options) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."),
                     checked_func = function() return self:get("autoscroll") end,
                     callback = function() self:set("autoscroll", not self:get("autoscroll")) end,

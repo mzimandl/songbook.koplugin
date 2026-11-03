@@ -13,6 +13,7 @@ return {
     ["Songbook: add/remove favorite"] = "Zpěvník: přidat/odebrat z oblíbených",
     ["Songbook: playlist"] = "Zpěvník: playlist",
     ["Songbook: next song in the playlist"] = "Zpěvník: další píseň z playlistu",
+    ["Songbook: open the song now playing"] = "Zpěvník: otevřít hranou píseň",
     ["Songbook: start/stop autoscroll"] = "Zpěvník: spustit/zastavit posouvání",
     ["Songbook: autoscroll faster"] = "Zpěvník: posouvat rychleji",
     ["Songbook: autoscroll slower"] = "Zpěvník: posouvat pomaleji",
@@ -27,7 +28,6 @@ return {
     ["Tempo"] = "Tempo",
 
     -- transposition
-    ["Stopped following the jam session."] = "Sledování jam session ukončeno.",
     ["Original key"] = "Původní tónina",
     ["Apply"] = "Použít",
     ["original key"] = "původní tónina",
@@ -162,6 +162,13 @@ return {
     ["Clear"] = "Vyprázdnit",
     ["Add to Up next"] = "Zařadit na řadu",
     ["Play next"] = "Zahrát jako další",
+    ["Play now"] = "Hrát teď",
+    ["Finished"] = "Dohráno",
+    ["Now playing"] = "Hraje",
+    ["Now playing: %1"] = "Hraje: %1",
+    ["Nothing is playing"] = "Nic nehraje",
+    ["No song is playing."] = "Žádná píseň nehraje.",
+    ["Open now playing: %1"] = "Otevřít hranou: %1",
     ["Request from %1"] = "Vyžádat od %1",
     ["up next"] = "na řadě",
     ["played"] = "zahráno",
@@ -229,11 +236,14 @@ return {
     ["Repeat chorus text"] = "Opakovat text refrénu",
     ["Print the whole chorus where the song says {chorus}, instead of just a label."] =
         "Kde píseň uvádí {chorus}, vypsat celý refrén místo pouhého označení.",
+    ["Opening a song plays it"] = "Otevřením píseň začne hrát",
+    ["A song you open becomes the song now playing: the jam session shares it and it goes to Played afterwards. Otherwise opening only shows the song, and Play now in the song's options plays it."] =
+        "Otevřená píseň se stane hranou písní: jam session ji sdílí a potom přejde do seznamu Zahráno. Jinak otevření píseň jen zobrazí a hraje se až po Hrát teď ve volbách písně.",
     ["Scrolling"] = "Posouvání",
     ["Continuous scroll mode"] = "Plynulé posouvání",
     ["Open songs in continuous (scroll) mode, which autoscroll moves by a part of the screen. Turn it off to use the reader's own view mode."] =
         "Otevírat písně v plynulém režimu, kde je posouvání posune vždy o část obrazovky. Vypněte, chcete-li režim zobrazení čtečky.",
-    ["Autoscroll when a song opens"] = "Posouvat po otevření písně",
+    ["Autoscroll when a song starts playing"] = "Posouvat, když píseň začne hrát",
     ["Scroll songs that have a length ({duration} in the song file, or set with Song length in the song's options) so that they end with the song. Gestures can start/stop autoscroll and make it faster or slower; the changed length is kept for the song."] =
         "Posouvat písně, které mají délku ({duration} v souboru, nebo nastavenou položkou Délka písně ve volbách písně), tak, aby skončily s písní. Gesty lze posouvání spustit, zastavit, zrychlit nebo zpomalit; změněná délka se u písně uloží.",
     ["Autoscroll step: 1/%1 screen"] = "Krok posouvání: 1/%1 obrazovky",
