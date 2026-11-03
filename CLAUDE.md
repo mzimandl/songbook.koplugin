@@ -44,7 +44,7 @@
 - Speed gestures (SongbookAutoscrollSpeed) change the length by 10 % and save it for own songs.
 
 ## Menu and lists
-- The Songbook menu is built when it opens (`sub_item_table_func` → mainMenu()): Song options (songActions() as a submenu, disabled while no song is open), libraryMenu() (Now playing / Next song only while there is one), Jam session, settingsMenu().
+- The Songbook menu is built when it opens (`sub_item_table_func` → mainMenu()): Song options (songActions() as a submenu without MENU_SKIPS_ACTION, disabled while no song is open), libraryMenu() (Now playing / Next song only while there is one), Jam session, settingsMenu().
 - The open song's actions are songActions() (each with an `id`; favorite/collections/playlist only for own songs, smoke.lua finds them with song_action(id)), shown by showSongDialog(): from the song button or gesture SongbookSongDialog. Its Next song plays (onSongbookNextSong()); show_playlist opens the playlist.
 - Song button (setting `song_button`): addSongButton() in onReaderReady() registers a view module painted above the footer in the bottom right corner and a tap zone (SONG_BUTTON_ZONE) that overrides page turns/footer/corner gestures; taps outside the painted rect return nil and go on.
 - Full-screen lists use list_menu(); actions for the whole list go in its title bar ☰ menu (`actions` → show_actions()), not in rows. Rows above the songs are only Search (showList()) and the list's main action (Add songs…, New collection…, Add repository…).

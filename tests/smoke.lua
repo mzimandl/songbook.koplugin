@@ -210,8 +210,11 @@ plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.doc
 check(plugin:currentSongId() == "test", "currentSongId")
 check(#items.songbook.sub_item_table_func() == 8 and menu_item("transpose") == nil, "no song items in the menu")
 local song_menu = menu_item("song")
-check(song_menu.enabled_func() and #song_menu.sub_item_table_func() == #plugin:songActions()
+check(song_menu.enabled_func() and #song_menu.sub_item_table_func() == #plugin:songActions() - 2
     and song_menu.sub_item_table_func()[1].text == song_action("transpose").text, "song options in the menu")
+for _i, sub in ipairs(song_menu.sub_item_table_func()) do
+    check(sub.text ~= "Next song" and sub.text ~= "Playlist", "no playlist items in the menu's song options")
+end
 -- the song button: bottom right, above the footer; taps elsewhere in its zone go on
 local zones, modules = {}, {}
 plugin.ui.registerTouchZones = function(_, z) for _i, zone in ipairs(z) do zones[zone.id] = zone end end

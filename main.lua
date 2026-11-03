@@ -2876,6 +2876,9 @@ function Songbook:settingsMenu()
     }
 end
 
+-- songActions() that don't concern the open song, left out of the menu's Song options
+local MENU_SKIPS_ACTION = { now_playing = true, next = true, show_playlist = true }
+
 --- The Songbook menu: the open song's actions (disabled without one, for when
 -- the song button is off), the library, jam session and settings. Built when
 -- it opens, so Next song shows only while a song is queued.
@@ -2888,7 +2891,10 @@ function Songbook:mainMenu()
         sub_item_table_func = function()
             local sub = {}
             for _i, a in ipairs(self:songActions()) do
-                table.insert(sub, { text = a.text, enabled = a.enabled ~= false, callback = a.callback })
+                -- the playlist items are in the menu below
+                if not MENU_SKIPS_ACTION[a.id] then
+                    table.insert(sub, { text = a.text, enabled = a.enabled ~= false, callback = a.callback })
+                end
             end
             return sub
         end,

@@ -66,7 +66,8 @@ playlist*, *Play now* / *Finished*, *Open now playing* (while another song is
 playing), *Next song* (plays the first song of Up next; disabled while Up next is
 empty) and *Playlist*. The button is inverted while the open song is the one now playing.
 The gesture action *Songbook: song options* (Reader) and *Song options* at the
-top of the Songbook menu (disabled while no song is open) open them too;
+top of the Songbook menu (disabled while no song is open; without the
+playlist items, which the menu has anyway) open them too;
 *Settings → Display → Song button* hides the button. Taps in that corner
 beside the button still turn pages.
 
