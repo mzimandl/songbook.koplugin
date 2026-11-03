@@ -871,6 +871,17 @@ plugin:onSongbookToggleFavorite()
 check(not plugin:isFavorite("user-songs/test"), "gesture toggles favorite off")
 check(song_action("playlist").text == "Add to playlist", "playlist action in a song")
 check(song_action("collections").text == "Add to collection", "add to collection action in a song")
+-- the dialog puts related actions side by side, with short labels
+plugin:showSongDialog()
+local rows = {}
+for _i, row in ipairs(last_shown().buttons) do
+    local texts = {}
+    for _j, b in ipairs(row) do table.insert(texts, b.text) end
+    table.insert(rows, table.concat(texts, " | "))
+end
+check(rows[2] == "Start autoscroll | Song length" and rows[3] == "+ Favorites | + Collection | + Playlist"
+    and rows[#rows - 1] == "Playlist" and rows[#rows]:find("^Play now | Next song"),
+    "song dialog rows: " .. table.concat(rows, " / "))
 local saved_playlist = settings_store.playlist
 plugin:savePlaylist({})
 check(song_action("next").text == "Next song" and song_action("next").enabled == false, "next song disabled with empty Up next")

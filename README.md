@@ -60,11 +60,11 @@ Browse online) and *Playlist* (a submenu: *Show playlist*, *Now playing* and
 *Next song*, disabled while there is none). Then come *Jam session* and *Settings*.
 
 While a song is open, the ☰ button in the bottom right corner (above the
-status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
-*Song length*, *Add to / Remove from favorites*, *Add to collection*, *Add to
-playlist*, *Play now* / *Finished*, *Open now playing* (while another song is
-playing), *Next song* (plays the first song of Up next; disabled while Up next is
-empty) and *Playlist*. The button is inverted while the open song is the one now playing.
+status bar) opens the song's options: *Transpose*; *Start/Stop autoscroll* and
+*Song length*; *+/− Favorites*, *+ Collection* and *+/− Playlist* side by side;
+*Open now playing* (while another song is playing); *Playlist*; *Play now* /
+*Finished* and *Next song* (plays the first song of Up next; disabled while Up
+next is empty). The button is inverted while the open song is the one now playing.
 The gesture action *Songbook: song options* (Reader) and *Song options* at the
 top of the Songbook menu (disabled while no song is open; without the
 playlist items, which the menu has anyway) open them too;

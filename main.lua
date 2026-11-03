@@ -815,20 +815,36 @@ local function matches(song, query)
         or (song.artist and lower(song.artist):find(query, 1, true))
 end
 
---- Dialog with one button per action: { text, callback, enabled }.
--- The dialog closes before the callback runs.
+--- Dialog with one button per action: { text, callback, enabled, row, short }.
+-- Consecutive actions with the same `row` (any value) are put side by side,
+-- labelled `short` when they have one. The dialog closes before the callback runs.
 local function show_actions(title, actions)
     local dialog
-    local buttons = {}
+    -- consecutive actions with the same `row` share a row
+    local rows = {}
     for _i, a in ipairs(actions) do
-        table.insert(buttons, {{
-            text = a.text,
-            enabled = a.enabled ~= false,
-            callback = function()
-                UIManager:close(dialog)
-                a.callback()
-            end,
-        }})
+        local prev = rows[#rows]
+        if a.row and prev and prev[1].row == a.row then
+            table.insert(prev, a)
+        else
+            table.insert(rows, { a })
+        end
+    end
+    local buttons = {}
+    for _i, row in ipairs(rows) do
+        local line = {}
+        for _j, a in ipairs(row) do
+            table.insert(line, {
+                -- `short`: the label beside other buttons
+                text = #row > 1 and a.short or a.text,
+                enabled = a.enabled ~= false,
+                callback = function()
+                    UIManager:close(dialog)
+                    a.callback()
+                end,
+            })
+        end
+        table.insert(buttons, line)
     end
     dialog = ButtonDialog:new{ title = title, buttons = buttons }
     UIManager:show(dialog)
@@ -2620,8 +2636,9 @@ function Songbook:setAndRefresh(key, value)
 end
 
 --- Actions for the song that is open (for show_actions(), each with an `id`):
--- transposition, autoscroll, song length, favorite, collections, playlist,
--- Play now / Finished, Open now playing, next song and the playlist. Songs received while following are not kept in favorites,
+-- transposition, autoscroll | song length, favorite | collections | playlist,
+-- Open now playing, the playlist, Play now / Finished | next song (`row`s for
+-- the dialog, see show_actions()). Songs received while following are not kept in favorites,
 -- collections or the playlist.
 function Songbook:songActions()
     local uid = self:currentSongId()
@@ -2638,11 +2655,13 @@ function Songbook:songActions()
         },
         {
             id = "autoscroll",
+            row = "scroll",
             text = self:isAutoscrolling() and _("Stop autoscroll") or _("Start autoscroll"),
             callback = function() self:onSongbookAutoscroll() end,
         },
         {
             id = "duration",
+            row = "scroll",
             text = secs and T(_("Song length: %1"), ChordPro.format_duration(secs)) or _("Song length"),
             enabled = own ~= nil,
             callback = function() self:showDurationDialog() end,
@@ -2652,29 +2671,33 @@ function Songbook:songActions()
         local _key, id = split_uid(own)
         local meta = ChordPro.parse_meta(read_file(self:songPath(own)) or "")
         local song = { uid = own, title = meta.title or id }
+        local favorite = self:isFavorite(own)
         table.insert(actions, {
             id = "favorite",
-            text = self:isFavorite(own) and _("Remove from favorites") or _("Add to favorites"),
+            row = "add",
+            text = favorite and _("Remove from favorites") or _("Add to favorites"),
+            short = favorite and _("− Favorites") or _("+ Favorites"),
             callback = function() self:onSongbookToggleFavorite() end,
         })
         table.insert(actions, {
             id = "collections",
+            row = "add",
             text = _("Add to collection"),
+            short = _("+ Collection"),
             callback = function() self:showSongCollections(song, function() end) end,
         })
         if not self:isFollowing() then
             local playlist = self:playlistButton(song, function() end)
-            table.insert(actions, { id = "playlist", text = playlist.text, callback = playlist.callback })
+            table.insert(actions, {
+                id = "playlist",
+                row = "add",
+                text = playlist.text,
+                short = self:isQueued(own) and _("− Playlist") or _("+ Playlist"),
+                callback = playlist.callback,
+            })
         end
     end
     local now_uid = self:nowPlayingUid()
-    if own and not self:isFollowing() then
-        if now_uid == uid then
-            table.insert(actions, { id = "play", text = _("Finished"), callback = function() self:finishPlaying() end })
-        else
-            table.insert(actions, { id = "play", text = _("Play now"), callback = function() self:playSong(uid) end })
-        end
-    end
     if now_uid and now_uid ~= uid then
         table.insert(actions, {
             id = "now_playing",
@@ -2682,18 +2705,28 @@ function Songbook:songActions()
             callback = function() self:onSongbookOpenNowPlaying() end,
         })
     end
-    -- always there, so the dialog keeps its layout; disabled with an empty Up next
-    local next_song = self:nextInPlaylist()
-    table.insert(actions, {
-        id = "next",
-        text = next_song and T(_("Next song: %1"), next_song.title) or _("Next song"),
-        enabled = next_song ~= nil,
-        callback = function() self:onSongbookNextSong() end,
-    })
     table.insert(actions, {
         id = "show_playlist",
         text = self:isFollowing() and _("Playlist (jam session)") or _("Playlist"),
         callback = function() self:onSongbookShowPlaylist() end,
+    })
+    if own and not self:isFollowing() then
+        if now_uid == uid then
+            table.insert(actions, { id = "play", row = "play", text = _("Finished"),
+                callback = function() self:finishPlaying() end })
+        else
+            table.insert(actions, { id = "play", row = "play", text = _("Play now"),
+                callback = function() self:playSong(uid) end })
+        end
+    end
+    -- always there, so the dialog keeps its layout; disabled with an empty Up next
+    local next_song = self:nextInPlaylist()
+    table.insert(actions, {
+        id = "next",
+        row = "play",
+        text = next_song and T(_("Next song: %1"), next_song.title) or _("Next song"),
+        enabled = next_song ~= nil,
+        callback = function() self:onSongbookNextSong() end,
     })
     return actions
 end
