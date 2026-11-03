@@ -1641,17 +1641,31 @@ function Songbook:removeServer(key, delete_songs)
     os.remove(dir)
 end
 
+--- Load the name of a repository that was just added or got a new URL from its
+-- index (fetchIndex() saves it), so lists show it right away and not only after
+-- its songs are loaded. done() runs afterwards, also when the index failed.
+function Songbook:loadServerName(key, done)
+    NetworkMgr:runWhenOnline(function()
+        local server = self:findServer(key)
+        if server then
+            local songs, err = self:fetchIndex(server)
+            if not songs then notify(err) end
+        end
+        done()
+    end)
+end
+
 --- List of the song repositories: tap one to edit or remove it.
-function Songbook:showRepositories()
+-- on_close(): optional, called when the list is closed.
+function Songbook:showRepositories(on_close)
     local menu
+    local refresh
     local function build()
         local items = {}
         for _i, server in ipairs(self:getServers()) do
             table.insert(items, {
                 text = self:serverName(server),
-                callback = function()
-                    self:showServerActions(server, function() menu:switchItemTable(nil, build()) end)
-                end,
+                callback = function() self:showServerActions(server, refresh) end,
             })
         end
         table.insert(items, {
@@ -1659,14 +1673,24 @@ function Songbook:showRepositories()
             bold = true,
             callback = function()
                 self:askServerUrl(_("Add song repository"), "", function(url)
-                    self:addServer(url)
-                    menu:switchItemTable(nil, build())
+                    local server = self:addServer(url)
+                    refresh()
+                    self:loadServerName(server.key, refresh)
                 end)
             end,
         })
         return items
     end
+    refresh = function() menu:switchItemTable(nil, build()) end
     menu = list_menu(_("Song repositories"), build())
+    if on_close then
+        local close = menu.onClose
+        menu.onClose = function(m)
+            local handled = close and close(m)
+            on_close()
+            return handled
+        end
+    end
     self:trackList(menu)
     UIManager:show(menu)
     return true
@@ -1688,6 +1712,7 @@ function Songbook:showServerActions(server, on_changed)
                     self:askServerUrl(_("Song repository URL"), server.url, function(url)
                         self:updateServer(server.key, { url = url, index_name = false })
                         on_changed()
+                        self:loadServerName(server.key, on_changed)
                     end)
                 end) },
                 { text = _("Rename"), callback = close_then(function()
@@ -2634,7 +2659,7 @@ function Songbook:songActions()
         })
         table.insert(actions, {
             id = "collections",
-            text = _("Add to collection…"),
+            text = _("Add to collection"),
             callback = function() self:showSongCollections(song, function() end) end,
         })
         if not self:isFollowing() then
@@ -2758,7 +2783,12 @@ function Songbook:settingsMenu()
                 return T(_("Song repositories (%1)"), #self:getServers())
             end,
             keep_menu_open = true,
-            callback = function() self:showRepositories() end,
+            -- the count in this item changes with the list
+            callback = function(touchmenu_instance)
+                self:showRepositories(function()
+                    if touchmenu_instance then touchmenu_instance:updateItems() end
+                end)
+            end,
         },
         {
             text = _("Display"),

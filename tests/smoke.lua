@@ -779,9 +779,30 @@ local tm = last_shown()
 check(tm.title == "Song repositories" and #tm.item_table == 3 and tm.item_table[3].text == "Add repository…",
     "repository list")
 input_text = "https://github.com/other/repo/tree/dev"
+responses["https://raw.githubusercontent.com/other/repo/dev/index.json"] = false
 tm.item_table[3].callback()
 last_shown().buttons[1][2].callback()
 check(#tm.item_table == 4 and tm.item_table[3].text == "other/repo (dev)", "list refreshed after add")
+check(requested[#requested] == "https://raw.githubusercontent.com/other/repo/dev/index.json",
+    "added repository's index loaded for its name")
+check(notes[#notes]:find("Cannot load song list", 1, true), "failed index reported")
+responses["https://raw.githubusercontent.com/other/repo/dev/index.json"] = nil
+input_text = "https://example.com/named"
+responses["https://example.com/named/index.json"] = "named index"
+decoded["named index"] = { name = "Named songs", songs = {} }
+tm.item_table[4].callback()
+last_shown().buttons[1][2].callback()
+check(#tm.item_table == 5 and tm.item_table[4].text == "Named songs", "added repository shows its name at once")
+tm.item_table[4].callback()
+find_button(last_shown(), "Remove").callback()
+find_button(last_shown(), "Remove and delete its songs").callback()
+check(#tm.item_table == 4, "named repository removed")
+local updated_items = 0
+plugin:closeList()
+repos_item.callback({ updateItems = function() updated_items = updated_items + 1 end })
+tm = last_shown()
+tm:onClose()
+check(updated_items == 1, "settings item updated when the repository list closes")
 
 tm.item_table[1].callback()
 input_text = "Moje písně"
@@ -839,7 +860,7 @@ check(song_action("favorite").text == "Remove from favorites" and plugin:isFavor
 plugin:onSongbookToggleFavorite()
 check(not plugin:isFavorite("user-songs/test"), "gesture toggles favorite off")
 check(song_action("playlist").text == "Add to playlist", "playlist action in a song")
-check(song_action("collections").text == "Add to collection…", "add to collection action in a song")
+check(song_action("collections").text == "Add to collection", "add to collection action in a song")
 local saved_playlist = settings_store.playlist
 plugin:savePlaylist({})
 check(song_action("next").text == "Next song" and song_action("next").enabled == false, "next song disabled with empty Up next")

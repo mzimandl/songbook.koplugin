@@ -61,7 +61,7 @@ Browse online), the *Playlist*, *Now playing* while a song is playing and
 
 While a song is open, the ☰ button in the bottom right corner (above the
 status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
-*Song length*, *Add to / Remove from favorites*, *Add to collection…*, *Add to
+*Song length*, *Add to / Remove from favorites*, *Add to collection*, *Add to
 playlist*, *Play now* / *Finished*, *Open now playing* (while another song is
 playing), *Next song* (plays the first song of Up next; disabled while Up next is
 empty) and *Playlist*. The button is inverted while the open song is the one now playing.
@@ -91,7 +91,7 @@ list* (General) opens the list you used last again, with its search and page.
 - **Collections**: your own named song lists (e.g. *Campfire*, *Christmas*).
   A song can be in several collections, from any repository. Create them in
   **Collections → New collection…**, or from a song: long-press it in a list
-  → *Collections…*, or *Add to collection…* in the song's options while a song
+  → *Collections…*, or *Add to collection* in the song's options while a song
   is open. In a collection, *Add songs…* (☰ menu, or in an empty collection)
   lists your songs: tap to add or remove them. Long-press a song in a
   collection to remove it from that collection. Long-press a collection to rename or delete it (its songs stay on

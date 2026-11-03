@@ -9,7 +9,7 @@
 - Song format: ChordPro (.cho), server = static index.json + songs/. The song server is a separate repo (mzimandl/songbook-library); its tools/build_index.py writes index.json (optional "name" from songbook.json).
 
 ## Data model (main.lua)
-- Several song repositories: setting `servers` = list of `{ key, url, name, index_name }`. `key` is made once by Repo.server_key() and never changes (it is the folder name). While `servers` is unset (first start), init() adds DEFAULT_SERVER_URL (songbook-library); an emptied list stays empty.
+- Several song repositories: setting `servers` = list of `{ key, url, name, index_name }`. `key` is made once by Repo.server_key() and never changes (it is the folder name). While `servers` is unset (first start), init() adds DEFAULT_SERVER_URL (songbook-library); an emptied list stays empty. `index_name` is saved by fetchIndex(); the repository list loads it right after Add / Edit URL (loadServerName()).
 - A song is identified by its uid: `"<key>/<id>"` (stored in `songs/<key>/<id>.cho`) or `"<id>"` for .cho files copied straight into `songs/`. Rendered files are `rendered/<uid with / → ~>@<options>.html`.
 - Rendered songs stay out of KOReader's reading history: init() wraps ReadHistory addItem()/updateLastBookTime() once (hide_songs_from_history(), matched by path, see is_song_file()), so "lastfile" stays the last book.
 - Per-song settings maps are keyed by uid: `downloaded`, `transpose`, `favorites`, `duration` (seconds, overrides `{duration}` in the .cho); `collections` = list of `{ name, songs = { [uid] = true } }` (names unique). deleteSong() must clean all of them.
