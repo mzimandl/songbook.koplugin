@@ -163,7 +163,7 @@ local function menu_item(name)
         if item.songbook_item == name then return item end
     end
 end
-check(#items.songbook.sub_item_table_func() == 7 and menu_item("my_songs") and menu_item("settings"), "menu built")
+check(#items.songbook.sub_item_table_func() == 8 and menu_item("my_songs") and menu_item("settings"), "menu built")
 -- actions of the open song (song button / song options dialog), found by `id`
 local function song_action(id)
     for _i, a in ipairs(plugin:songActions()) do
@@ -171,6 +171,8 @@ local function song_action(id)
     end
 end
 check(#plugin:songActions() == 0 and menu_item("next") == nil, "no song actions outside a song")
+check(not menu_item("song").enabled_func() and #menu_item("song").sub_item_table_func() == 0,
+    "song options disabled outside a song")
 
 -- empty library: the list opens with a hint and a way to get songs
 local function last_shown() return shown[#shown] end
@@ -206,7 +208,10 @@ ReaderUI.instance = nil
 plugin.ui.document = { file = opened[1] }
 plugin.ui.switchDocument = function(_, p) table.insert(opened, p); plugin.ui.document.file = p end
 check(plugin:currentSongId() == "test", "currentSongId")
-check(#items.songbook.sub_item_table_func() == 7 and menu_item("transpose") == nil, "no song items in the menu")
+check(#items.songbook.sub_item_table_func() == 8 and menu_item("transpose") == nil, "no song items in the menu")
+local song_menu = menu_item("song")
+check(song_menu.enabled_func() and #song_menu.sub_item_table_func() == #plugin:songActions()
+    and song_menu.sub_item_table_func()[1].text == song_action("transpose").text, "song options in the menu")
 -- the song button: bottom right, above the footer; taps elsewhere in its zone go on
 local zones, modules = {}, {}
 plugin.ui.registerTouchZones = function(_, z) for _i, zone in ipairs(z) do zones[zone.id] = zone end end
@@ -840,7 +845,12 @@ check(song_action("next").text == "Next song: Žluťoučký kůň" and song_acti
     "next song in the song dialog: " .. song_action("next").text)
 local n_opened = #opened
 song_action("next").callback()
-check(#opened == n_opened + 1 and opened[#opened]:find("/test@"), "next song from the song dialog")
+check(#opened == n_opened + 1 and opened[#opened]:find("/test@") and plugin:getPlaylist().now.uid == "test",
+    "next song from the song dialog plays it")
+local n_shown = #shown
+song_action("show_playlist").callback()
+check(#shown == n_shown + 1 and last_shown().item_table, "playlist from the song dialog")
+plugin:closeList()
 settings_store.playlist = saved_playlist
 plugin:openSong("user-songs/test")
 

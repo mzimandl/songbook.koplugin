@@ -55,7 +55,7 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 
 ## Using it
 
-The Songbook menu has the song lists (My songs, Favorites, Collections,
+The Songbook menu has *Song options* of the open song, the song lists (My songs, Favorites, Collections,
 Browse online), the *Playlist*, *Now playing* while a song is playing and
 *Next song* while one is queued. Then come *Jam session* and *Settings*.
 
@@ -63,9 +63,10 @@ While a song is open, the ☰ button in the bottom right corner (above the
 status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
 *Song length*, *Add to / Remove from favorites*, *Add to collection…*, *Add to
 playlist*, *Play now* / *Finished*, *Open now playing* (while another song is
-playing) and *Next song* (the first song of Up next; disabled while Up next is
-empty). The button is inverted while the open song is the one now playing.
-The gesture action *Songbook: song options* (Reader) opens them too;
+playing), *Next song* (plays the first song of Up next; disabled while Up next is
+empty) and *Playlist*. The button is inverted while the open song is the one now playing.
+The gesture action *Songbook: song options* (Reader) and *Song options* at the
+top of the Songbook menu (disabled while no song is open) open them too;
 *Settings → Display → Song button* hides the button. Taps in that corner
 beside the button still turn pages.
 

@@ -150,6 +150,7 @@ return {
     ["Requested: %1"] = "Vyžádáno: %1",
     ["Playlist of %1"] = "Playlist %1",
     ["Playlist"] = "Playlist",
+    ["Song options"] = "Volby písně",
     ["Playlist (jam session)"] = "Playlist (jam session)",
     ["Playlist (%1 up next)"] = "Playlist (%1 na řadě)",
     ["Request songs…"] = "Vyžádat písně…",
@@ -231,8 +232,8 @@ return {
     ["Lines with chords wrap at word boundaries above this width. Lower it if lines are cut off at the right edge."] =
         "Řádky s akordy se nad touto šířkou zalamují mezi slovy. Snižte ji, pokud se řádky ořezávají na pravém okraji.",
     ["Song button"] = "Tlačítko písně",
-    ["A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as the gesture action \"Songbook: song options\"."] =
-        "Tlačítko v pravém dolním rohu otevřené písně otevře volby písně: transpozici, posouvání, oblíbené, kolekce a playlist. Jsou dostupné i jako akce gesta „Zpěvník: volby písně“.",
+    ["A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as Song options in the Songbook menu and as the gesture action \"Songbook: song options\"."] =
+        "Tlačítko v pravém dolním rohu otevřené písně otevře volby písně: transpozici, posouvání, oblíbené, kolekce a playlist. Jsou dostupné i jako Volby písně v menu Zpěvníku a jako akce gesta „Zpěvník: volby písně“.",
     ["Repeat chorus text"] = "Opakovat text refrénu",
     ["Print the whole chorus where the song says {chorus}, instead of just a label."] =
         "Kde píseň uvádí {chorus}, vypsat celý refrén místo pouhého označení.",

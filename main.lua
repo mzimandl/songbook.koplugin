@@ -2596,7 +2596,7 @@ end
 
 --- Actions for the song that is open (for show_actions(), each with an `id`):
 -- transposition, autoscroll, song length, favorite, collections, playlist,
--- Play now / Finished, Open now playing and next song in the playlist. Songs received while following are not kept in favorites,
+-- Play now / Finished, Open now playing, next song and the playlist. Songs received while following are not kept in favorites,
 -- collections or the playlist.
 function Songbook:songActions()
     local uid = self:currentSongId()
@@ -2663,7 +2663,12 @@ function Songbook:songActions()
         id = "next",
         text = next_song and T(_("Next song: %1"), next_song.title) or _("Next song"),
         enabled = next_song ~= nil,
-        callback = function() self:openSong(next_song.uid) end,
+        callback = function() self:onSongbookNextSong() end,
+    })
+    table.insert(actions, {
+        id = "show_playlist",
+        text = self:isFollowing() and _("Playlist (jam session)") or _("Playlist"),
+        callback = function() self:onSongbookShowPlaylist() end,
     })
     return actions
 end
@@ -2802,7 +2807,7 @@ function Songbook:settingsMenu()
                 },
                 {
                     text = _("Song button"),
-                    help_text = _("A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as the gesture action \"Songbook: song options\"."),
+                    help_text = _("A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as Song options in the Songbook menu and as the gesture action \"Songbook: song options\"."),
                     checked_func = function() return self:get("song_button") end,
                     callback = function() self:setAndRefresh("song_button", not self:get("song_button")) end,
                 },
@@ -2871,11 +2876,24 @@ function Songbook:settingsMenu()
     }
 end
 
---- The Songbook menu: the library, jam session and settings (the open song's
--- actions are in showSongDialog()). Built when it opens, so Next song shows
--- only while a song is queued.
+--- The Songbook menu: the open song's actions (disabled without one, for when
+-- the song button is off), the library, jam session and settings. Built when
+-- it opens, so Next song shows only while a song is queued.
 function Songbook:mainMenu()
     local items = self:libraryMenu()
+    table.insert(items, 1, {
+        songbook_item = "song",
+        text = _("Song options"),
+        enabled_func = function() return self:currentSongId() ~= nil end,
+        sub_item_table_func = function()
+            local sub = {}
+            for _i, a in ipairs(self:songActions()) do
+                table.insert(sub, { text = a.text, enabled = a.enabled ~= false, callback = a.callback })
+            end
+            return sub
+        end,
+        separator = true,
+    })
     table.insert(items, {
         songbook_item = "jam",
         text_func = function()
