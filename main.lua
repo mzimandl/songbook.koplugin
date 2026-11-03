@@ -2725,6 +2725,7 @@ function Songbook:songActions()
         id = "next",
         row = "play",
         text = next_song and T(_("Next song: %1"), next_song.title) or _("Next song"),
+        short = next_song and T(_("Next: %1"), next_song.title) or nil,
         enabled = next_song ~= nil,
         callback = function() self:onSongbookNextSong() end,
     })

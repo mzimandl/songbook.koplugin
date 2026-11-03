@@ -880,7 +880,7 @@ for _i, row in ipairs(last_shown().buttons) do
     table.insert(rows, table.concat(texts, " | "))
 end
 check(rows[2] == "Start autoscroll | Song length" and rows[3] == "+ Favorites | + Collection | + Playlist"
-    and rows[#rows - 1] == "Playlist" and rows[#rows]:find("^Play now | Next song"),
+    and rows[#rows - 1] == "Playlist" and rows[#rows] == "Play now | Next song",
     "song dialog rows: " .. table.concat(rows, " / "))
 local saved_playlist = settings_store.playlist
 plugin:savePlaylist({})
@@ -888,6 +888,9 @@ check(song_action("next").text == "Next song" and song_action("next").enabled ==
 plugin:addToPlaylist("test")
 check(song_action("next").text == "Next song: Žluťoučký kůň" and song_action("next").enabled,
     "next song in the song dialog: " .. song_action("next").text)
+plugin:showSongDialog()
+local last_row = last_shown().buttons[#last_shown().buttons]
+check(last_row[2].text == "Next: Žluťoučký kůň", "short next song label: " .. tostring(last_row[2].text))
 local n_opened = #opened
 song_action("next").callback()
 check(#opened == n_opened + 1 and opened[#opened]:find("/test@") and plugin:getPlaylist().now.uid == "test",

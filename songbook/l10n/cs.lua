@@ -94,6 +94,7 @@ return {
     ["+ Favorites"] = "+ Oblíbené",
     ["− Favorites"] = "− Oblíbené",
     ["+ Collection"] = "+ Kolekce",
+    ["Next: %1"] = "Další: %1",
     ["+ Playlist"] = "+ Playlist",
     ["− Playlist"] = "− Playlist",
     ["Collections"] = "Kolekce",
