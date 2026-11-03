@@ -2834,7 +2834,18 @@ function Songbook:settingsMenu()
             end,
         },
         {
-            text = _("Display"),
+            text = _("Songs folder"),
+            keep_menu_open = true,
+            callback = function()
+                UIManager:show(InfoMessage:new{
+                    text = T(_("Downloaded songs are stored in:\n%1\n\nYou can also copy your own .cho files there."),
+                        self.songs_dir),
+                })
+            end,
+            separator = true,
+        },
+        {
+            text = _("Formatting"),
             sub_item_table = {
                 {
                     text = _("Chord notation"),
@@ -2852,6 +2863,17 @@ function Songbook:settingsMenu()
                             callback = function() self:setAndRefresh("notation", "en") end,
                         },
                     },
+                },
+                {
+                    text = _("Show chords"),
+                    checked_func = function() return self:get("show_chords") end,
+                    callback = function() self:setAndRefresh("show_chords", not self:get("show_chords")) end,
+                },
+                {
+                    text = _("Repeat chorus text"),
+                    help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
+                    checked_func = function() return self:get("repeat_chorus") end,
+                    callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
                 },
                 {
                     text_func = function()
@@ -2873,30 +2895,7 @@ function Songbook:settingsMenu()
                         })
                     end,
                 },
-                {
-                    text = _("Show chords"),
-                    checked_func = function() return self:get("show_chords") end,
-                    callback = function() self:setAndRefresh("show_chords", not self:get("show_chords")) end,
-                },
-                {
-                    text = _("Song button"),
-                    help_text = _("A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as Song options in the Songbook menu and as the gesture action \"Songbook: song options\"."),
-                    checked_func = function() return self:get("song_button") end,
-                    callback = function() self:setAndRefresh("song_button", not self:get("song_button")) end,
-                },
-                {
-                    text = _("Repeat chorus text"),
-                    help_text = _("Print the whole chorus where the song says {chorus}, instead of just a label."),
-                    checked_func = function() return self:get("repeat_chorus") end,
-                    callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
-                },
             },
-        },
-        {
-            text = _("Opening a song plays it"),
-            help_text = _("A song you open becomes the song now playing: the jam session shares it and it goes to Played afterwards. Otherwise opening only shows the song, and Play now in the song's options plays it."),
-            checked_func = function() return self:get("play_on_open") end,
-            callback = function() self:set("play_on_open", not self:get("play_on_open")) end,
         },
         {
             text = _("Scrolling"),
@@ -2937,14 +2936,16 @@ function Songbook:settingsMenu()
             separator = true,
         },
         {
-            text = _("Songs folder"),
-            keep_menu_open = true,
-            callback = function()
-                UIManager:show(InfoMessage:new{
-                    text = T(_("Downloaded songs are stored in:\n%1\n\nYou can also copy your own .cho files there."),
-                        self.songs_dir),
-                })
-            end,
+            text = _("Quick menu"),
+            help_text = _("A button in the bottom right corner of an open song opens a quick menu with the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as Song options in the Songbook menu and as the gesture action \"Songbook: song options\"."),
+            checked_func = function() return self:get("song_button") end,
+            callback = function() self:setAndRefresh("song_button", not self:get("song_button")) end,
+        },
+        {
+            text = _("Opening a song plays it"),
+            help_text = _("A song you open becomes the song now playing: the jam session shares it and it goes to Played afterwards. Otherwise opening only shows the song, and Play now in the song's options plays it."),
+            checked_func = function() return self:get("play_on_open") end,
+            callback = function() self:set("play_on_open", not self:get("play_on_open")) end,
         },
     }
 end

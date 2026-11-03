@@ -230,7 +230,7 @@ return {
 
     -- settings
     ["Settings"] = "Nastavení",
-    ["Display"] = "Zobrazení",
+    ["Formatting"] = "Formátování",
     ["Chord notation"] = "Zápis akordů",
     ["Czech/German (H, B = Bb)"] = "Český/německý (H, B = Bb)",
     ["English (B, Bb)"] = "Anglický (B, Bb)",
@@ -238,9 +238,9 @@ return {
     ["Line width"] = "Šířka řádku",
     ["Lines with chords wrap at word boundaries above this width. Lower it if lines are cut off at the right edge."] =
         "Řádky s akordy se nad touto šířkou zalamují mezi slovy. Snižte ji, pokud se řádky ořezávají na pravém okraji.",
-    ["Song button"] = "Tlačítko písně",
-    ["A button in the bottom right corner of an open song opens the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as Song options in the Songbook menu and as the gesture action \"Songbook: song options\"."] =
-        "Tlačítko v pravém dolním rohu otevřené písně otevře volby písně: transpozici, posouvání, oblíbené, kolekce a playlist. Jsou dostupné i jako Volby písně v menu Zpěvníku a jako akce gesta „Zpěvník: volby písně“.",
+    ["Quick menu"] = "Rychlé menu",
+    ["A button in the bottom right corner of an open song opens a quick menu with the song's options: transposition, autoscroll, favorites, collections and playlist. They are also available as Song options in the Songbook menu and as the gesture action \"Songbook: song options\"."] =
+        "Tlačítko v pravém dolním rohu otevřené písně otevře rychlé menu s volbami písně: transpozici, posouvání, oblíbené, kolekce a playlist. Jsou dostupné i jako Volby písně v menu Zpěvníku a jako akce gesta „Zpěvník: volby písně“.",
     ["Repeat chorus text"] = "Opakovat text refrénu",
     ["Print the whole chorus where the song says {chorus}, instead of just a label."] =
         "Kde píseň uvádí {chorus}, vypsat celý refrén místo pouhého označení.",

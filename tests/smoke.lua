@@ -783,6 +783,10 @@ plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 
 -- repository list (Settings, or the title bar menu of online lists): add, rename, remove
 local repos_item = menu_item("settings").sub_item_table[1]
+local setting_names = {}
+for _i, item in ipairs(menu_item("settings").sub_item_table) do table.insert(setting_names, item.text or "") end
+check(table.concat(setting_names, ", ") == ", Songs folder, Formatting, Scrolling, Quick menu, Opening a song plays it",
+    "settings order: " .. table.concat(setting_names, ", "))
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 repos_item.callback()
 local tm = last_shown()

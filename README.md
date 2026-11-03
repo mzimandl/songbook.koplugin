@@ -68,7 +68,7 @@ next is empty). The button is inverted while the open song is the one now playin
 The gesture action *Songbook: song options* (Reader) and *Song options* at the
 top of the Songbook menu (disabled while no song is open; without the
 playlist items, which the menu has anyway) open them too;
-*Settings → Display → Song button* hides the button. Taps in that corner
+*Settings → Quick menu* hides the button. Taps in that corner
 beside the button still turn pages.
 
 Every song list starts with search. Actions for the whole list are in the ☰
@@ -163,13 +163,15 @@ list* (General) opens the list you used last again, with its search and page.
 - **Settings**:
   - Song repositories: add, edit the URL, rename or remove. Removing asks
     whether to delete the songs downloaded from it.
-  - Display: chord notation (Czech H, B = B♭, or English), line width (wrap
-    column; lower it if lines are cut off on the right), show chords
-    (lyrics-only mode), song button (hide the ☰ button of an open song),
-    repeat chorus text (`{chorus}` prints the chorus instead of a label).
-  - Opening a song plays it (off: opening only shows a song).
+  - Songs folder: where downloaded songs are stored (and your own `.cho` files go).
+  - Formatting: chord notation (Czech H, B = B♭, or English), show chords
+    (lyrics-only mode), repeat chorus text (`{chorus}` prints the chorus
+    instead of a label), line width (wrap column; lower it if lines are cut
+    off on the right).
   - Scrolling: continuous scroll mode (open songs in scroll mode), autoscroll
     when a song starts playing, autoscroll step (1/2 to 1/16 of the screen).
+  - Quick menu: the ☰ button of an open song (off: hidden).
+  - Opening a song plays it (off: opening only shows a song).
 
 ## Supported ChordPro
 
