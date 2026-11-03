@@ -56,8 +56,8 @@ shown as the repository name. `build_index.py` takes it from `songbook.json`
 ## Using it
 
 The Songbook menu has *Song options* of the open song, the song lists (My songs, Favorites, Collections,
-Browse online), the *Playlist*, *Now playing* while a song is playing and
-*Next song* while one is queued. Then come *Jam session* and *Settings*.
+Browse online) and *Playlist* (a submenu: *Show playlist*, *Now playing* and
+*Next song*, disabled while there is none). Then come *Jam session* and *Settings*.
 
 While a song is open, the ☰ button in the bottom right corner (above the
 status bar) opens the song's options: *Transpose*, *Start/Stop autoscroll*,
@@ -103,13 +103,13 @@ list* (General) opens the list you used last again, with its search and page.
   Up next) makes it the song now playing; the jam session shares only that
   one. When another song starts playing, or you tap *Finished*, it goes to
   Played. *Settings → Opening a song plays it* makes every song you open the
-  song now playing. *Open now playing* (song's options, Songbook menu, a tap
+  song now playing. *Open now playing* (song's options, Songbook menu → Playlist, a tap
   on it in the playlist, gesture *Songbook: open the song now playing*) goes
   back to it. Add songs with *Add songs…* in the
   playlist (tap a song to add it, tap again to remove; songs already in the
   playlist are hidden, *Show songs already in the playlist* in its ☰ menu lists them too),
   or by long-pressing a song in any list → *Add to playlist* (or in the song's
-  options for the open song). **Next song** in the Songbook menu or in the
+  options for the open song). **Next song** in Songbook menu → Playlist or in the
   song's options plays the first song of Up next. In the playlist, tap a
   song of Up next to play it or a played song to open it, long-press a song
   of Up next to move it to the top (*Play next*) or remove it, long-press a

@@ -164,13 +164,20 @@ local function menu_item(name)
     end
 end
 check(#items.songbook.sub_item_table_func() == 8 and menu_item("my_songs") and menu_item("settings"), "menu built")
+-- items of the Playlist submenu
+local function playlist_entry(name)
+    for _i, item in ipairs(menu_item("playlist").sub_item_table_func()) do
+        if item.songbook_item == name then return item end
+    end
+end
 -- actions of the open song (song button / song options dialog), found by `id`
 local function song_action(id)
     for _i, a in ipairs(plugin:songActions()) do
         if a.id == id then return a end
     end
 end
-check(#plugin:songActions() == 0 and menu_item("next") == nil, "no song actions outside a song")
+check(#plugin:songActions() == 0 and not playlist_entry("next").enabled_func()
+    and playlist_entry("next").text_func() == "Next song", "no song actions outside a song")
 check(not menu_item("song").enabled_func() and #menu_item("song").sub_item_table_func() == 0,
     "song options disabled outside a song")
 
@@ -422,11 +429,12 @@ code = jam_get("/songs/..~settings~x.cho")
 check(code == "404", "jam song file outside songs/")
 
 -- playlist: played songs and guests' requests
-local playlist_item = menu_item("playlist")
+local playlist_menu = menu_item("playlist")
+local playlist_item = playlist_entry("show_playlist")
 local p = plugin:getPlaylist()
 check(p.now.uid == "test" and #p.history == 1 and p.history[1].uid == "test" and #p.queue == 0,
     "now playing and finished song, transposing not repeated")
-check(playlist_item.text_func() == "Playlist", "playlist label")
+check(playlist_menu.text_func() == "Playlist", "playlist label")
 code, body = jam_get("/queue/add?uid=test&by=%20Pavel%0A")
 check(body == '{"ok":true}' and notes[#notes] == "Song request: Žluťoučký kůň (Pavel)", "request added: " .. tostring(body))
 code, body = jam_get("/queue/add?uid=test")
@@ -439,7 +447,7 @@ check(body == '{"error":"missing","ok":false}', "request of a missing song")
 code, body = jam_get("/playlist.json")
 check(body:find('"queue":[{"artist":"Lidová","at":', 1, true) and body:find('"by":"Pavel"', 1, true)
     and body:find('"now":{', 1, true), "playlist json: " .. tostring(body))
-check(playlist_item.text_func() == "Playlist (1 up next)", "playlist label with requests")
+check(playlist_menu.text_func() == "Playlist (1 up next)", "playlist label with requests")
 playlist_item.callback()
 local pl_menu = last_shown()
 check(pl_menu.title == "Playlist" and pl_menu.item_table[2].text == "Now playing"
@@ -501,10 +509,10 @@ check(#plugin:getPlaylist().queue == 0 and picker_item("second").mandatory == ""
 toggle_hidden()
 
 -- next song from the playlist
-check(menu_item("next") == nil, "no next song")
+check(not playlist_entry("next").enabled_func(), "no next song")
 plugin:addToPlaylist("second")
 plugin:addToPlaylist("test")
-local next_item = menu_item("next")
+local next_item = playlist_entry("next")
 check(next_item and next_item.enabled_func() and next_item.text_func() == "Next song: Druhá", "next song label")
 playlist_item.callback()
 pl_menu = last_shown()
@@ -525,13 +533,15 @@ plugin:openSong("test")
 plugin.ui.document.file = opened[#opened]
 check(plugin:nowPlayingUid() == "second" and song_action("play").text == "Play now"
     and song_action("now_playing").text == "Open now playing: Druhá", "opened song is only shown")
-check(menu_item("now_playing").text_func() == "Now playing: Druhá", "now playing in the menu")
+check(playlist_entry("now_playing").enabled_func() and playlist_entry("now_playing").text_func() == "Now playing: Druhá",
+    "now playing in the menu")
 song_action("now_playing").callback()
 check(opened[#opened]:find("/second@"), "open now playing")
 plugin.ui.document.file = opened[#opened]
 check(song_action("play").text == "Finished" and song_action("now_playing") == nil, "song now playing can be finished")
 song_action("play").callback()
-check(plugin:getPlaylist().now == nil and menu_item("now_playing") == nil, "finished")
+check(plugin:getPlaylist().now == nil and not playlist_entry("now_playing").enabled_func()
+    and playlist_entry("now_playing").text_func() == "Nothing is playing", "finished")
 plugin:onSongbookOpenNowPlaying()
 check(notes[#notes] == "No song is playing.", "nothing to open")
 -- with "Opening a song plays it" the old behaviour
@@ -626,7 +636,7 @@ check(plugin:getPlaylist().queue[1] == nil, "request while following does not to
 responses[host .. "playlist.json"] = "PL1"
 decoded.PL1 = { history = { { uid = "repo/song-a", title = "Hostova", at = 0 } },
                 queue = { { uid = "repo/b", title = "Druhá", by = "Eva" }, "junk" } }
-check(playlist_item.text_func() == "Playlist (jam session)", "playlist label while following")
+check(playlist_menu.text_func() == "Playlist (jam session)", "playlist label while following")
 playlist_item.callback()
 local remote_pl = last_shown()
 check(remote_pl.title == "Playlist of 10.0.0.2:8765" and remote_pl.item_table[4].text == "Up next (1)"
@@ -655,7 +665,7 @@ rpick.item_table[3].callback()
 check(notes[#notes] == "This song is already requested." and requested[n_requested + 1] ~= host .. "queue/add?id=repo_b",
     "queued song not requested again")
 toggle_hidden(rpick)
-check(menu_item("next") == nil, "no next song while following")
+check(not playlist_entry("next").enabled_func(), "no next song while following")
 local switched = 0
 remote_pl.switchItemTable = function(self, t, items) switched = switched + 1; self.item_table = items end
 scheduled()
@@ -986,7 +996,7 @@ check(not plugin:isInCollection("Oheň", "other-repo-dev/test"), "deleting a son
 -- lists open over the Songbook menu; opening a song closes them and the menu
 check(menu_item("my_songs").keep_menu_open and menu_item("favorites").keep_menu_open
     and menu_item("collections_list").keep_menu_open and menu_item("online").keep_menu_open
-    and menu_item("playlist").keep_menu_open, "lists keep the songbook menu open")
+    and playlist_entry("show_playlist").keep_menu_open, "lists keep the songbook menu open")
 local UIManager = require("ui/uimanager")
 local closed, menu_closed = {}, false
 local old_close = UIManager.close

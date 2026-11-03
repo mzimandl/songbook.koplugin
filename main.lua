@@ -2712,7 +2712,38 @@ end
 
 Songbook.onSongbookSongDialog = Songbook.showSongDialog
 
---- Items of the song library: the song lists, playlist and next song.
+--- The Playlist submenu: the list, the song now playing and the next song
+-- (always there, disabled while there is none; the song options have them too).
+function Songbook:playlistMenu()
+    return {
+        {
+            songbook_item = "show_playlist",
+            text = _("Show playlist"),
+            keep_menu_open = true,
+            callback = function() self:onSongbookShowPlaylist() end,
+        },
+        {
+            songbook_item = "now_playing",
+            text_func = function()
+                local title = self:nowPlayingUid() and self:nowPlayingTitle()
+                return title and T(_("Now playing: %1"), Render.truncate(title, 24)) or _("Nothing is playing")
+            end,
+            enabled_func = function() return self:nowPlayingUid() ~= nil end,
+            callback = function() self:onSongbookOpenNowPlaying() end,
+        },
+        {
+            songbook_item = "next",
+            text_func = function()
+                local e = self:nextInPlaylist()
+                return e and T(_("Next song: %1"), Render.truncate(e.title, 24)) or _("Next song")
+            end,
+            enabled_func = function() return self:nextInPlaylist() ~= nil end,
+            callback = function() self:onSongbookNextSong() end,
+        },
+    }
+end
+
+--- Items of the song library: the song lists and the Playlist submenu.
 function Songbook:libraryMenu()
     local items = {
         {
@@ -2747,31 +2778,9 @@ function Songbook:libraryMenu()
                 local n = #self:getPlaylist().queue
                 return n > 0 and T(_("Playlist (%1 up next)"), n) or _("Playlist")
             end,
-            keep_menu_open = true,
-            callback = function() self:onSongbookShowPlaylist() end,
+            sub_item_table_func = function() return self:playlistMenu() end,
         },
     }
-    if self:nowPlayingUid() then
-        table.insert(items, {
-            songbook_item = "now_playing",
-            text_func = function()
-                return T(_("Now playing: %1"), Render.truncate(self:nowPlayingTitle() or "", 24))
-            end,
-            callback = function() self:onSongbookOpenNowPlaying() end,
-        })
-    end
-    -- only while there is one: the playlist item shows how many are queued
-    if self:nextInPlaylist() then
-        table.insert(items, {
-            songbook_item = "next",
-            text_func = function()
-                local e = self:nextInPlaylist()
-                return e and T(_("Next song: %1"), Render.truncate(e.title, 24)) or _("Next song")
-            end,
-            enabled_func = function() return self:nextInPlaylist() ~= nil end,
-            callback = function() self:onSongbookNextSong() end,
-        })
-    end
     items[#items].separator = true
     return items
 end
@@ -2911,7 +2920,7 @@ local MENU_SKIPS_ACTION = { now_playing = true, next = true, show_playlist = tru
 
 --- The Songbook menu: the open song's actions (disabled without one, for when
 -- the song button is off), the library, jam session and settings. Built when
--- it opens, so Next song shows only while a song is queued.
+-- it opens, so the labels show the open song and the playlist.
 function Songbook:mainMenu()
     local items = self:libraryMenu()
     table.insert(items, 1, {

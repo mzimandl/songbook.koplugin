@@ -150,6 +150,7 @@ return {
     ["Requested: %1"] = "Vyžádáno: %1",
     ["Playlist of %1"] = "Playlist %1",
     ["Playlist"] = "Playlist",
+    ["Show playlist"] = "Zobrazit playlist",
     ["Song options"] = "Volby písně",
     ["Playlist (jam session)"] = "Playlist (jam session)",
     ["Playlist (%1 up next)"] = "Playlist (%1 na řadě)",
