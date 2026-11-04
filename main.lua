@@ -257,10 +257,48 @@ function Songbook:saveServers(servers)
     self:set("servers", servers)
 end
 
+--- The followed songbook as a song repository (Browse their songs), or nil
+-- while not following. It is not saved in `servers`: it is a source only while
+-- following. Its songs keep one folder per host address: setting
+-- `jam_servers` = { [url] = key }.
+function Songbook:followedServer()
+    local url = jam.follow and jam.follow.url
+    if not url then return nil end
+    local keys = self.settings:readSetting("jam_servers") or {}
+    if not keys[url] then
+        keys[url] = Repo.server_key(url, self:takenKeys())
+        self:set("jam_servers", keys)
+    end
+    return { key = keys[url], url = url, name = _("Jam session"), jam = true }
+end
+
+--- Repositories to browse: the saved ones and, while following, the followed
+-- songbook (unless it is saved too).
+function Songbook:onlineServers()
+    local servers = {}   -- a copy: getServers() is the saved table
+    for i, s in ipairs(self:getServers()) do servers[i] = s end
+    local followed = self:followedServer()
+    if followed then
+        for _i, s in ipairs(servers) do
+            if Repo.base_url(s.url) == Repo.base_url(followed.url) then return servers end
+        end
+        servers[#servers + 1] = followed
+    end
+    return servers
+end
+
 function Songbook:findServer(key)
-    for i, server in ipairs(self:getServers()) do
+    for i, server in ipairs(self:onlineServers()) do
         if server.key == key then return server, i end
     end
+end
+
+--- Whether `key` is the folder of songs downloaded from a followed songbook.
+function Songbook:isJamServerKey(key)
+    for _url, k in pairs(self.settings:readSetting("jam_servers") or {}) do
+        if k == key then return true end
+    end
+    return false
 end
 
 function Songbook:serverName(server)
@@ -272,7 +310,8 @@ function Songbook:sourceName(uid)
     local key = split_uid(uid)
     if not key then return nil end
     local server = self:findServer(key)
-    return server and self:serverName(server) or key
+    if server then return self:serverName(server) end
+    return self:isJamServerKey(key) and _("Jam session") or key
 end
 
 --- Settings migrations: MIGRATIONS[n] upgrades the settings from schema n - 1
@@ -1441,7 +1480,7 @@ end
 
 --- Run cb() online, asking for a first server when none is set up.
 function Songbook:withServers(cb)
-    if #self:getServers() == 0 then
+    if #self:onlineServers() == 0 then
         self:askServerUrl(_("Add song repository"), "", function(url)
             self:addServer(url)
             self:withServers(cb)
@@ -1453,7 +1492,7 @@ end
 
 function Songbook:browseOnline()
     self:withServers(function()
-        local servers = self:getServers()
+        local servers = self:onlineServers()
         if #servers == 1 then
             self:showOnlineSongs({ servers[1] })
             return
@@ -1614,14 +1653,19 @@ function Songbook:askServerUrl(title, current, on_saved)
     dialog:onShowKeyboard()
 end
 
-function Songbook:addServer(url)
-    local servers = self:getServers()
-    local taken = {}
-    for _, server in ipairs(servers) do taken[server.key] = true end
-    taken[JAM_KEY] = true
+--- Folder names a new repository key must not use.
+function Songbook:takenKeys()
+    local taken = { [JAM_KEY] = true }
+    for _, server in ipairs(self:getServers()) do taken[server.key] = true end
+    for _url, key in pairs(self.settings:readSetting("jam_servers") or {}) do taken[key] = true end
     -- also avoid folders left behind by removed servers
     for name in lfs.dir(self.songs_dir) do taken[name] = true end
-    local server = { key = Repo.server_key(url, taken), url = url }
+    return taken
+end
+
+function Songbook:addServer(url)
+    local servers = self:getServers()
+    local server = { key = Repo.server_key(url, self:takenKeys()), url = url }
     table.insert(servers, server)
     self:saveServers(servers)
     util.makePath(self.songs_dir .. "/" .. server.key)
@@ -2629,15 +2673,14 @@ function Songbook:findSongbooks(on_url)
     UIManager:show(menu)
 end
 
---- Add the followed songbook as a song repository (once) and browse it.
+--- Browse the followed songbook's songs (see followedServer()).
 function Songbook:browseFollowed()
     local url = jam.follow and jam.follow.url
     if not url then return end
     local server
-    for _i, s in ipairs(self:getServers()) do
+    for _i, s in ipairs(self:onlineServers()) do
         if Repo.base_url(s.url) == Repo.base_url(url) then server = s end
     end
-    server = server or self:addServer(url)
     NetworkMgr:runWhenConnected(function() self:showOnlineSongs({ server }) end)
 end
 
@@ -2661,8 +2704,10 @@ function Songbook:jamMenu()
     return {
         {
             text = _("Share songs on the network"),
-            help_text = _("Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves, and see your playlist and ask for songs."),
+            help_text = _("Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves, and see your playlist and ask for songs. Not while following another songbook."),
             keep_menu_open = true,
+            -- a songbook either shares or follows (following itself doesn't work)
+            enabled_func = function() return not self:isFollowing() end,
             checked_func = function() return self:isJamRunning() end,
             callback = function(touchmenu_instance)
                 if self:isJamRunning() then
@@ -2712,8 +2757,9 @@ function Songbook:jamMenu()
                 if not self:isFollowing() then return _("Follow another songbook…") end
                 return T(_("Following %1"), follow_name())
             end,
-            help_text = _("Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead."),
+            help_text = _("Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead. Not while sharing."),
             keep_menu_open = true,
+            enabled_func = function() return not self:isJamRunning() end,
             checked_func = function() return self:isFollowing() end,
             callback = function(touchmenu_instance)
                 if self:isFollowing() then
@@ -2740,7 +2786,7 @@ function Songbook:jamMenu()
         },
         {
             text = _("Browse their songs"),
-            help_text = _("Adds the followed songbook as a song repository, so you can download any of its songs."),
+            help_text = _("Lists the followed songbook's songs, so you can download any of them. While following, it is also among the repositories in Browse online."),
             enabled_func = function() return self:isFollowing() end,
             callback = function() self:browseFollowed() end,
         },

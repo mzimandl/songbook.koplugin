@@ -163,8 +163,12 @@ list* (General) opens the list you used last again, with its search and page.
     other reader is unreachable for a while. Following clears
     your playlist: *Playlist* shows the other reader's one, and *Request
     songs…* there lists its songs to ask for.
-  - *Browse their songs*: adds the followed reader as a song repository, so
-    you can download any of its songs.
+  - *Browse their songs*: lists the followed reader's songs, so you can
+    download any of them. While following, it is also listed as *Jam session*
+    in *Browse online*; it leaves the list when following stops (downloaded
+    songs stay in My songs).
+  - A reader either shares or follows: each option is disabled while the
+    other is on.
 - **Settings**:
   - Song repositories: add, edit the URL, rename or remove. Removing asks
     whether to delete the songs downloaded from it.

@@ -210,8 +210,8 @@ return {
     ["Address shown on the other device under Jam session."] = "Adresa, kterou druhé zařízení ukazuje v Jam session.",
     ["Follow"] = "Sledovat",
     ["Share songs on the network"] = "Sdílet písně v síti",
-    ["Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves, and see your playlist and ask for songs."] =
-        "Hosté ve stejné Wi-Fi otevřou adresu ve webovém prohlížeči a uvidí píseň, kterou hrajete. Každý si ji může sám transponovat, vidí váš playlist a může si přát písně.",
+    ["Guests on the same Wi-Fi open the address in a web browser and see the song you are playing. Each guest can transpose it for themselves, and see your playlist and ask for songs. Not while following another songbook."] =
+        "Hosté ve stejné Wi-Fi otevřou adresu ve webovém prohlížeči a uvidí píseň, kterou hrajete. Každý si ji může sám transponovat, vidí váš playlist a může si přát písně. Nelze při sledování jiného zpěvníku.",
     ["Guests can open:\n%1"] = "Hosté mohou otevřít:\n%1",
     ["unknown address"] = "neznámá adresa",
     ["Address: not sharing"] = "Adresa: nesdílí se",
@@ -222,13 +222,13 @@ return {
     ["Port"] = "Port",
     ["Follow another songbook…"] = "Sledovat jiný zpěvník…",
     ["Following %1"] = "Sleduji %1",
-    ["Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead."] =
-        "Otevírá písně, které hraje jiné zařízení, jak se mění, v tónině druhého hráče; můžete si je dál transponovat. Váš playlist se vyprázdní a použije se playlist druhého zpěvníku.",
+    ["Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead. Not while sharing."] =
+        "Otevírá písně, které hraje jiné zařízení, jak se mění, v tónině druhého hráče; můžete si je dál transponovat. Váš playlist se vyprázdní a použije se playlist druhého zpěvníku. Nelze při sdílení.",
     ["Following another songbook clears your playlist and uses theirs instead."] =
         "Sledování jiného zpěvníku vyprázdní váš playlist a použije jeho playlist.",
     ["Browse their songs"] = "Procházet jeho písně",
-    ["Adds the followed songbook as a song repository, so you can download any of its songs."] =
-        "Přidá sledovaný zpěvník jako repozitář písní, takže si můžete stáhnout kteroukoli jeho píseň.",
+    ["Lists the followed songbook's songs, so you can download any of them. While following, it is also among the repositories in Browse online."] =
+        "Ukáže písně sledovaného zpěvníku, takže si můžete stáhnout kteroukoli z nich. Během sledování je zpěvník i mezi repozitáři v Procházet online.",
 
     -- settings
     ["Settings"] = "Nastavení",

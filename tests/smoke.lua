@@ -424,6 +424,7 @@ check(#answers.outbox == 1 and answers.outbox[1][1] == "SONGBOOK 1 8765 Songbook
 check(jam_menu.text_func() == "Jam session (sharing)", "jam menu label while sharing")
 check(jam_menu.sub_item_table[2].text_func() == "Address: http://192.168.1.5:8765/", "jam address")
 check(jam_menu.sub_item_table[3].enabled_func() == false, "port locked while sharing")
+check(jam_menu.sub_item_table[4].enabled_func() == false, "no following while sharing")
 local function jam_get(target)
     sent = nil
     check(zmqs[1].receiveCallback("GET " .. target .. " HTTP/1.1\r\n\r\n", {}) == nil, "jam callback returns nothing")
@@ -648,15 +649,26 @@ check(#finder_menu.item_table == 2 and finder_menu.item_table[1].text == "Search
 finder_menu.item_table[2].callback()
 finder_menu:onCloseWidget()
 check(#zmqs == 0 and search.closed, "search stopped when the list closes")
+check(jam_menu.sub_item_table[1].enabled_func() == true, "sharing possible before following")
 find_button(last_shown(), "Follow").callback()
 check(#plugin:getPlaylist().queue == 0 and #plugin:getPlaylist().history == 0, "following clears our playlist")
 check(follow_item.checked_func() and follow_item.text_func() == "Following 10.0.0.2:8765", "following: " .. follow_item.text_func())
 check(settings_store.jam_follow_url == host and standby == 1 and scheduled ~= nil, "follow polling scheduled")
 check(jam_menu.text_func() == "Jam session (following)", "jam menu label while following")
+check(jam_menu.sub_item_table[1].enabled_func() == false and follow_item.enabled_func() == true,
+    "no sharing while following, following can be stopped")
 check(requested[#requested] == host .. "songs/repo~song-a.cho"
     and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"):read("*a"):find("Hostova", 1, true), "followed song saved")
 check(#opened == n_opened + 1 and opened[#opened]:find("/jam~repo_song%-a@t%+2"), "followed song opened in host key: " .. opened[#opened])
 plugin.ui.document.file = opened[#opened]
+-- the followed songbook is a repository to browse only while following
+local jam_server = plugin:onlineServers()[#plugin:onlineServers()]
+check(jam_server and jam_server.jam and jam_server.name == "Jam session" and jam_server.url == host
+    and jam_server.key == "10.0.0.2-8765", "followed songbook among the repositories")
+for _i, s in ipairs(plugin:getServers()) do check(s.url ~= host, "followed songbook not saved as a repository") end
+check(plugin:findServer(jam_server.key) ~= nil and settings_store.jam_servers[host] == "10.0.0.2-8765", "its key is kept")
+jam_menu.sub_item_table[5].callback()
+check(last_shown().title == "Jam session", "Browse their songs lists the followed songbook: " .. tostring(last_shown().title))
 local fetched = #requested
 scheduled()
 check(#opened == n_opened + 1 and #requested == fetched + 1, "same state: nothing reopened or downloaded")
@@ -768,6 +780,7 @@ check(#opened == n_open + 1 and opened[#opened]:find("/jam~repo_song%-b@"), "ope
 plugin.ui.document.file = opened[#opened]
 follow_item.callback(tmi)
 check(not follow_item.checked_func() and standby == 0, "following stopped from the menu")
+for _i, s in ipairs(plugin:onlineServers()) do check(not s.jam, "followed songbook gone from the repositories") end
 plugin:deleteSong("jam/repo_song-b")
 responses[host .. "state.json"] = nil
 plugin.ui.document.file = opened[n_opened]
