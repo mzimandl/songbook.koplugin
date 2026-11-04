@@ -205,6 +205,8 @@ return {
     ["Nothing yet"] = "Zatím nic",
     ["Lost connection to the songbook at %1. Stopped following."] = "Spojení se zpěvníkem na %1 ztraceno. Sledování ukončeno.",
     ["Follow another songbook"] = "Sledovat jiný zpěvník",
+    ["Searching for shared songbooks…"] = "Hledám sdílené zpěvníky…",
+    ["Enter address…"] = "Zadat adresu…",
     ["Address shown on the other device under Jam session."] = "Adresa, kterou druhé zařízení ukazuje v Jam session.",
     ["Follow"] = "Sledovat",
     ["Share songs on the network"] = "Sdílet písně v síti",

@@ -105,9 +105,33 @@ stub("json", { decode = function(body)
     if decoded[body] then return decoded[body] end
     return { name = index_name, songs = { { id = "test", title = "Test", file = "songs/test.cho", updated = "1" } } }
 end })
+local udps = {}   -- fake UDP sockets; inbox = { { msg, ip, port } }, outbox = { { msg, ip, port } }
+local taken_ports = {}
 stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, udp = function()
-    return { setpeername = function() end, getsockname = function() return "192.168.1.5" end, close = function() end }
+    local u = { inbox = {}, outbox = {} }
+    function u.setpeername() end
+    function u.getsockname() return "192.168.1.5" end
+    function u.close(self) self.closed = true; if self.port then taken_ports[self.port] = nil end end
+    function u.setsockname(self, _, port)
+        if taken_ports[port] then return nil, "address already in use" end
+        self.port = port
+        if port ~= 0 then taken_ports[port] = true end
+        return 1
+    end
+    function u.settimeout() end
+    function u.setoption(self, k, v) self[k] = v end
+    function u.sendto(self, msg, ip, port) table.insert(self.outbox, { msg, ip, port }) end
+    function u.receivefrom(self)
+        local m = table.remove(self.inbox, 1)
+        if not m then return nil, "timeout" end
+        return m[1], m[2], m[3]
+    end
+    table.insert(udps, u)
+    return u
 end })
+local function udp_on(port)
+    for i = #udps, 1, -1 do if udps[i].port == port and not udps[i].closed then return udps[i] end end
+end
 stub("ltn12", { sink = { table = function(t) return t end } })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
 local requested, responses = {}, {}   -- responses[url] = body, or false for 404
@@ -387,7 +411,16 @@ local tmi = { updateItems = function() end }
 check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
 check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
 jam_menu.sub_item_table[1].callback(tmi)
-check(#zmqs == 1 and zmqs[1].port == 8765 and standby == 1, "jam server started")
+check(#zmqs == 2 and zmqs[1].port == 8765 and standby == 1, "jam server started")
+-- searches are answered with our port and the device name
+local answers = udp_on(8766)
+check(answers ~= nil, "discovery socket bound")
+table.insert(answers.inbox, { "SONGBOOK-DISCOVER 1", "192.168.1.9", 8767 })
+table.insert(answers.inbox, { "SONGBOOK-DISCOVER 2", "192.168.1.9", 8767 })
+table.insert(answers.inbox, { "junk", "192.168.1.9", 8767 })
+check(zmqs[2].waitEvent() == nil, "discovery poll returns nothing")
+check(#answers.outbox == 1 and answers.outbox[1][1] == "SONGBOOK 1 8765 Songbook"
+    and answers.outbox[1][2] == "192.168.1.9" and answers.outbox[1][3] == 8767, "search answered once")
 check(jam_menu.text_func() == "Jam session (sharing)", "jam menu label while sharing")
 check(jam_menu.sub_item_table[2].text_func() == "Address: http://192.168.1.5:8765/", "jam address")
 check(jam_menu.sub_item_table[3].enabled_func() == false, "port locked while sharing")
@@ -576,7 +609,7 @@ check(#plugin:getPlaylist().queue == 0, "removed from long-press")
 plugin:savePlaylist({})
 
 jam_menu.sub_item_table[1].callback(tmi)
-check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func(), "jam server stopped")
+check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func() and answers.closed, "jam server stopped")
 check(hold_dialog("test").buttons[2][1].text == "Add to playlist", "playlist button outside a jam session")
 
 -- following another songbook
@@ -592,6 +625,29 @@ plugin:addToPlaylist("test")
 follow_item.callback(tmi)
 check(last_shown().ok_text == "Follow", "following asks before replacing our playlist")
 last_shown().ok_callback()
+-- the songbooks found on the network, and Enter address…
+local finder_menu = last_shown()
+local search = udp_on(8767)
+check(finder_menu.title == "Follow another songbook" and #zmqs == 1 and search and search.broadcast,
+    "searching for songbooks")
+check(finder_menu.item_table[1].text == "Searching for shared songbooks…" and finder_menu.item_table[2].text == "Enter address…",
+    "nothing found yet")
+clock = clock + 1
+zmqs[1].waitEvent()
+check(#search.outbox == 2 and search.outbox[1][1] == "SONGBOOK-DISCOVER 1" and search.outbox[1][2] == "255.255.255.255"
+    and search.outbox[2][2] == "192.168.1.255" and search.outbox[2][3] == 8766, "search broadcast")
+table.insert(search.inbox, { "SONGBOOK 1 8765 Kindle", "10.0.0.3", 8766 })
+table.insert(search.inbox, { "SONGBOOK 9 8765 Future", "10.0.0.4", 8766 })
+zmqs[1].waitEvent()
+check(#finder_menu.item_table == 2 and finder_menu.item_table[1].text == "Kindle"
+    and finder_menu.item_table[1].mandatory == "10.0.0.3", "found songbook listed")
+clock = clock + 6
+zmqs[1].waitEvent()
+check(#finder_menu.item_table == 2 and finder_menu.item_table[1].text == "Searching for shared songbooks…",
+    "silent songbook dropped from the list")
+finder_menu.item_table[2].callback()
+finder_menu:onCloseWidget()
+check(#zmqs == 0 and search.closed, "search stopped when the list closes")
 find_button(last_shown(), "Follow").callback()
 check(#plugin:getPlaylist().queue == 0 and #plugin:getPlaylist().history == 0, "following clears our playlist")
 check(follow_item.checked_func() and follow_item.text_func() == "Following 10.0.0.2:8765", "following: " .. follow_item.text_func())
@@ -681,7 +737,14 @@ check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lo
 io.open(root .. "/songbook/songs/jam/old.cho", "w"):close()
 responses[host .. "state.json"] = false
 follow_item.callback(tmi)
-find_button(last_shown(), "Follow").callback()
+finder_menu = last_shown()
+settings_store.jam_follow_url = nil
+table.insert(udp_on(8767).inbox, { "SONGBOOK 1 8765 Host", "10.0.0.2", 8766 })
+clock = clock + 1
+zmqs[1].waitEvent()
+finder_menu.item_table[1].callback()
+finder_menu:onCloseWidget()
+check(settings_store.jam_follow_url == host and #zmqs == 0, "following a found songbook")
 check(follow_item.checked_func() and not io.open(root .. "/songbook/songs/jam/old.cho")
     and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "following again keeps only the open song")
 -- browsing our own songs keeps following; new songs are only announced

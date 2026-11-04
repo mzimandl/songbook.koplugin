@@ -138,7 +138,9 @@ list* (General) opens the list you used last again, with its search and page.
   phone browser and see the song now playing (not the one you only have
   open); it changes when another song starts playing or you transpose it. Each guest can transpose, switch notation, hide
   chords and change the font size for themselves; lines wrap to the phone's
-  width. The default port is 8765 (changeable while not sharing). The device
+  width. The default port is 8765 (changeable while not sharing); UDP 8766
+  answers other readers searching for it, UDP 8767 is where a search listens
+  (on Kindle these ports are opened in the firewall while in use). The device
   does not go to standby while sharing. There is no password: share only on
   networks you trust.
   Guests also see your playlist and can ask for songs on the web page (tab
@@ -148,8 +150,11 @@ list* (General) opens the list you used last again, with its search and page.
     the followed reader to play it (it must have the song: one it sent you,
     one from its repository, or one both of you have from the same
     repository).
-  - *Follow another songbook…*: enter the address shown on another reader
-    (e.g. `192.168.1.5`, port 8765 is added). Every song it plays opens on
+  - *Follow another songbook…*: lists the readers sharing songs on the
+    network (found by UDP broadcast, named by their device model); tap one.
+    When none shows up (some networks block broadcasts), *Enter address…*
+    takes the address shown on the other reader (e.g. `192.168.1.5`, port
+    8765 is added). Every song it plays opens on
     yours too, in its key; you can still transpose it yourself until it
     changes song or key. While you have one of your own songs open, a new
     song is only announced (*Now playing: …*); *Open now playing* goes to it. Followed songs are kept apart (`songs/jam/`, not in

@@ -8,6 +8,7 @@ locally to HTML (chords above lyrics) and open them in the reader.
 -- Own modules must be required at load time: PluginLoader only adds the
 -- plugin folder to package.path while main.lua is being loaded.
 local ChordPro = require("songbook/chordpro")
+local Discovery = require("songbook/discovery")
 local Jam = require("songbook/jam")
 local L10n = require("songbook/l10n")
 local Render = require("songbook/render")
@@ -77,6 +78,8 @@ local JAM_KEY = "jam"
 local FOLLOW_INTERVAL = 4         -- seconds between polls
 local FOLLOW_TIMEOUT = { 2, 4 }   -- block, total seconds
 local FOLLOW_MAX_FAILURES = 4
+local SEARCH_INTERVAL = 1         -- seconds between searches for shared songbooks
+local SEARCH_EXPIRE = 5           -- seconds: songbooks not heard of leave the list
 
 -- Helpers -------------------------------------------------------------------
 
@@ -2269,11 +2272,39 @@ local function local_ip()
     if ok and ip and ip ~= "0.0.0.0" then return ip end
 end
 
--- Open/close the port in the Kindle firewall (as httpinspector does).
-local function kindle_firewall(op, port)
-    if not Device:isKindle() then return end
-    os.execute(string.format("iptables %s INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT", op, port))
-    os.execute(string.format("iptables %s OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT", op, port))
+-- Kindle firewall rules for sharing on `port` (and answering searches) and for
+-- searching.
+local function jam_rules(port)
+    return {
+        string.format("INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT", port),
+        string.format("OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT", port),
+        string.format("INPUT -p udp --dport %d -j ACCEPT", Discovery.DISCOVERY_PORT),
+        string.format("OUTPUT -p udp --sport %d -j ACCEPT", Discovery.DISCOVERY_PORT),
+    }
+end
+
+local function search_rules()
+    return {
+        string.format("INPUT -p udp --dport %d -j ACCEPT", Discovery.SEARCH_PORT),
+        string.format("OUTPUT -p udp --sport %d -j ACCEPT", Discovery.SEARCH_PORT),
+        string.format("OUTPUT -p udp --dport %d -j ACCEPT", Discovery.DISCOVERY_PORT),
+    }
+end
+
+-- Opens (op "-A") or closes ("-D") ports in the Kindle firewall (as httpinspector does).
+local function kindle_firewall(op, rules)
+    if not rules or not Device:isKindle() then return end
+    for _i, rule in ipairs(rules) do os.execute("iptables " .. op .. " " .. rule) end
+end
+
+-- UIManager calls a ZMQ's waitEvent() about every 50 ms; it must return nil
+-- (anything else is treated as an input event).
+local function poller(fn, name)
+    return UIManager:insertZMQ({ waitEvent = function()
+        local ok, err = pcall(fn)
+        if not ok then logger.warn("Songbook:", name, err) end
+        return nil
+    end })
 end
 
 -- SimpleTCPServer callback: must send the response and return nothing
@@ -2344,7 +2375,8 @@ end
 function Songbook:startJam()
     if jam.server then return true end
     local port = self:get("jam_port")
-    kindle_firewall("-A", port)
+    local rules = jam_rules(port)
+    kindle_firewall("-A", rules)
     local server = require("ui/message/simpletcpserver"):new{
         host = "*",
         port = port,
@@ -2352,13 +2384,13 @@ function Songbook:startJam()
     }
     local ok, err = server:start()
     if not ok then
-        kindle_firewall("-D", port)
+        kindle_firewall("-D", rules)
         UIManager:show(InfoMessage:new{
             text = T(_("Cannot start the jam session on port %1."), port) .. "\n\n" .. tostring(err),
         })
         return false
     end
-    jam.server, jam.port = server, port
+    jam.server, jam.port, jam.rules = server, port, rules
     jam.context = {
         state = function() return jam.owner:jamState() end,
         song_html = function(opts) return jam.owner:jamSongHtml(opts) end,
@@ -2384,6 +2416,14 @@ function Songbook:startJam()
         css = Render.css(nil, true),
     }
     jam.queue = UIManager:insertZMQ(server)
+    -- optional: without it the songbook can still be followed by address
+    local responder, rerr = Discovery.responder(require("socket"), port, function() return Device.model or _("Songbook") end)
+    if responder then
+        jam.responder = responder
+        jam.responder_zmq = poller(function() responder:poll() end, "discovery")
+    else
+        logger.warn("Songbook: no discovery answers", rerr)
+    end
     UIManager:preventStandby()
     return true
 end
@@ -2392,9 +2432,14 @@ function Songbook:stopJam()
     if not jam.server then return end
     UIManager:removeZMQ(jam.queue)
     jam.server:stop()
-    kindle_firewall("-D", jam.port)
+    if jam.responder then
+        UIManager:removeZMQ(jam.responder_zmq)
+        jam.responder:close()
+    end
+    kindle_firewall("-D", jam.rules)
     UIManager:allowStandby()
-    jam.server, jam.queue, jam.context = nil, nil, nil
+    jam.server, jam.queue, jam.context, jam.rules = nil, nil, nil, nil
+    jam.responder, jam.responder_zmq = nil, nil
 end
 
 -- Following another songbook: poll its /state.json and open each song it
@@ -2513,6 +2558,77 @@ function Songbook:askFollowUrl(on_saved)
     dialog:onShowKeyboard()
 end
 
+-- Finding shared songbooks: { search, menu, zmq, last_sent, rules } while the list is open.
+local finder = {}
+
+local function stop_finder()
+    if finder.zmq then UIManager:removeZMQ(finder.zmq) end
+    if finder.search then finder.search:close() end
+    kindle_firewall("-D", finder.rules)
+    finder = {}
+end
+
+function Songbook:finderItems(on_url)
+    local items = {}
+    for _i, f in ipairs(finder.search and finder.search.found or {}) do
+        items[#items + 1] = {
+            text = f.name ~= "" and f.name or f.ip,
+            mandatory = f.ip,
+            callback = function()
+                local url = Discovery.url(f)
+                UIManager:close(finder.menu)
+                self:set("jam_follow_url", url)
+                on_url(url)
+            end,
+        }
+    end
+    if #items == 0 then
+        items[1] = { text = _("Searching for shared songbooks…"), dim = true, callback = function() end }
+    end
+    items[#items].separator = true
+    items[#items + 1] = { text = _("Enter address…"), callback = function()
+        UIManager:close(finder.menu)
+        self:askFollowUrl(on_url)
+    end }
+    return items
+end
+
+local function poll_finder(plugin, on_url)
+    local t = now()
+    if t - finder.last_sent >= SEARCH_INTERVAL then
+        finder.last_sent = t
+        finder.search:send()
+    end
+    local changed = finder.search:poll(t)
+    changed = finder.search:expire(t, SEARCH_EXPIRE) or changed
+    if changed and finder.menu then
+        finder.menu:switchItemTable(nil, plugin:finderItems(on_url))
+    end
+end
+
+--- Lists songbooks shared on the network (and Enter address…); on_url(url)
+-- gets the chosen one. Without UDP only the address can be entered.
+function Songbook:findSongbooks(on_url)
+    stop_finder()
+    local socket = require("socket")
+    local search, err = Discovery.search(socket, local_ip())
+    if not search then
+        logger.warn("Songbook: cannot search for songbooks", err)
+        return self:askFollowUrl(on_url)
+    end
+    finder = { search = search, last_sent = 0, rules = search_rules() }
+    kindle_firewall("-A", finder.rules)
+    local menu = list_menu(_("Follow another songbook"), self:finderItems(on_url))
+    local on_close = menu.onCloseWidget
+    menu.onCloseWidget = function(m)
+        stop_finder()
+        if on_close then return on_close(m) end
+    end
+    finder.menu = menu
+    finder.zmq = poller(function() poll_finder(self, on_url) end, "search")
+    UIManager:show(menu)
+end
+
 --- Add the followed songbook as a song repository (once) and browse it.
 function Songbook:browseFollowed()
     local url = jam.follow and jam.follow.url
@@ -2526,6 +2642,7 @@ function Songbook:browseFollowed()
 end
 
 function Songbook:onExit()
+    stop_finder()
     self:stopJam()
     self:stopFollowing()
 end
@@ -2605,8 +2722,8 @@ function Songbook:jamMenu()
                     return
                 end
                 local function ask()
-                    self:askFollowUrl(function(url)
-                        NetworkMgr:runWhenConnected(function()
+                    NetworkMgr:runWhenConnected(function()
+                        self:findSongbooks(function(url)
                             self:startFollowing(url)
                             touchmenu_instance:updateItems()
                         end)

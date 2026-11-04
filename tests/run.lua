@@ -5,6 +5,7 @@ local ChordPro = require("songbook/chordpro")
 local Transpose = require("songbook/transpose")
 local Render = require("songbook/render")
 local Jam = require("songbook/jam")
+local Discovery = require("songbook/discovery")
 
 local passed, failed = 0, 0
 local function eq(actual, expected, name)
@@ -352,6 +353,22 @@ local web = Render.html(ChordPro.parse("{title: W}\n[C]La"), { web = true })
 eq(web:sub(1, 15), "<!DOCTYPE html>", "web render is html5")
 eq(web:find("viewport", 1, true) ~= nil, true, "web render has viewport")
 eq(Render.html(ChordPro.parse("{title: W}"), {}):find("prefers-color-scheme", 1, true), nil, "e-reader render has no web css")
+
+-- Discovery ----------------------------------------------------------------
+eq(Discovery.announce(8765, "Kindle\nPW"), "SONGBOOK 1 8765 Kindle PW", "announce cleans the name")
+local book = Discovery.parse_announce("SONGBOOK 1 8765 Kindle PW")
+eq(book.port .. " " .. book.name, "8765 Kindle PW", "announce parsed")
+eq(Discovery.parse_announce("SONGBOOK 1 8765").name, "", "announce without a name")
+eq(Discovery.parse_announce("SONGBOOK 2 8765 X"), nil, "other version ignored")
+eq(Discovery.parse_announce("SONGBOOK 1 99999 X"), nil, "bad port ignored")
+eq(Discovery.parse_announce("GAME 1 7531 X"), nil, "battleships announce ignored")
+eq(Discovery.is_discover(Discovery.discover()), true, "discover recognised")
+eq(Discovery.is_discover("DISCOVER 1"), false, "battleships discover ignored")
+eq(Render.width(Discovery.clean_name(string.rep("ž", 40))), Discovery.MAX_NAME, "name shortened by characters")
+eq(table.concat(Discovery.broadcasts("10.1.2.3"), ","), "255.255.255.255,10.1.2.255", "broadcasts")
+eq(table.concat(Discovery.broadcasts(nil), ","), "255.255.255.255", "broadcasts without our address")
+eq(Discovery.url({ ip = "10.0.0.3", port = 8765 }), "http://10.0.0.3:8765/", "found songbook url")
+eq(Jam.normalize_url("10.0.0.3", 8765), Discovery.url({ ip = "10.0.0.3", port = 8765 }), "same url as typed")
 
 -- L10n: the plugin's own catalogs ------------------------------------------
 local L10n = require("songbook/l10n")
