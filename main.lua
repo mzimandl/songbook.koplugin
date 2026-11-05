@@ -410,6 +410,32 @@ end
 
 --- Like currentSongId(), but nil for a song received while following a jam
 -- session: those are not listed, so they can't be kept in favorites or collections.
+--- uid under which song `uid` is favorited or collected: own songs as they
+-- are; a followed song (jam/) as a song of the followed songbook's repository
+-- (its /index.json ids are Jam.song_id() too), where keepFollowedSong()
+-- copies it. nil for a followed song after following stopped.
+function Songbook:collectableUid(uid)
+    if split_uid(uid) ~= JAM_KEY then return uid end
+    local server = self:followedServer()
+    if not server then return nil end
+    local _key, id = split_uid(uid)
+    return make_uid(server.key, id)
+end
+
+--- Copies a followed song to the followed songbook's folder (see
+-- collectableUid()), so it stays among our songs. Returns that uid, or nil.
+function Songbook:keepFollowedSong(uid)
+    local kept = self:collectableUid(uid)
+    if kept and kept ~= uid and lfs.attributes(self:songPath(kept), "mode") ~= "file" then
+        local text = read_file(self:songPath(uid))
+        if not text then return nil end
+        util.makePath(self.songs_dir .. "/" .. split_uid(kept))
+        if not write_file(self:songPath(kept), text) then return nil end
+        self:setMapValue("downloaded", kept, true)
+    end
+    return kept
+end
+
 function Songbook:currentOwnSongId()
     local uid = self:currentSongId()
     if uid and split_uid(uid) ~= JAM_KEY then return uid end
@@ -1106,9 +1132,11 @@ function Songbook:setFavorite(uid, on)
 end
 
 function Songbook:onSongbookToggleFavorite()
-    local uid = self:currentOwnSongId()
+    local open = self:currentSongId()
+    local uid = open and self:collectableUid(open)
     if not uid then return end
     local on = not self:isFavorite(uid)
+    if on and not self:keepFollowedSong(open) then return end
     self:setFavorite(uid, on)
     notify(on and _("Added to favorites.") or _("Removed from favorites."))
     return true
@@ -3038,11 +3066,13 @@ function Songbook:songActions()
             callback = function() self:showDurationDialog() end,
         },
     }
-    if own then
-        local _key, id = split_uid(own)
-        local meta = ChordPro.parse_meta(read_file(self:songPath(own)) or "")
-        local song = { uid = own, title = meta.title or id }
-        local favorite = self:isFavorite(own)
+    -- a followed song is kept among our songs when favorited or collected
+    local collectable = self:collectableUid(uid)
+    if collectable then
+        local _key, id = split_uid(uid)
+        local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+        local song = { uid = collectable, title = meta.title or id }
+        local favorite = self:isFavorite(collectable)
         table.insert(actions, {
             id = "favorite",
             row = "add",
@@ -3055,19 +3085,26 @@ function Songbook:songActions()
             row = "add",
             text = _("Add to collection"),
             short = _("+ Collection"),
-            callback = function() self:showSongCollections(song, function() end) end,
+            callback = function()
+                self:showSongCollections(song, function() end, function() return self:keepFollowedSong(uid) ~= nil end)
+            end,
         })
-        if not self:isFollowing() then
-            local playlist = self:playlistButton(song, function() end)
-            table.insert(actions, {
-                id = "playlist",
-                row = "add",
-                text = playlist.text,
-                short = self:isQueued(own) and _("− Playlist") or _("+ Playlist"),
-                callback = playlist.callback,
-            })
-        end
+        -- while following: Request to play; the followed song is playing already
+        local playlist = self:playlistButton(song, function() end)
+        table.insert(actions, {
+            id = "playlist",
+            row = "add",
+            text = playlist.text,
+            short = (not self:isFollowing() and self:isQueued(collectable)) and _("− Playlist") or _("+ Playlist"),
+            enabled = own ~= nil and playlist.enabled ~= false,
+            callback = playlist.callback,
+        })
     end
+    table.insert(actions, {
+        id = "show_playlist",
+        text = self:isFollowing() and _("Playlist (jam session)") or _("Playlist"),
+        callback = function() self:onSongbookShowPlaylist() end,
+    })
     local now_uid = self:nowPlayingUid()
     if now_uid and now_uid ~= uid then
         table.insert(actions, {
@@ -3076,11 +3113,6 @@ function Songbook:songActions()
             callback = function() self:onSongbookOpenNowPlaying() end,
         })
     end
-    table.insert(actions, {
-        id = "show_playlist",
-        text = self:isFollowing() and _("Playlist (jam session)") or _("Playlist"),
-        callback = function() self:onSongbookShowPlaylist() end,
-    })
     if own and not self:isFollowing() then
         if now_uid == uid then
             table.insert(actions, { id = "play", row = "play", text = _("Finished"),

@@ -786,9 +786,22 @@ check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#r
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")
-check(plugin:currentSongId() == "jam/repo_song-a" and song_action("transpose") and not song_action("favorite")
-    and not song_action("collections") and not song_action("playlist"),
-    "followed song can't be favorited, collected or queued")
+check(plugin:currentSongId() == "jam/repo_song-a" and song_action("transpose")
+    and song_action("favorite").text == "Add to favorites" and song_action("collections")
+    and song_action("playlist").text == "Request to play" and song_action("playlist").enabled == false,
+    "followed song can be favorited and collected, not requested")
+-- favoriting keeps it as a song of the followed songbook's repository
+song_action("favorite").callback()
+local kept = jam_server.key .. "/repo_song-a"
+check(plugin:isFavorite(kept) and not plugin:isFavorite("jam/repo_song-a")
+    and io.open(root .. "/songbook/songs/" .. kept .. ".cho"):read("*a"):find("Hostova", 1, true)
+    and song_action("favorite").text == "Remove from favorites", "followed song kept as favorite")
+local in_mine
+for _i, song in ipairs(plugin:listLocal()) do if song.uid == kept then in_mine = song end end
+check(in_mine ~= nil and plugin:sourceName(kept) == "Jam session", "kept song in my songs")
+plugin:onSongbookToggleFavorite()
+check(not plugin:isFavorite(kept), "favorite gesture on a followed song")
+plugin:deleteSong(kept)
 -- "Request to play" while following asks the followed songbook
 responses[host .. "queue/add?by=Songbook&id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
@@ -871,6 +884,12 @@ plugin:openSong("test")
 plugin.ui.document.file = opened[#opened]
 check(follow_item.checked_func() and song_action("now_playing").text == "Open now playing: Hostova"
     and song_action("play") == nil, "browsing while following")
+local ids = {}
+for _i, a in ipairs(plugin:songActions()) do ids[#ids + 1] = a.id end
+check(table.concat(ids, " ") == "transpose autoscroll duration favorite collections playlist show_playlist now_playing next",
+    "own song while following: request and Open now playing below Playlist: " .. table.concat(ids, " "))
+check(song_action("playlist").text == "Request to play" and song_action("playlist").enabled ~= false,
+    "own song can be requested while following")
 responses[host .. "songs/repo~song-b.cho"] = "{title: Další}\n[C]Hej"
 decoded.S4 = { uid = "repo/song-b", rev = "4", transpose = 0 }
 responses[state_url] = "S4"

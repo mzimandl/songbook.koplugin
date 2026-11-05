@@ -3,7 +3,7 @@ local _ = require("gettext")
 local cs = (_.current_lang or ""):match("^cs") ~= nil
 return {
     name = "songbook",
-    version = "0.6.3",
+    version = "0.6.4",
     fullname = cs and "Zpěvník" or _("Songbook"),
     description = cs and "Stahování písní s akordy pro kytaru (ChordPro) ze serveru písní a jejich čtení s transpozicí."
         or _([[Download songs with guitar chords (ChordPro) from a song server and read them with transposition.]]),

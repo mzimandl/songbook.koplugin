@@ -61,8 +61,11 @@ Browse online) and *Playlist* (a submenu: *Show playlist*, *Now playing* and
 
 While a song is open, the ☰ button in the bottom right corner (above the
 status bar) opens the song's options: *Transpose*; *Start/Stop autoscroll* and
-*Song length*; *+/− Favorites*, *+ Collection* and *+/− Playlist* side by side;
-*Open now playing* (while another song is playing); *Playlist*; *Play now* /
+*Song length*; *+/− Favorites*, *+ Collection* and *+/− Playlist* side by side
+(while following, *+ Playlist* requests the song from the followed reader; for
+the song it plays it is disabled, and favoriting or collecting that song keeps
+it among your songs, as if downloaded from it); *Playlist*; *Open now playing*
+(while another song is playing); *Play now* /
 *Finished* and *Next song* (plays the first song of Up next; disabled while Up
 next is empty). The button is inverted while the open song is the one now playing.
 The gesture action *Songbook: song options* (Reader) and *Song options* at the
