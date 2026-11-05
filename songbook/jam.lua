@@ -3,7 +3,8 @@ Jam session web server: request parsing, routing and the guest web page
 (pure Lua 5.1 / LuaJIT). main.lua owns the socket and passes a context:
 
 ctx = {
-  state     = function() -> { uid=, rev=, title=, artist=, notation= } (uid nil = no song)
+  state     = function(peer_url) -> { uid=, rev=, title=, artist=, notation=, name=, peers= }
+              (uid nil = no song; peers = { { url=, name= } } without the asking peer_url)
   song_html = function(opts) -> html or nil      -- opts = { shift=, notation=, show_chords=, max_cols= }
   song_cho  = function() -> ChordPro text or nil
   songs     = function() -> list of { uid=, title=, artist=, key=, updated= } (all songs on the device)
@@ -11,6 +12,9 @@ ctx = {
   name      = repository name for /index.json,
   playlist  = function() -> { now = entry or nil, history = {entry...}, queue = {entry...} }
   request   = function(uid, by) -> true or nil, error ("queued", "full", "missing")
+  join      = function(peer) -- a following songbook shares its songs: peer = { url=, name= }
+  request_from = function(url, uid, by) -> like request; `uid` is a song of the peer at `url`
+  library   = true: serve only /index.json and /songs/ (a following songbook's own songs)
   labels    = see DEFAULT_LABELS,
   css       = stylesheet for the song inside the page,
 }
@@ -19,13 +23,16 @@ ctx = {
 Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
   /             guest page, polls /state.json and loads /song.html on change
   /state.json   the song now playing; "rev" changes with the song or the host's options
+                ?name=&share=<port>: a following songbook that shares its own songs on
+                that port (same endpoints, `library`); polling keeps it among the peers
   /song.html    song now playing; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords), ?w= columns
   /song.cho     source of the song now playing
   /index.json   all songs in the song repository format, so the host can be added as a repository
   /songs/<file> one song of the index ("~" stands for "/" in the uid)
   /playlist.json  now playing, played songs and guests' requests; entry = { uid, title, artist, by, at }
   /queue/add?uid=&by=  request a song -> { ok = true } or { ok = false, error = }
-                       (?id= instead of uid: the song's id in /index.json, used by following songbooks)
+                       (?id= instead of uid: the song's id in /index.json, used by following songbooks;
+                       ?from=<port>: uid is a song of the asking songbook, shared on that port)
 
 Following another songbook (normalize_url, parse_state, song_id) is also
 here; main.lua does the polling.
@@ -159,6 +166,49 @@ function M.index(songs, name)
     return M.json({ version = 1, name = name, songs = list })
 end
 
+--- Query string ("?a=1&b=x%20y", keys sorted) for the non-nil values of `params`.
+function M.query(params)
+    local keys = {}
+    for k, v in pairs(params) do
+        if v ~= nil and v ~= "" then keys[#keys + 1] = k end
+    end
+    if #keys == 0 then return "" end
+    table.sort(keys)
+    for i, k in ipairs(keys) do keys[i] = k .. "=" .. url_encode(tostring(params[k])) end
+    return "?" .. table.concat(keys, "&")
+end
+
+local function port_param(v)
+    local n = tonumber(v)
+    if n and n == math.floor(n) and n >= 1 and n <= 65535 then return n end
+end
+
+--- Base URL of a songbook at `ip` sharing its songs on `port` (nil if invalid).
+function M.peer_url(ip, port)
+    port = port_param(port)
+    if type(ip) ~= "string" or not port or not ip:match("^[%x%.:]+$") then return nil end
+    if ip:find(":", 1, true) then ip = "[" .. ip .. "]" end
+    return string.format("http://%s:%d/", ip, port)
+end
+
+--- A following songbook that shares its songs ({ url, name }), from a
+-- /state.json request (req.ip set by the server), or nil.
+function M.peer(req)
+    local url = M.peer_url(req.ip, req.query.share)
+    if not url then return nil end
+    return { url = url, name = M.clean_name(req.query.name) }
+end
+
+local function parse_peers(list)
+    local peers = {}
+    for _, p in ipairs(type(list) == "table" and list or {}) do
+        if type(p) == "table" and type(p.url) == "string" and p.url:match("^http://[%w%.%-:%[%]]+/$") then
+            peers[#peers + 1] = { url = p.url, name = M.clean_name(type(p.name) == "string" and p.name or nil) }
+        end
+    end
+    return peers
+end
+
 --- Address typed by a guest -> base URL ending with "/" (port added if missing).
 function M.normalize_url(text, default_port)
     text = (text or ""):match("^%s*(.-)%s*$")
@@ -171,11 +221,16 @@ function M.normalize_url(text, default_port)
     return scheme .. authority .. path
 end
 
---- Decode /state.json of another songbook. Returns { uid, rev, transpose } or nil.
+--- Decode /state.json of another songbook. Returns { uid, rev, transpose,
+-- name, peers } or nil (name nil and peers empty from older songbooks).
 function M.parse_state(body, decode)
     local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" then return nil end
-    local state = { transpose = 0 }
+    local state = {
+        transpose = 0,
+        name = M.clean_name(type(data.name) == "string" and data.name or nil),
+        peers = parse_peers(data.peers),
+    }
     if type(data.uid) == "string" and data.uid ~= "" and type(data.rev) == "string" then
         state.uid, state.rev = data.uid, data.rev
         if type(data.transpose) == "number" then state.transpose = M.add_semitones(data.transpose, 0) end
@@ -483,10 +538,15 @@ function M.handle(req, ctx)
     if not req then return M.response(400, "text/plain", "Bad request") end
     if req.method ~= "GET" then return M.response(405, "text/plain", "Only GET is supported") end
     local path = req.path
+    if ctx.library and path ~= "/index.json" and not path:match("^/songs/") then
+        return M.response(404, "text/plain", "Not found")
+    end
     if path == "/" or path == "/index.html" then
         return M.response(200, "text/html; charset=utf-8", M.page(ctx.labels, ctx.css))
     elseif path == "/state.json" then
-        return M.response(200, "application/json; charset=utf-8", M.json(ctx.state()))
+        local peer = ctx.join and M.peer(req)
+        if peer then ctx.join(peer) end
+        return M.response(200, "application/json; charset=utf-8", M.json(ctx.state(peer and peer.url)))
     elseif path == "/song.html" then
         local q = req.query
         local html = ctx.song_html({
@@ -509,10 +569,17 @@ function M.handle(req, ctx)
             M.json({ now = p.now, history = p.history or {}, queue = p.queue or {} }))
     elseif path == "/queue/add" then
         local ok, err = nil, "missing"
-        local uid = req.query.uid
-        if (not uid or uid == "") and req.query.id then uid = M.find_id(ctx.songs(), req.query.id) end
-        if M.valid_uid(uid) then
-            ok, err = ctx.request(uid, M.clean_name(req.query.by))
+        local uid, by = req.query.uid, M.clean_name(req.query.by)
+        if req.query.from then
+            local url = M.peer_url(req.ip, req.query.from)
+            if url and ctx.request_from and M.valid_uid(uid) then
+                ok, err = ctx.request_from(url, uid, by)
+            end
+        else
+            if (not uid or uid == "") and req.query.id then uid = M.find_id(ctx.songs(), req.query.id) end
+            if M.valid_uid(uid) then
+                ok, err = ctx.request(uid, by)
+            end
         end
         return M.response(200, "application/json; charset=utf-8",
             M.json(ok and { ok = true } or { ok = false, error = err or "missing" }))

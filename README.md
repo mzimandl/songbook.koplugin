@@ -146,12 +146,16 @@ list* (General) opens the list you used last again, with its search and page.
   Guests also see your playlist and can ask for songs on the web page (tab
   *Playlist*: search, tap +, optionally with their name); you get a short
   notice and the request joins Up next (at most 30 guests' requests).
+  - *Device name*: how other readers see this one: in the list of shared
+    songbooks, as the name of its jam session and as the source of its songs
+    (the device model until you set one).
   - *Request to play* (long-press a song in any list while following): asks
-    the followed reader to play it (it must have the song: one it sent you,
+    the followed reader to play it. While you share your songs (below) it
+    gets any song from you; otherwise it must have the song (one it sent you,
     one from its repository, or one both of you have from the same
     repository).
   - *Follow another songbook…*: lists the readers sharing songs on the
-    network (found by UDP broadcast, named by their device model); tap one.
+    network (found by UDP broadcast, named by their device name); tap one.
     When none shows up (some networks block broadcasts), *Enter address…*
     takes the address shown on the other reader (e.g. `192.168.1.5`, port
     8765 is added). Every song it plays opens on
@@ -164,9 +168,14 @@ list* (General) opens the list you used last again, with its search and page.
     your playlist: *Playlist* shows the other reader's one, and *Request
     songs…* there lists its songs to ask for.
   - *Browse their songs*: lists the followed reader's songs, so you can
-    download any of them. While following, it is also listed as *Jam session*
+    download any of them. While following, it is also listed under its name
     in *Browse online*; it leaves the list when following stops (downloaded
     songs stay in My songs).
+  - *Share my songs while following* (on by default): your songs are served
+    on the jam port while you follow. The followed reader and its other
+    guests then see you among the repositories in *Browse online* under your
+    device name, until you stop following (or about 15 seconds after you
+    disappear from the network).
   - A reader either shares or follows: each option is disabled while the
     other is on.
 - **Settings**:

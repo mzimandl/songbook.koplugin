@@ -229,6 +229,13 @@ return {
     ["Browse their songs"] = "Procházet jeho písně",
     ["Lists the followed songbook's songs, so you can download any of them. While following, it is also among the repositories in Browse online."] =
         "Ukáže písně sledovaného zpěvníku, takže si můžete stáhnout kteroukoli z nich. Během sledování je zpěvník i mezi repozitáři v Procházet online.",
+    ["Device name"] = "Jméno zařízení",
+    ["Device name: %1"] = "Jméno zařízení: %1",
+    ["Names this device in the jam session: other songbooks see it in the list of shared songbooks and as the source of your songs."] =
+        "Jméno tohoto zařízení v jam session: ostatní zpěvníky ho vidí v seznamu sdílených zpěvníků a jako zdroj vašich písní.",
+    ["Share my songs while following"] = "Při sledování sdílet moje písně",
+    ["The followed songbook and its other guests see your songs as a repository while you follow, and the songs you request are played even if the other songbook doesn't have them."] =
+        "Sledovaný zpěvník a jeho další hosté vidí během sledování vaše písně jako repozitář a písně, o které požádáte, se zahrají, i když je druhý zpěvník nemá.",
 
     -- settings
     ["Settings"] = "Nastavení",

@@ -291,6 +291,50 @@ eq(st.uid .. " " .. st.rev .. " " .. st.transpose, "r/x r/x@1 2", "jam parse sta
 st = Jam.parse_state("", decode_table({ notation = "cz" }))
 eq(st and st.uid, nil, "jam parse state without song")
 eq(Jam.parse_state("", function() error("bad") end), nil, "jam parse state bad json")
+eq(st.name == nil and #st.peers, 0, "jam parse state from older songbooks: no name, no peers")
+st = Jam.parse_state("", decode_table({ name = " Kobo\n", peers = {
+    { url = "http://10.0.0.3:8765/", name = "Kindle" }, { url = "file:///etc/" }, "junk", { url = "http://[fe80::1]:80/" } } }))
+eq(st.name .. " " .. #st.peers .. " " .. st.peers[1].url .. " " .. st.peers[1].name .. " " .. st.peers[2].url,
+    "Kobo 2 http://10.0.0.3:8765/ Kindle http://[fe80::1]:80/", "jam parse state name and peers")
+
+-- Jam: guests sharing their songs ----------------------------------------------
+eq(Jam.query({ share = 8765, name = "Eva K", by = "" }), "?name=Eva%20K&share=8765", "jam query sorted and encoded")
+eq(Jam.query({ name = nil }), "", "jam empty query")
+eq(Jam.peer_url("10.0.0.3", "8765"), "http://10.0.0.3:8765/", "jam peer url")
+eq(Jam.peer_url("fe80::1", 80), "http://[fe80::1]:80/", "jam peer url ipv6")
+eq(Jam.peer_url("10.0.0.3", "0"), nil, "jam peer url bad port")
+eq(Jam.peer_url("10.0.0.3", "1.5"), nil, "jam peer url fractional port")
+eq(Jam.peer_url("evil.com/x?", 80), nil, "jam peer url only from an ip")
+eq(Jam.peer_url(nil, 80), nil, "jam peer url without ip")
+local joined, from
+local pctx = {
+    state = function(peer_url) return { asked = peer_url or "-" } end,
+    join = function(peer) joined = peer end,
+    request = function() return nil, "missing" end,
+    request_from = function(url, uid, by) from = url .. " " .. uid .. " " .. tostring(by); return true end,
+    songs = function() return {} end,
+}
+local function phandle(target, ip)
+    local r = Jam.parse_request("GET " .. target .. " HTTP/1.1\r\n\r\n")
+    r.ip = ip
+    return Jam.handle(r, pctx):match("\r\n\r\n(.*)$")
+end
+eq(phandle("/state.json?name=Eva&share=8770", "10.0.0.3"), '{"asked":"http://10.0.0.3:8770/"}', "jam state for a sharing guest")
+eq(joined.url .. " " .. joined.name, "http://10.0.0.3:8770/ Eva", "jam guest joins with its name")
+joined = nil
+eq(phandle("/state.json", "10.0.0.3"), '{"asked":"-"}', "jam state for a guest not sharing")
+eq(joined, nil, "jam guest without share port doesn't join")
+eq(phandle("/state.json?share=8770", nil), '{"asked":"-"}', "jam no join without the guest's address")
+eq(phandle("/queue/add?from=8770&uid=r%2Fx&by=Eva", "10.0.0.3"), '{"ok":true}', "jam request of a guest's song")
+eq(from, "http://10.0.0.3:8770/ r/x Eva", "jam guest's song fetched from the asking guest")
+from = nil
+eq(phandle("/queue/add?from=8770&uid=..%2F..%2Fx", "10.0.0.3"), '{"error":"missing","ok":false}', "jam guest's uid checked")
+eq(phandle("/queue/add?from=nope&uid=x", "10.0.0.3"), '{"error":"missing","ok":false}', "jam guest's port checked")
+eq(from, nil, "jam bad guest requests not passed on")
+pctx.library = true
+eq(Jam.handle(Jam.parse_request("GET /state.json HTTP/1.1\r\n\r\n"), pctx):match("^HTTP/1.1 (%d+)"), "404", "jam library has no state")
+eq(Jam.handle(Jam.parse_request("GET /queue/add?uid=x HTTP/1.1\r\n\r\n"), pctx):match("^HTTP/1.1 (%d+)"), "404", "jam library takes no requests")
+eq(Jam.handle(Jam.parse_request("GET /index.json HTTP/1.1\r\n\r\n"), pctx):match("^HTTP/1.1 (%d+)"), "200", "jam library serves its index")
 
 ctx.songs = function() return { { uid = "r/x", title = "X" } } end
 ctx.song_file = function(uid) return uid == "r/x" and "{title: X}" or nil end

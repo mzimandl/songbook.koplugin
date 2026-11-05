@@ -62,6 +62,7 @@ local DEFAULTS = {
     scroll_mode = true,
     song_button = true,
     play_on_open = false,
+    jam_share_songs = true,
 }
 
 -- Song repository added on the first start (until then `servers` is unset).
@@ -80,6 +81,8 @@ local FOLLOW_TIMEOUT = { 2, 4 }   -- block, total seconds
 local FOLLOW_MAX_FAILURES = 4
 local SEARCH_INTERVAL = 1         -- seconds between searches for shared songbooks
 local SEARCH_EXPIRE = 5           -- seconds: songbooks not heard of leave the list
+-- seconds: a following songbook that stopped polling leaves the shared sources
+local PEER_EXPIRE = 3 * FOLLOW_INTERVAL + 3
 
 -- Helpers -------------------------------------------------------------------
 
@@ -257,32 +260,73 @@ function Songbook:saveServers(servers)
     self:set("servers", servers)
 end
 
---- The followed songbook as a song repository (Browse their songs), or nil
--- while not following. It is not saved in `servers`: it is a source only while
--- following. Its songs keep one folder per host address: setting
--- `jam_servers` = { [url] = key }.
-function Songbook:followedServer()
-    local url = jam.follow and jam.follow.url
-    if not url then return nil end
+--- Name of this device in the jam session: setting `device_name`, else the model.
+function Songbook:deviceName()
+    local name = self:get("device_name")
+    if name and name ~= "" then return name end
+    return Device.model or _("Songbook")
+end
+
+--- A songbook of the jam session as a song repository. It is not saved in
+-- `servers`: it is a source only while connected. Its songs keep one folder
+-- per address: setting `jam_servers` = { [url] = key }; `jam_names` =
+-- { [key] = name } names the folder after the session.
+function Songbook:jamServer(url, name)
     local keys = self.settings:readSetting("jam_servers") or {}
     if not keys[url] then
         keys[url] = Repo.server_key(url, self:takenKeys())
         self:set("jam_servers", keys)
     end
-    return { key = keys[url], url = url, name = _("Jam session"), jam = true }
+    local key = keys[url]
+    if name and name ~= "" then
+        local names = self.settings:readSetting("jam_names") or {}
+        if names[key] ~= name then
+            names[key] = name
+            self:set("jam_names", names)
+        end
+    else
+        name = nil
+    end
+    return { key = key, url = url, name = name or _("Jam session"), jam = true }
 end
 
---- Repositories to browse: the saved ones and, while following, the followed
--- songbook (unless it is saved too).
-function Songbook:onlineServers()
-    local servers = {}   -- a copy: getServers() is the saved table
-    for i, s in ipairs(self:getServers()) do servers[i] = s end
-    local followed = self:followedServer()
-    if followed then
-        for _i, s in ipairs(servers) do
-            if Repo.base_url(s.url) == Repo.base_url(followed.url) then return servers end
+--- The followed songbook as a song repository (Browse their songs), or nil
+-- while not following.
+function Songbook:followedServer()
+    local f = jam.follow
+    return f and self:jamServer(f.url, f.name)
+end
+
+--- Songbooks of the jam session sharing their songs: while following the
+-- followed one and its other guests, while sharing our guests.
+function Songbook:jamServers()
+    local servers = {}
+    if jam.follow then
+        servers[1] = self:followedServer()
+        for _i, peer in ipairs(jam.follow.peers or {}) do
+            servers[#servers + 1] = self:jamServer(peer.url, peer.name)
         end
-        servers[#servers + 1] = followed
+    elseif jam.server then
+        for _i, peer in ipairs(self:jamPeers()) do
+            servers[#servers + 1] = self:jamServer(peer.url, peer.name)
+        end
+    end
+    return servers
+end
+
+--- Repositories to browse: the saved ones and the jam session's songbooks
+-- (unless saved too).
+function Songbook:onlineServers()
+    local servers, seen = {}, {}   -- a copy: getServers() is the saved table
+    for i, s in ipairs(self:getServers()) do
+        servers[i] = s
+        seen[Repo.base_url(s.url)] = true
+    end
+    for _i, s in ipairs(self:jamServers()) do
+        if not seen[Repo.base_url(s.url)] then
+            servers[#servers + 1] = s
+            seen[Repo.base_url(s.url)] = true
+        end
     end
     return servers
 end
@@ -311,7 +355,8 @@ function Songbook:sourceName(uid)
     if not key then return nil end
     local server = self:findServer(key)
     if server then return self:serverName(server) end
-    return self:isJamServerKey(key) and _("Jam session") or key
+    if not self:isJamServerKey(key) then return key end
+    return (self.settings:readSetting("jam_names") or {})[key] or _("Jam session")
 end
 
 --- Settings migrations: MIGRATIONS[n] upgrades the settings from schema n - 1
@@ -2045,7 +2090,13 @@ end
 --- Ask the followed songbook to queue its song with index id `remote_id`.
 -- Returns true, or nil and an error message.
 function Songbook:requestFollowed(remote_id)
-    local body = Repo.fetch(jam.follow.url .. "queue/add?id=" .. remote_id, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    return self:sendFollowedRequest({ id = remote_id })
+end
+
+--- /queue/add on the followed songbook with `params` (and our name).
+function Songbook:sendFollowedRequest(params)
+    params.by = self:deviceName()
+    local body = Repo.fetch(jam.follow.url .. "queue/add" .. Jam.query(params), FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
     local ok, data = pcall(require("json").decode, body or "")
     if not body or not ok or type(data) ~= "table" then
         return nil, _("Cannot reach the other songbook.")
@@ -2055,14 +2106,22 @@ function Songbook:requestFollowed(remote_id)
 end
 
 --- Ask the followed songbook to play `song`. Songs received from it or
--- downloaded from it as a repository use its own ids; other songs are matched
--- by uid, which works when both have them from the same repository.
+-- downloaded from it as a repository use its own ids. Other songs it gets
+-- from us while we share our songs; otherwise they are matched by uid, which
+-- works when both have them from the same repository.
 function Songbook:requestFromFollowed(song)
     local f = jam.follow
     local key, id = split_uid(song.uid)
     local server = key and self:findServer(key)
     local same_source = key == JAM_KEY or (server and Repo.base_url(server.url) == Repo.base_url(f.url))
-    local ok, err = self:requestFollowed(same_source and id or Jam.song_id(song.uid))
+    local ok, err
+    if same_source then
+        ok, err = self:requestFollowed(id)
+    elseif jam.library then
+        ok, err = self:sendFollowedRequest({ uid = song.uid, from = jam.library.port })
+    else
+        ok, err = self:requestFollowed(Jam.song_id(song.uid))
+    end
     notify(ok and T(_("Requested: %1"), song.title) or err)
 end
 
@@ -2083,6 +2142,7 @@ function Songbook:fetchFollowedSongs()
 end
 
 local function follow_name()
+    if jam.follow.name and jam.follow.name ~= "" then return jam.follow.name end
     return (jam.follow.url:gsub("^%a+://", ""):gsub("/$", ""))
 end
 
@@ -2318,13 +2378,18 @@ end
 
 -- Kindle firewall rules for sharing on `port` (and answering searches) and for
 -- searching.
-local function jam_rules(port)
+local function http_rules(port)
     return {
         string.format("INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT", port),
         string.format("OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT", port),
-        string.format("INPUT -p udp --dport %d -j ACCEPT", Discovery.DISCOVERY_PORT),
-        string.format("OUTPUT -p udp --sport %d -j ACCEPT", Discovery.DISCOVERY_PORT),
     }
+end
+
+local function jam_rules(port)
+    local rules = http_rules(port)
+    table.insert(rules, string.format("INPUT -p udp --dport %d -j ACCEPT", Discovery.DISCOVERY_PORT))
+    table.insert(rules, string.format("OUTPUT -p udp --sport %d -j ACCEPT", Discovery.DISCOVERY_PORT))
+    return rules
 end
 
 local function search_rules()
@@ -2351,15 +2416,28 @@ local function poller(fn, name)
     end })
 end
 
--- SimpleTCPServer callback: must send the response and return nothing
--- (UIManager would treat a return value as an input event).
-local function serve_jam(data, client)
-    local ok, resp = pcall(function() return Jam.handle(Jam.parse_request(data), jam.context) end)
-    if not ok then
-        logger.warn("Songbook: jam request failed", resp)
-        resp = Jam.response(500, "text/plain", "Internal error")
-    end
-    jam.server:send(resp, client)
+-- SimpleTCPServer on `port` answering with Jam.handle() and get_context().
+-- Its callback must send the response and return nothing (UIManager would
+-- treat a return value as an input event).
+local function jam_http_server(port, get_context)
+    local server
+    server = require("ui/message/simpletcpserver"):new{
+        host = "*",
+        port = port,
+        receiveCallback = function(data, client)
+            local ok, resp = pcall(function()
+                local req = Jam.parse_request(data)
+                if req and client.getpeername then req.ip = client:getpeername() end
+                return Jam.handle(req, get_context())
+            end)
+            if not ok then
+                logger.warn("Songbook: jam request failed", resp)
+                resp = Jam.response(500, "text/plain", "Internal error")
+            end
+            server:send(resp, client)
+        end,
+    }
+    return server
 end
 
 function Songbook:jamSong()
@@ -2368,9 +2446,33 @@ function Songbook:jamSong()
     return uid
 end
 
-function Songbook:jamState()
+--- Guests sharing their songs ({ url, name }), without those that stopped polling.
+function Songbook:jamPeers()
+    local peers, t = {}, now()
+    for url, peer in pairs(jam.peers or {}) do
+        if t - peer.seen > PEER_EXPIRE then
+            jam.peers[url] = nil
+        else
+            peers[#peers + 1] = { url = url, name = peer.name }
+        end
+    end
+    table.sort(peers, function(a, b) return a.url < b.url end)
+    return peers
+end
+
+function Songbook:jamJoin(peer)
+    jam.peers = jam.peers or {}
+    jam.peers[peer.url] = { name = peer.name, seen = now() }
+end
+
+--- State for /state.json; `peer_url` (the asking guest) is left out of the peers.
+function Songbook:jamState(peer_url)
     local uid = self:jamSong()
-    local state = { notation = self:get("notation") }
+    local peers = {}
+    for _i, peer in ipairs(self:jamPeers()) do
+        if peer.url ~= peer_url then peers[#peers + 1] = peer end
+    end
+    local state = { notation = self:get("notation"), name = self:deviceName(), peers = peers }
     if uid then
         local _key, id = split_uid(uid)
         local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
@@ -2393,6 +2495,27 @@ function Songbook:jamSongs()
         }
     end
     return songs
+end
+
+--- Request of a guest's own song (`remote_uid` on the guest at `url`): it is
+-- downloaded and queued once the request is answered (the guest serves its
+-- songs only after its request returns).
+function Songbook:jamRequestFrom(url, remote_uid, by)
+    local peer = jam.peers and jam.peers[url]
+    if not peer then return nil, "missing" end
+    local server = self:jamServer(url, peer.name)
+    local uid = make_uid(server.key, Jam.song_id(remote_uid))
+    if self:isQueued(uid) then return nil, "queued" end
+    if #self:getPlaylist().queue >= Jam.MAX_QUEUE then return nil, "full" end
+    UIManager:nextTick(function()
+        local ok, err = self:download({ uid = uid, server = server, file = Jam.song_path(remote_uid) })
+        if not ok then
+            logger.warn("Songbook: cannot download a guest's song", url, remote_uid, err)
+            return
+        end
+        self:jamRequest(uid, by)
+    end)
+    return true
 end
 
 function Songbook:jamSongHtml(opts)
@@ -2421,11 +2544,7 @@ function Songbook:startJam()
     local port = self:get("jam_port")
     local rules = jam_rules(port)
     kindle_firewall("-A", rules)
-    local server = require("ui/message/simpletcpserver"):new{
-        host = "*",
-        port = port,
-        receiveCallback = serve_jam,
-    }
+    local server = jam_http_server(port, function() return jam.context end)
     local ok, err = server:start()
     if not ok then
         kindle_firewall("-D", rules)
@@ -2434,9 +2553,11 @@ function Songbook:startJam()
         })
         return false
     end
-    jam.server, jam.port, jam.rules = server, port, rules
+    jam.server, jam.port, jam.rules, jam.peers = server, port, rules, {}
     jam.context = {
-        state = function() return jam.owner:jamState() end,
+        state = function(peer_url) return jam.owner:jamState(peer_url) end,
+        join = function(peer) jam.owner:jamJoin(peer) end,
+        request_from = function(url, uid, by) return jam.owner:jamRequestFrom(url, uid, by) end,
         song_html = function(opts) return jam.owner:jamSongHtml(opts) end,
         song_cho = function()
             local uid = jam.owner:jamSong()
@@ -2446,9 +2567,9 @@ function Songbook:startJam()
         playlist = function() return jam.owner:getPlaylist() end,
         request = function(uid, by) return jam.owner:jamRequest(uid, by) end,
         song_file = function(uid) return read_file(jam.owner:songPath(uid)) end,
-        name = _("Jam session"),
+        name = self:deviceName(),
         labels = {
-            title = _("Songbook"), waiting = _("Waiting for a song…"),
+            title = self:deviceName(), waiting = _("Waiting for a song…"),
             offline = _("Connection lost"), chords = _("Chords"),
             song = _("Song"), playlist = _("Playlist"), now_playing = _("Now playing"),
             up_next = _("Up next"), played = _("Played"),
@@ -2461,7 +2582,7 @@ function Songbook:startJam()
     }
     jam.queue = UIManager:insertZMQ(server)
     -- optional: without it the songbook can still be followed by address
-    local responder, rerr = Discovery.responder(require("socket"), port, function() return Device.model or _("Songbook") end)
+    local responder, rerr = Discovery.responder(require("socket"), port, function() return jam.owner:deviceName() end)
     if responder then
         jam.responder = responder
         jam.responder_zmq = poller(function() responder:poll() end, "discovery")
@@ -2482,8 +2603,44 @@ function Songbook:stopJam()
     end
     kindle_firewall("-D", jam.rules)
     UIManager:allowStandby()
-    jam.server, jam.queue, jam.context, jam.rules = nil, nil, nil, nil
+    jam.server, jam.queue, jam.context, jam.rules, jam.peers = nil, nil, nil, nil, nil
     jam.responder, jam.responder_zmq = nil, nil
+end
+
+-- While following, our own songs are shared with the session (setting
+-- `jam_share_songs`): only /index.json and /songs/, on the jam port. The
+-- followed songbook lists us among its sources while we keep polling.
+function Songbook:startLibrary()
+    if jam.library or not self:get("jam_share_songs") then return end
+    local port = self:get("jam_port")
+    local rules = http_rules(port)
+    kindle_firewall("-A", rules)
+    local server = jam_http_server(port, function() return jam.library and jam.library.context end)
+    local ok, err = server:start()
+    if not ok then
+        kindle_firewall("-D", rules)
+        logger.warn("Songbook: cannot share songs while following", err)
+        return
+    end
+    jam.library = {
+        server = server, port = port, rules = rules,
+        zmq = UIManager:insertZMQ(server),
+        context = {
+            library = true,
+            songs = function() return jam.owner:jamSongs() end,
+            song_file = function(uid) return read_file(jam.owner:songPath(uid)) end,
+            name = self:deviceName(),
+        },
+    }
+end
+
+function Songbook:stopLibrary()
+    local lib = jam.library
+    if not lib then return end
+    UIManager:removeZMQ(lib.zmq)
+    lib.server:stop()
+    kindle_firewall("-D", lib.rules)
+    jam.library = nil
 end
 
 -- Following another songbook: poll its /state.json and open each song it
@@ -2508,9 +2665,11 @@ end
 
 function Songbook:followStep()
     local f = jam.follow
-    local body = Repo.fetch(f.url .. "state.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    local query = Jam.query({ name = jam.library and self:deviceName(), share = jam.library and jam.library.port })
+    local body = Repo.fetch(f.url .. "state.json" .. query, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
     local state = body and Jam.parse_state(body, require("json").decode)
     if not state then return self:followFailed() end
+    f.name, f.peers = state.name, state.peers
     if not state.uid or state.rev == f.rev then
         f.failures = 0
         return
@@ -2569,6 +2728,7 @@ function Songbook:startFollowing(url)
     self:savePlaylist({})
     jam.follow = { url = url, failures = 0 }
     UIManager:preventStandby()
+    self:startLibrary()
     follow_poll()
 end
 
@@ -2576,6 +2736,7 @@ function Songbook:stopFollowing()
     if not jam.follow then return end
     UIManager:unschedule(follow_poll)
     UIManager:allowStandby()
+    self:stopLibrary()
     jam.follow = nil
 end
 
@@ -2750,6 +2911,15 @@ function Songbook:jamMenu()
                     end,
                 })
             end,
+        },
+        {
+            text_func = function() return T(_("Device name: %1"), self:deviceName()) end,
+            help_text = _("Names this device in the jam session: other songbooks see it in the list of shared songbooks and as the source of your songs."),
+            enabled_func = function() return not self:isJamRunning() and not self:isFollowing() end,
+            keep_menu_open = true,
+            callback = function(touchmenu_instance)
+                self:askDeviceName(function() touchmenu_instance:updateItems() end)
+            end,
             separator = true,
         },
         {
@@ -2790,7 +2960,46 @@ function Songbook:jamMenu()
             enabled_func = function() return self:isFollowing() end,
             callback = function() self:browseFollowed() end,
         },
+        {
+            text = _("Share my songs while following"),
+            help_text = _("The followed songbook and its other guests see your songs as a repository while you follow, and the songs you request are played even if the other songbook doesn't have them."),
+            keep_menu_open = true,
+            checked_func = function() return self:get("jam_share_songs") end,
+            callback = function(touchmenu_instance)
+                self:set("jam_share_songs", not self:get("jam_share_songs"))
+                if not self:isFollowing() then return touchmenu_instance:updateItems() end
+                if self:get("jam_share_songs") then
+                    NetworkMgr:runWhenConnected(function()
+                        self:startLibrary()
+                        touchmenu_instance:updateItems()
+                    end)
+                else
+                    self:stopLibrary()
+                    touchmenu_instance:updateItems()
+                end
+            end,
+        },
     }
+end
+
+function Songbook:askDeviceName(on_saved)
+    local dialog
+    dialog = InputDialog:new{
+        title = _("Device name"),
+        input = self:get("device_name") or "",
+        input_hint = Device.model or _("Songbook"),
+        buttons = {{
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local name = Jam.clean_name(dialog:getInputText()) or ""
+                UIManager:close(dialog)
+                self:set("device_name", name ~= "" and name or nil)
+                on_saved()
+            end },
+        }},
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
 end
 
 function Songbook:setAndRefresh(key, value)

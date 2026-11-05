@@ -39,13 +39,14 @@ local clock = 0
 stub("ui/time", { now = function() return clock end, to_s = function(t) return t end })
 stub("ui/widget/menu", class({ switchItemTable = function(self, t, items) self.item_table = items end }))
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
-local zmqs, standby, scheduled, scheduled_in = {}, 0, nil, nil
+local zmqs, standby, scheduled, scheduled_in, ticks = {}, 0, nil, nil, {}
 stub("ui/uimanager", {
     show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
     insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
     removeZMQ = function(_, z) for i = #zmqs, 1, -1 do if zmqs[i] == z then table.remove(zmqs, i) end end end,
     preventStandby = function() standby = standby + 1 end,
     scheduleIn = function(_, secs, f) scheduled, scheduled_in = f, secs end,
+    nextTick = function(_, f) table.insert(ticks, f) end,
     unschedule = function(_, f) if scheduled == f then scheduled = nil end end,
     allowStandby = function() standby = standby - 1 end,
     isWidgetShown = function() return true end,
@@ -410,6 +411,16 @@ local jam_menu = menu_item("jam")
 local tmi = { updateItems = function() end }
 check(jam_menu.text_func() == "Jam session" and not jam_menu.sub_item_table[1].checked_func(), "jam off by default")
 check(jam_menu.sub_item_table[2].enabled_func() == false, "no address while not sharing")
+local name_item = jam_menu.sub_item_table[4]
+check(name_item.text_func() == "Device name: Songbook", "device model as the default name")
+input_text = " Kytara\n"
+name_item.callback(tmi)
+find_button(last_shown(), "Save").callback()
+check(settings_store.device_name == "Kytara" and name_item.text_func() == "Device name: Kytara", "device named")
+input_text = " "
+name_item.callback(tmi)
+find_button(last_shown(), "Save").callback()
+check(settings_store.device_name == nil and plugin:deviceName() == "Songbook", "empty name: the model again")
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 2 and zmqs[1].port == 8765 and standby == 1, "jam server started")
 -- searches are answered with our port and the device name
@@ -609,17 +620,54 @@ hold.buttons[2][1].callback()
 check(#plugin:getPlaylist().queue == 0, "removed from long-press")
 plugin:savePlaylist({})
 
+-- guests sharing their songs are repositories while they keep polling
+local function jam_get_from(target, ip)
+    sent = nil
+    zmqs[1].receiveCallback("GET " .. target .. " HTTP/1.1\r\n\r\n", { getpeername = function() return ip, 50000 end })
+    return sent and sent:match("\r\n\r\n(.*)$")
+end
+body = jam_get_from("/state.json?name=Eva&share=8770", "10.0.0.7")
+check(body:find('"name":"Songbook"', 1, true) and body:find('"peers":[]', 1, true),
+    "host name, the asking guest not among the peers: " .. body)
+jam_get_from("/state.json?name=Petr&share=8765", "10.0.0.8")
+body = jam_get_from("/state.json", "10.0.0.9")
+check(body:find('"peers":[{"name":"Eva","url":"http://10.0.0.7:8770/"},{"name":"Petr","url":"http://10.0.0.8:8765/"}]', 1, true),
+    "sharing guests listed: " .. body)
+local eva
+for _i, s in ipairs(plugin:onlineServers()) do if s.url == "http://10.0.0.7:8770/" then eva = s end end
+check(eva and eva.jam and eva.name == "Eva" and eva.key == "10.0.0.7-8770", "sharing guest among the repositories")
+for _i, s in ipairs(plugin:getServers()) do check(not s.jam, "sharing guest not saved as a repository") end
+-- a guest's own song: downloaded once the request is answered, then queued
+responses["http://10.0.0.7:8770/songs/r~moje.cho"] = "{title: Evina}\n[C]La"
+body = jam_get_from("/queue/add?from=8770&uid=r%2Fmoje&by=Eva", "10.0.0.7")
+check(body == '{"ok":true}' and #ticks == 1 and #plugin:getPlaylist().queue == 0, "guest's song requested, downloaded later")
+table.remove(ticks, 1)()
+local q = plugin:getPlaylist().queue
+check(requested[#requested] == "http://10.0.0.7:8770/songs/r~moje.cho" and #q == 1 and q[1].uid == "10.0.0.7-8770/r_moje"
+    and q[1].title == "Evina" and q[1].by == "Eva", "guest's song downloaded and queued")
+check(plugin:sourceName(q[1].uid) == "Eva", "guest's song comes from the guest")
+body = jam_get_from("/queue/add?from=8770&uid=r%2Fmoje", "10.0.0.7")
+check(body == '{"error":"queued","ok":false}', "guest's song not requested twice")
+body = jam_get_from("/queue/add?from=8770&uid=x", "10.0.0.99")
+check(body == '{"error":"missing","ok":false}' and #ticks == 0, "only guests sharing their songs")
+clock = clock + 20
+check(#plugin:jamServers() == 0, "silent guests leave the repositories")
+check(plugin:sourceName(q[1].uid) == "Eva", "source name stays after the guest left")
+plugin:deleteSong(q[1].uid)
+plugin:savePlaylist({})
+
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func() and answers.closed, "jam server stopped")
 check(hold_dialog("test").buttons[2][1].text == "Add to playlist", "playlist button outside a jam session")
 
 -- following another songbook
 local host = "http://10.0.0.2:8765/"
-responses[host .. "state.json"] = "S1"
+local state_url = host .. "state.json?name=Songbook&share=8765"
+responses[state_url] = "S1"
 responses[host .. "songs/repo~song-a.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
 decoded.S1 = { uid = "repo/song-a", rev = "1", transpose = 2, notation = "cz" }
-local follow_item = jam_menu.sub_item_table[4]
-check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[5].enabled_func() == false, "not following")
+local follow_item = jam_menu.sub_item_table[5]
+check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[6].enabled_func() == false, "not following")
 input_text = " 10.0.0.2 "
 local n_opened = #opened
 plugin:addToPlaylist("test")
@@ -667,19 +715,49 @@ check(jam_server and jam_server.jam and jam_server.name == "Jam session" and jam
     and jam_server.key == "10.0.0.2-8765", "followed songbook among the repositories")
 for _i, s in ipairs(plugin:getServers()) do check(s.url ~= host, "followed songbook not saved as a repository") end
 check(plugin:findServer(jam_server.key) ~= nil and settings_store.jam_servers[host] == "10.0.0.2-8765", "its key is kept")
-jam_menu.sub_item_table[5].callback()
+jam_menu.sub_item_table[6].callback()
 check(last_shown().title == "Jam session", "Browse their songs lists the followed songbook: " .. tostring(last_shown().title))
+-- the host's name and its other guests sharing their songs
+decoded.S1N = { uid = "repo/song-a", rev = "1", transpose = 2, name = "Kobo",
+                peers = { { url = "http://10.0.0.7:8770/", name = "Eva" } } }
+responses[state_url] = "S1N"
+scheduled()
+local names = {}
+for _i, s in ipairs(plugin:jamServers()) do names[#names + 1] = s.name .. "=" .. s.url end
+check(follow_item.text_func() == "Following Kobo" and table.concat(names, " ") == "Kobo=" .. host .. " Eva=http://10.0.0.7:8770/",
+    "followed songbook and its guests as repositories: " .. table.concat(names, " "))
+responses[state_url] = "S1"
+scheduled()
+check(#plugin:jamServers() == 1, "guests gone from the followed songbook are gone here too")
+-- our songs are shared on the jam port: the index and song files only
+local library = zmqs[#zmqs]
+check(library.port == 8765 and library.started, "own songs shared while following")
+sent = nil
+library.receiveCallback("GET /index.json HTTP/1.1\r\n\r\n", {})
+check(sent:find("^HTTP/1.1 200") and sent:find('"uid":"test"', 1, true), "own songs listed")
+library.receiveCallback("GET /state.json HTTP/1.1\r\n\r\n", {})
+check(sent:find("^HTTP/1.1 404"), "follower's library has no jam state")
+local share_item = jam_menu.sub_item_table[7]
+check(name_item.enabled_func() == false, "no renaming while following")
+share_item.callback(tmi)
+check(not share_item.checked_func() and not library.started and zmqs[#zmqs] ~= library, "own songs no longer shared")
+responses[host .. "state.json"] = "S1"
+scheduled()
+check(requested[#requested] == host .. "state.json", "polling without sharing")
+share_item.callback(tmi)
+check(share_item.checked_func() and zmqs[#zmqs].port == 8765 and zmqs[#zmqs].started, "own songs shared again")
+responses[host .. "state.json"] = nil
 local fetched = #requested
 scheduled()
 check(#opened == n_opened + 1 and #requested == fetched + 1, "same state: nothing reopened or downloaded")
 decoded.S2 = { uid = "repo/song-a", rev = "2", transpose = 2 }
-responses[host .. "state.json"] = "S2"
+responses[state_url] = "S2"
 scheduled()
 check(#opened == n_opened + 1, "other host option change: not reopened")
 decoded.S3 = { uid = "repo/song-a", rev = "3", transpose = 0 }
-responses[host .. "state.json"] = "S3"
+responses[state_url] = "S3"
 scheduled()
-check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#requested] == host .. "state.json",
+check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#requested] == state_url,
     "host transposition followed without download")
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
@@ -688,12 +766,12 @@ check(plugin:currentSongId() == "jam/repo_song-a" and song_action("transpose") a
     and not song_action("collections") and not song_action("playlist"),
     "followed song can't be favorited, collected or queued")
 -- "Request to play" while following asks the followed songbook
-responses[host .. "queue/add?id=repo_song-a"] = "R1"
+responses[host .. "queue/add?by=Songbook&id=repo_song-a"] = "R1"
 decoded.R1 = { ok = true }
 plugin:requestFromFollowed({ uid = "jam/repo_song-a", title = "Hostova" })
-check(requested[#requested] == host .. "queue/add?id=repo_song-a" and notes[#notes] == "Requested: Hostova",
+check(requested[#requested] == host .. "queue/add?by=Songbook&id=repo_song-a" and notes[#notes] == "Requested: Hostova",
     "request sent to followed songbook: " .. requested[#requested])
-responses[host .. "queue/add?id=test"] = "R2"
+responses[host .. "queue/add?by=Songbook&from=8765&uid=test"] = "R2"
 decoded.R2 = { ok = false, error = "queued" }
 hold = hold_dialog("test")
 check(hold.buttons[1][1].text == "Play now" and hold.buttons[1][1].enabled == false, "no Play now while following")
@@ -720,17 +798,17 @@ remote_pl.item_table[1].callback()
 local rpick = last_shown()
 check(rpick.title == "Request from 10.0.0.2:8765" and #rpick.item_table == 2 and rpick.item_table[2].text == "Cizí",
     "followed songbook's songs not in its playlist")
-responses[host .. "queue/add?id=c"] = "R3"
+responses[host .. "queue/add?by=Songbook&id=c"] = "R3"
 decoded.R3 = { ok = true }
 rpick.item_table[2].callback()
-check(requested[#requested - 1] == host .. "queue/add?id=c" and requested[#requested] == host .. "playlist.json",
+check(requested[#requested - 1] == host .. "queue/add?by=Songbook&id=c" and requested[#requested] == host .. "playlist.json",
     "picked song requested from the followed songbook")
 toggle_hidden(rpick)
 check(#rpick.item_table == 4 and rpick.item_table[3].text == "Druhá" and rpick.item_table[3].mandatory == "up next"
     and rpick.item_table[4].mandatory == "played", "followed songbook's playlist marked")
 local n_requested = #requested
 rpick.item_table[3].callback()
-check(notes[#notes] == "This song is already requested." and requested[n_requested + 1] ~= host .. "queue/add?id=repo_b",
+check(notes[#notes] == "This song is already requested." and requested[n_requested + 1] ~= host .. "queue/add?by=Songbook&id=repo_b",
     "queued song not requested again")
 toggle_hidden(rpick)
 check(not playlist_entry("next").enabled_func(), "no next song while following")
@@ -742,12 +820,12 @@ decoded.PL2 = { history = {}, queue = {} }
 responses[host .. "playlist.json"] = "PL2"
 scheduled()
 check(switched == 1 and remote_pl.item_table[4].text == "Up next (0)", "followed playlist refreshed on poll")
-responses[host .. "state.json"] = false
+responses[state_url] = false
 for _i = 1, 4 do if scheduled then scheduled() end end
 check(not follow_item.checked_func() and standby == 0 and notes[#notes]:find("Lost connection", 1, true), "following stops when host is gone")
 -- following again drops songs of the last session, except the open one
 io.open(root .. "/songbook/songs/jam/old.cho", "w"):close()
-responses[host .. "state.json"] = false
+responses[state_url] = false
 follow_item.callback(tmi)
 finder_menu = last_shown()
 settings_store.jam_follow_url = nil
@@ -756,11 +834,11 @@ clock = clock + 1
 zmqs[1].waitEvent()
 finder_menu.item_table[1].callback()
 finder_menu:onCloseWidget()
-check(settings_store.jam_follow_url == host and #zmqs == 0, "following a found songbook")
+check(settings_store.jam_follow_url == host and #zmqs == 1 and zmqs[1].port == 8765, "following a found songbook, sharing our songs")
 check(follow_item.checked_func() and not io.open(root .. "/songbook/songs/jam/old.cho")
     and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"), "following again keeps only the open song")
 -- browsing our own songs keeps following; new songs are only announced
-responses[host .. "state.json"] = "S3"
+responses[state_url] = "S3"
 scheduled()
 plugin:onSongbookTranspose(1)
 check(follow_item.checked_func(), "transposing the followed song keeps following")
@@ -771,7 +849,7 @@ check(follow_item.checked_func() and song_action("now_playing").text == "Open no
     and song_action("play") == nil, "browsing while following")
 responses[host .. "songs/repo~song-b.cho"] = "{title: Další}\n[C]Hej"
 decoded.S4 = { uid = "repo/song-b", rev = "4", transpose = 0 }
-responses[host .. "state.json"] = "S4"
+responses[state_url] = "S4"
 local n_open = #opened
 scheduled()
 check(#opened == n_open and toasts[#toasts] == "Now playing: Další", "new followed song announced while browsing")
@@ -782,7 +860,7 @@ follow_item.callback(tmi)
 check(not follow_item.checked_func() and standby == 0, "following stopped from the menu")
 for _i, s in ipairs(plugin:onlineServers()) do check(not s.jam, "followed songbook gone from the repositories") end
 plugin:deleteSong("jam/repo_song-b")
-responses[host .. "state.json"] = nil
+responses[state_url] = nil
 plugin.ui.document.file = opened[n_opened]
 plugin:deleteSong("jam/repo_song-a")
 
