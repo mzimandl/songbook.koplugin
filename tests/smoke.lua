@@ -667,7 +667,7 @@ responses[state_url] = "S1"
 responses[host .. "songs/repo~song-a.cho"] = "{title: Hostova}\n{key: C}\n[C]Hej"
 decoded.S1 = { uid = "repo/song-a", rev = "1", transpose = 2, notation = "cz" }
 local follow_item = jam_menu.sub_item_table[5]
-check(follow_item.text_func() == "Follow another songbook…" and jam_menu.sub_item_table[6].enabled_func() == false, "not following")
+check(follow_item.text_func() == "Follow another songbook…", "not following")
 input_text = " 10.0.0.2 "
 local n_opened = #opened
 plugin:addToPlaylist("test")
@@ -715,8 +715,8 @@ check(jam_server and jam_server.jam and jam_server.name == "Jam session" and jam
     and jam_server.key == "10.0.0.2-8765", "followed songbook among the repositories")
 for _i, s in ipairs(plugin:getServers()) do check(s.url ~= host, "followed songbook not saved as a repository") end
 check(plugin:findServer(jam_server.key) ~= nil and settings_store.jam_servers[host] == "10.0.0.2-8765", "its key is kept")
-jam_menu.sub_item_table[6].callback()
-check(last_shown().title == "Jam session", "Browse their songs lists the followed songbook: " .. tostring(last_shown().title))
+plugin:browseOnline()
+check(last_shown().title == "Jam session", "Browse online lists the followed songbook: " .. tostring(last_shown().title))
 -- the host's name and its other guests sharing their songs
 decoded.S1N = { uid = "repo/song-a", rev = "1", transpose = 2, name = "Kobo",
                 peers = { { url = "http://10.0.0.7:8770/", name = "Eva" } } }
@@ -737,7 +737,7 @@ library.receiveCallback("GET /index.json HTTP/1.1\r\n\r\n", {})
 check(sent:find("^HTTP/1.1 200") and sent:find('"uid":"test"', 1, true), "own songs listed")
 library.receiveCallback("GET /state.json HTTP/1.1\r\n\r\n", {})
 check(sent:find("^HTTP/1.1 404"), "follower's library has no jam state")
-local share_item = jam_menu.sub_item_table[7]
+local share_item = jam_menu.sub_item_table[6]
 check(name_item.enabled_func() == false, "no renaming while following")
 share_item.callback(tmi)
 check(not share_item.checked_func() and not library.started and zmqs[#zmqs] ~= library, "own songs no longer shared")

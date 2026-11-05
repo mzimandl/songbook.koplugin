@@ -162,15 +162,14 @@ list* (General) opens the list you used last again, with its search and page.
     yours too, in its key; you can still transpose it yourself until it
     changes song or key. While you have one of your own songs open, a new
     song is only announced (*Now playing: …*); *Open now playing* goes to it. Followed songs are kept apart (`songs/jam/`, not in
-    My songs, removed when you follow again); to keep one, download it with
-    *Browse their songs*. Following stops in the Jam session menu, or when the
+    My songs, removed when you follow again); to keep one, download it in
+    *Browse online*. Following stops in the Jam session menu, or when the
     other reader is unreachable for a while. Following clears
     your playlist: *Playlist* shows the other reader's one, and *Request
     songs…* there lists its songs to ask for.
-  - *Browse their songs*: lists the followed reader's songs, so you can
-    download any of them. While following, it is also listed under its name
-    in *Browse online*; it leaves the list when following stops (downloaded
-    songs stay in My songs).
+  - While following, the followed reader is among the repositories in
+    *Browse online* under its name, so you can download any of its songs; it
+    leaves the list when following stops (downloaded songs stay in My songs).
   - *Share my songs while following* (on by default): your songs are served
     on the jam port while you follow. The followed reader and its other
     guests then see you among the repositories in *Browse online* under your

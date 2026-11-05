@@ -290,7 +290,7 @@ function Songbook:jamServer(url, name)
     return { key = key, url = url, name = name or _("Jam session"), jam = true }
 end
 
---- The followed songbook as a song repository (Browse their songs), or nil
+--- The followed songbook as a song repository (in Browse online), or nil
 -- while not following.
 function Songbook:followedServer()
     local f = jam.follow
@@ -2834,17 +2834,6 @@ function Songbook:findSongbooks(on_url)
     UIManager:show(menu)
 end
 
---- Browse the followed songbook's songs (see followedServer()).
-function Songbook:browseFollowed()
-    local url = jam.follow and jam.follow.url
-    if not url then return end
-    local server
-    for _i, s in ipairs(self:onlineServers()) do
-        if Repo.base_url(s.url) == Repo.base_url(url) then server = s end
-    end
-    NetworkMgr:runWhenConnected(function() self:showOnlineSongs({ server }) end)
-end
-
 function Songbook:onExit()
     stop_finder()
     self:stopJam()
@@ -2953,12 +2942,6 @@ function Songbook:jamMenu()
                     ok_callback = ask,
                 })
             end,
-        },
-        {
-            text = _("Browse their songs"),
-            help_text = _("Lists the followed songbook's songs, so you can download any of them. While following, it is also among the repositories in Browse online."),
-            enabled_func = function() return self:isFollowing() end,
-            callback = function() self:browseFollowed() end,
         },
         {
             text = _("Share my songs while following"),
