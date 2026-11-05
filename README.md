@@ -76,7 +76,8 @@ menu at the left of the title bar. The gesture action *Songbook: last song
 list* (General) opens the list you used last again, with its search and page.
 
 - **Browse online**: with more than one repository, pick one first, or
-  *All repositories* (at the top) for one combined list. Tap a song to download (if new or
+  *All repositories* (at the top) for one combined list. Songbooks of a
+  jam session come last, under their own *Jam session* heading. Tap a song to download (if new or
   changed) and open it. Long-press to add to favorites or collections, or to force re-download.
   The ☰ menu has *Download all* (the songs of the shown repositories that are
   new or changed, for offline use) and *Manage repositories…*.

@@ -1548,7 +1548,14 @@ function Songbook:browseOnline()
             bold = true,
             callback = function() self:showOnlineSongs(servers) end,
         }}
+        -- the jam session's songbooks (last in onlineServers()) under their own heading
+        local jam_heading = false
         for _i, server in ipairs(servers) do
+            if server.jam and not jam_heading then
+                jam_heading = true
+                items[#items].separator = true
+                table.insert(items, { text = _("Jam session"), bold = true, select_enabled = false })
+            end
             table.insert(items, {
                 text = self:serverName(server),
                 callback = function() self:showOnlineSongs({ server }) end,

@@ -717,6 +717,14 @@ for _i, s in ipairs(plugin:getServers()) do check(s.url ~= host, "followed songb
 check(plugin:findServer(jam_server.key) ~= nil and settings_store.jam_servers[host] == "10.0.0.2-8765", "its key is kept")
 plugin:browseOnline()
 check(last_shown().title == "Jam session", "Browse online lists the followed songbook: " .. tostring(last_shown().title))
+plugin:saveServers({ { key = "saved", url = "https://example.com/saved" } })
+plugin:browseOnline()
+local repo_items = last_shown().item_table
+check(#repo_items == 4 and repo_items[2].text == "example.com/saved" and repo_items[2].separator
+    and repo_items[3].text == "Jam session" and repo_items[3].select_enabled == false
+    and repo_items[4].text == "Jam session" and repo_items[4].callback,
+    "jam session's songbooks under their own heading in Browse online")
+plugin:saveServers({})
 -- the host's name and its other guests sharing their songs
 decoded.S1N = { uid = "repo/song-a", rev = "1", transpose = 2, name = "Kobo",
                 peers = { { url = "http://10.0.0.7:8770/", name = "Eva" } } }
