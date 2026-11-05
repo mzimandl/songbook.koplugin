@@ -2055,10 +2055,19 @@ end
 -- `before` as in favoriteButton().
 function Songbook:playlistButton(song, close, before)
     if self:isFollowing() then
+        -- Songs of online lists have `server`. The followed songbook has its
+        -- own songs; others it gets from us, so they must be on the device:
+        -- songs of the session's other songbooks are downloaded first (`before`),
+        -- songs of internet repositories have to be downloaded by hand.
+        local server = song.server
+        local followed = server and Repo.base_url(server.url) == Repo.base_url(jam.follow.url)
+        local on_device = not server or followed or self:isDownloaded(song)
         return {
             text = _("Request to play"),
+            enabled = on_device or (server.jam and before ~= nil) or false,
             callback = function()
                 close()
+                if not on_device and not before() then return end
                 self:requestFromFollowed(song)
             end,
         }

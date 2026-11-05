@@ -725,6 +725,22 @@ check(#repo_items == 4 and repo_items[2].text == "example.com/saved" and repo_it
     and repo_items[4].text == "Jam session" and repo_items[4].callback,
     "jam session's songbooks under their own heading in Browse online")
 plugin:saveServers({})
+-- Request to play from online lists: the followed songbook gets other songs from us
+local web = { key = "saved", url = "https://example.com/saved" }
+local function request_button(song, before) return plugin:playlistButton(song, function() end, before) end
+local downloads = 0
+local function fake_download() downloads = downloads + 1; return false end
+check(request_button({ uid = "saved/x", title = "X", server = web }, fake_download).enabled == false,
+    "no request of an internet song not on the device")
+check(request_button({ uid = "test", title = "Test" }).enabled == true, "request of an own song")
+check(request_button({ uid = jam_server.key .. "/x", title = "X", server = plugin:followedServer() }, fake_download).enabled == true,
+    "request of the followed songbook's song without download")
+local eva_song = { uid = "10.0.0.7-8770/x", title = "X", server = plugin:jamServer("http://10.0.0.7:8770/", "Eva") }
+local eva_button = request_button(eva_song, fake_download)
+local n_req = #requested
+eva_button.callback()
+check(eva_button.enabled == true and downloads == 1 and #requested == n_req,
+    "another guest's song is downloaded before the request (failed download: no request)")
 -- the host's name and its other guests sharing their songs
 decoded.S1N = { uid = "repo/song-a", rev = "1", transpose = 2, name = "Kobo",
                 peers = { { url = "http://10.0.0.7:8770/", name = "Eva" } } }

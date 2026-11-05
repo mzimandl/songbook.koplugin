@@ -152,7 +152,9 @@ list* (General) opens the list you used last again, with its search and page.
     (the device model until you set one).
   - *Request to play* (long-press a song in any list while following): asks
     the followed reader to play it. While you share your songs (below) it
-    gets any song from you; otherwise it must have the song (one it sent you,
+    gets any song on your device from you (in *Browse online* a song of an
+    internet repository has to be downloaded first; one of another guest is
+    downloaded for you); otherwise it must have the song (one it sent you,
     one from its repository, or one both of you have from the same
     repository).
   - *Follow another songbook…*: lists the readers sharing songs on the
