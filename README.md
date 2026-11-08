@@ -151,6 +151,9 @@ Under Taps & gestures, all starting with *Songbook:*.
 
 ## Supported ChordPro
 
+[template.cho](https://github.com/mzimandl/songbook-library/blob/master/template.cho)
+in Songbook Library uses all of them; copy it as a start for a new song.
+
 | | |
 |---|---|
 | Meta | `{title}` `{t}` `{subtitle}` `{st}` `{artist}` `{key}` `{capo}` `{tempo}` `{duration}` `{meta: name value}` … |
@@ -209,3 +212,12 @@ Changes are listed in [CHANGELOG.md](CHANGELOG.md). A release is a growing
 
 For UI work use the KOReader emulator (`./kodev run`) with the plugin symlinked
 into `plugins/`.
+
+## License
+
+Copyright (C) 2026 Martin Zimandl
+
+This plugin is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version,
+like KOReader itself. See [LICENSE](LICENSE).
