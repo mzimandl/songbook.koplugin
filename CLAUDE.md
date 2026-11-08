@@ -36,7 +36,7 @@
 - Following puts our playlist aside in `playlist_aside`; stopFollowing() and init() (after a quit while following) bring it back through restorePlaylist().
 - Opening a song only shows it. playSong() makes it the song now playing (Jam.play(): the previous one to history, the new one out of the queue) and opens it; finishPlaying() moves it to history. `play_on_open` makes openSong() play every song (not while following, not jam/ songs).
 - nowPlayingUid() (`now.uid`, or the followed jam/ song) is what the jam session shares, what autoscroll on open waits for and what the song button marks.
-- Guests add via /queue/add (at most Jam.MAX_QUEUE; local adds aren't limited). While following, the Playlist list shows the host's /playlist.json read-only and its picker requests the host's songs. An open Playlist list refreshes through `jam.playlist_refresh`.
+- Guests add via /queue/add (at most Jam.MAX_QUEUE; local adds aren't limited). Whole lists (My songs, Favorites, a collection; showList() passes the listed songs to its actions) go in through addListToPlaylistAction() / addSongsToPlaylist(), which skip queued and playing songs and save once; not while following. While following, the Playlist list shows the host's /playlist.json read-only and its picker requests the host's songs. An open Playlist list refreshes through `jam.playlist_refresh`.
 
 ## Autoscroll
 - Per reader instance (`self.autoscroll`), stopped in onCloseDocument()/onSuspend. Setting `autoscroll` starts it for the song now playing only (onReaderReady(), playSong()). Length = songDuration(uid).

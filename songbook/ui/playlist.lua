@@ -142,6 +142,38 @@ function Songbook:addToPlaylist(uid, by, max)
     return entry
 end
 
+--- Add the songs of `uids` to Up next (no limit), those not queued and not
+-- playing. Returns how many were added; the playlist is saved once.
+function Songbook:addSongsToPlaylist(uids)
+    local p = self:getPlaylist()
+    local playing = p.now and p.now.uid
+    local added = 0
+    for _i, uid in ipairs(uids) do
+        local entry = uid ~= playing and split_uid(uid) ~= JAM_KEY and self:playlistEntry(uid)
+        if entry and Jam.add_request(p.queue, entry, math.huge) then added = added + 1 end
+    end
+    if added > 0 then self:savePlaylist(p) end
+    return added
+end
+
+--- Title bar action of a song list: its songs (`songs`, as listed after the
+-- search) that aren't in the playlist yet go to Up next. Not while following:
+-- the followed songbook's playlist is used then.
+function Songbook:addListToPlaylistAction(songs)
+    local playing = self:nowPlayingUid()
+    local uids = {}
+    for _i, song in ipairs(songs) do
+        if song.uid ~= playing and not self:isQueued(song.uid) then uids[#uids + 1] = song.uid end
+    end
+    return {
+        text = #uids > 0 and T(_("Add to playlist (%1)"), #uids) or _("All in the playlist"),
+        enabled = #uids > 0 and not self:isFollowing(),
+        callback = function()
+            notify(T(_("Songs added to the playlist: %1"), self:addSongsToPlaylist(uids)))
+        end,
+    }
+end
+
 function Songbook:removeFromPlaylist(uid)
     local p = self:getPlaylist()
     for i = #p.queue, 1, -1 do

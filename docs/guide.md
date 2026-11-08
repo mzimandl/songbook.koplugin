@@ -22,6 +22,10 @@ collections, playlist, *Play now*, download again or delete.
   any repository. *New collection…*; in a collection *Add songs…* (tap to add or
   remove); long-press a collection to rename or delete it (its songs stay).
 
+In My songs, Favorites and a collection, ☰ → *Add to playlist* puts the listed
+songs into *Up next* (after a search only those found; songs already in the
+playlist are skipped).
+
 ## The open song
 
 The ☰ button in the bottom right corner of a song opens its options (the same
@@ -47,7 +51,8 @@ it*). *Play now* makes a song the one now playing: the jam session shares it, an
 the previous one goes to Played, as after *Finished*. *Next song* plays the first
 song of Up next.
 
-In the playlist: *Add songs…* (tap to add or remove), tap a song of Up next to
+In the playlist: *Add songs…* (tap to add or remove; a whole list of songs comes
+from ☰ → *Add to playlist* in My songs, Favorites or a collection), tap a song of Up next to
 play it, long-press it to *Play next* or remove it, long-press a played song to
 queue it again. ☰ → *Save played songs as collection…* keeps the evening's set
 list; *Clear playlist* starts over.

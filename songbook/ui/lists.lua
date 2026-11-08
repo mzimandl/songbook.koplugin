@@ -23,7 +23,8 @@ local list_menu = C.list_menu
 -- get_songs() -> songs; make_item(song, refresh) -> menu item.
 -- on_hold(song, refresh): refresh() rebuilds the list (keeping the search).
 -- on_close(): called when the list is closed with × (not when a song is opened).
--- actions(refresh): optional, -> actions of the title bar menu (see show_actions).
+-- actions(refresh, shown): optional, -> actions of the title bar menu (see
+--   show_actions()); `shown` = the songs listed now (after the search).
 -- opts: optional { last = song_lists.last entry to keep the search and page in,
 --   empty = { text, action = { text, callback(refresh) } } shown when there are no songs }.
 function Songbook:showList(title, get_songs, make_item, on_hold, on_close, actions, opts)
@@ -31,7 +32,9 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, actio
     local last = opts.last
     local menu, refresh
     local query = song_lists.restoring and song_lists.restoring.query
+    local shown = {}
     local function build()
+        shown = {}
         local items = {
             {
                 text = query and T(_("Search: %1"), query) or _("Search…"),
@@ -49,6 +52,7 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, actio
         local favorites = self:getMap("favorites")
         for _i, song in ipairs(get_songs()) do
             if matches(song, query) then
+                table.insert(shown, song)
                 local item = make_item(song, refresh)
                 item.song = song
                 if favorites[song.uid] then item.text = "★ " .. item.text end
@@ -69,7 +73,7 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, actio
         menu:switchItemTable(title, build())
     end
 
-    menu = list_menu(title, build(), actions and function() return actions(refresh) end, {
+    menu = list_menu(title, build(), actions and function() return actions(refresh, shown) end, {
         onMenuHold = function(_menu, item)
             if item.song and on_hold then on_hold(item.song, refresh) end
             return true
@@ -237,8 +241,13 @@ function Songbook:showLocal(title, filter, empty, on_close, last, collection)
         end }})
         dialog = ButtonDialog:new{ title = song.title, buttons = buttons }
         UIManager:show(dialog)
-    end, on_close, collection and function(refresh)
-        return {{ text = _("Add songs…"), callback = function() self:showCollectionPicker(collection, refresh) end }}
+    end, on_close, function(refresh, shown)
+        local actions = { self:addListToPlaylistAction(shown) }
+        if collection then
+            table.insert(actions, 1, { text = _("Add songs…"),
+                callback = function() self:showCollectionPicker(collection, refresh) end })
+        end
+        return actions
     end, { last = last, empty = empty })
     return true
 end

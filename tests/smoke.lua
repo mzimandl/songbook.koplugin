@@ -450,6 +450,47 @@ find_button(last_shown(), "Search").callback()
 check(search_list.item_table[2].text == "No songs", "search without a match")
 plugin:closeList()
 
+-- a list's songs go to the playlist from its title bar menu
+f = io.open(root .. "/songbook/songs/druha.cho", "w"); f:write("{title: Druhá}\n[C]La\n"); f:close()
+local playlist_before = plugin:getPlaylist()
+plugin:savePlaylist({})
+local function list_action(list, text)
+    list:onLeftButtonTap()
+    return find_button(last_shown(), text)
+end
+plugin:onSongbookShowLocal()
+local mine = last_shown()
+list_action(mine, "Add to playlist (2)").callback()
+local queue = plugin:getPlaylist().queue
+check(#queue == 2 and queue[1].uid == "druha" and queue[2].uid == "test"
+    and notes[#notes] == "Songs added to the playlist: 2", "my songs added to the playlist")
+check(list_action(mine, "All in the playlist").enabled == false, "nothing more to add")
+plugin:savePlaylist({ now = { uid = "test", title = "Žluťoučký kůň" }, history = {}, queue = {} })
+check(list_action(mine, "Add to playlist (1)") ~= nil, "the song now playing isn't added")
+plugin:savePlaylist({})
+input_text = "druha"
+mine.item_table[1].callback()
+find_button(last_shown(), "Search").callback()
+list_action(mine, "Add to playlist (1)").callback()
+check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "druha", "only the songs found are added")
+plugin:closeList()
+plugin:savePlaylist({})
+plugin:createCollection("Set")
+plugin:setInCollection("Set", "test", true)
+plugin:showCollection("Set")
+local set_list = last_shown()
+set_list:onLeftButtonTap()
+check(last_shown().buttons[1][1].text == "Add songs…" and last_shown().buttons[2][1].text == "Add to playlist (1)",
+    "collection menu: Add songs… and Add to playlist")
+last_shown().buttons[2][1].callback()
+check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "test", "collection added to the playlist")
+plugin:onSongbookShowFavorites()
+check(list_action(last_shown(), "All in the playlist") ~= nil, "favorites have the action too")
+plugin:closeList()
+plugin:deleteCollection("Set")
+plugin:deleteSong("druha")
+plugin:savePlaylist(playlist_before)
+
 -- Jam session ------------------------------------------------------------------
 local jam_menu = menu_item("jam")
 local tmi = { updateItems = function() end }

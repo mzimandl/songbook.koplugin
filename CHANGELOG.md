@@ -4,6 +4,11 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.1.0 – 2026-11-08
+
+- My songs, Favorites and collections: ☰ → *Add to playlist* puts the listed
+  songs (after a search, those found) into Up next.
+
 ## 1.0.0 – 2026-11-08
 
 First stable release. From now on `index.json`, the jam session's API and the
