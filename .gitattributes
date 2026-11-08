@@ -1,4 +1,4 @@
-# Left out of the zip that ZenPM installs (GitHub's source archives honor export-ignore).
+# Left out of the release zip and the zip ZenPM installs (git archive and GitHub's source archives honor export-ignore).
 /tests export-ignore
 /docs export-ignore
 /.github export-ignore

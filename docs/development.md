@@ -57,7 +57,13 @@ another language copy `cs.lua` and translate the values.
 ## Releases
 
 A release is a growing `version` in `_meta.lua`, listed in
-[CHANGELOG.md](../CHANGELOG.md) and tagged `v<version>`. ZenPM installs the master
-branch through [koplugins](https://github.com/mzimandl/koplugins), whose workflow
-copies the version into its manifest. `.gitattributes` keeps tests and docs out of
-the zip.
+[CHANGELOG.md](../CHANGELOG.md) and tagged `v<version>`. Pushing the tag runs the
+*Release* workflow (`.github/workflows/release.yml`): it makes a GitHub release
+with `songbook.koplugin.zip` (the plugin folder, without what `.gitattributes`
+marks export-ignore: tests, docs, workflows) and the version's CHANGELOG section
+as notes. The README's download button points to the latest release's zip. For a
+tag pushed earlier, run the workflow by hand (Actions → Release → Run workflow).
+
+The development version is also available through ZenPM from
+[koplugins](https://github.com/mzimandl/koplugins), which installs the master
+branch; its workflow copies the version into its manifest.
