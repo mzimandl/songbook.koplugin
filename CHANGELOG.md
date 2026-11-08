@@ -1,11 +1,14 @@
 # Changelog
 
-Versions are the `version` in `_meta.lua`, which ZenPM offers as updates.
+Versions are the `version` in `_meta.lua`; each has a
+[release](https://github.com/mzimandl/songbook.koplugin/releases) with
+`songbook.koplugin.zip`.
 
-## 1.0.0 – unreleased
+## 1.0.0 – 2026-11-08
 
-First stable release. From now on the formats below stay readable by later
-versions; settings of earlier installs are migrated.
+First stable release. From now on `index.json`, the jam session's API and the
+plugin's settings stay compatible: later versions read them, and settings of
+earlier installs are migrated.
 
 - **Songs**: ChordPro from static song repositories (GitHub or any web folder
   with `index.json`; private GitHub ones with an access token), Songbook Library
@@ -19,6 +22,8 @@ versions; settings of earlier installs are migrated.
   readers on the Wi-Fi, guests' song requests, follow another songbook (found on
   the network or by address), guests share their own songs.
 - Czech translation; gestures for the main actions.
+- Install from the release zip (download button in the README); user guide and
+  documentation in `docs/`.
 
 ## 0.7.0 – 2026-11-08
 
