@@ -19,7 +19,8 @@ versions; settings of earlier installs are migrated.
   the network or by address), guests share their own songs.
 - Czech translation; gestures for the main actions.
 
-Changes before the release:
+## 0.6.5 – 2026-11-08
+
 - An `index.json` or jam session of a newer, incompatible format is reported
   ("needs a newer version") instead of being misread (`"version"` in the index,
   `"api"` in the jam session's `/state.json`).
@@ -35,7 +36,8 @@ Changes before the release:
 - Song lists open faster: song metadata is read again only when a file changes.
 - The jam session's address is found also on a Wi-Fi without internet access
   (no default route), from the network interfaces.
+- The plugin's code is split into modules (songbook/ui/); no change in behavior.
 
-## 0.x – 2026-10-31 to 2026-11-06
+## 0.6.4 and earlier – 2026-10-31 to 2026-11-06
 
 Development versions.
