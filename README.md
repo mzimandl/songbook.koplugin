@@ -1,238 +1,58 @@
-# KOReader Songbook
+# Songbook for KOReader
 
-KOReader plugin for songs with guitar chords (ChordPro). It downloads songs from
-static song servers, renders them with chords above the lyrics (transposition,
-Czech H/B notation) and opens them in the reader. A playlist, autoscroll and a
-jam session (sharing the song now playing with phones and other readers on the
-same Wi-Fi) help when playing.
+A songbook with guitar chords on your e-reader. Download songs, read them with
+the chords above the lyrics, change their key, let them scroll by themselves and
+play together with friends: their phones and readers show the song you play.
+
+- Songs from online song collections, at hand also offline; your own collections and favorites
+- Transposition to any key, Czech (H, B) or English chord names
+- Autoscroll timed by the song's length
+- Playlist for the evening: now playing, up next, played
+- Jam session over Wi-Fi: others follow your song on a phone or another reader
+- English and Czech
 
 ## Install
 
-- **ZenPM**: add the source `https://raw.githubusercontent.com/mzimandl/koplugins/master/`
-  (see [koplugins](https://github.com/mzimandl/koplugins)) and install *Songbook*.
-  ZenPM also offers its updates.
-- **By hand**: put this repository into `koreader/plugins/` as `songbook.koplugin`
-  (Kindle: `/mnt/us/koreader/plugins/`, Kobo: `/mnt/onboard/.adds/koreader/plugins/`).
-  `tests/` isn't needed on the device.
+1. In [ZenPM](https://github.com/xZenLabs/zen-pm) → Sources, add
+   `https://raw.githubusercontent.com/mzimandl/koplugins/master/`.
+2. Install **Songbook** and restart KOReader. ZenPM also offers its updates.
 
-Then restart KOReader and open **Tools → Songbook**.
+Without ZenPM: download the
+[zip](https://github.com/mzimandl/songbook.koplugin/archive/refs/heads/master.zip),
+unpack it into `koreader/plugins/` and rename the folder to `songbook.koplugin`.
 
-## Song repositories
+## First steps
 
-The first start adds [Songbook Library](https://github.com/mzimandl/songbook-library),
-a song server you can also copy as a starting point for your own collection
-(songs, the `index.json` generator and a GitHub Action that keeps it up to date).
+1. Open **Tools → Songbook → Browse online**. The plugin starts with
+   [Songbook Library](https://github.com/mzimandl/songbook-library), a free collection
+   of folk songs and carols.
+2. Tap a song: it downloads and opens.
+3. Tap the **☰ button** in the bottom right corner of the song to transpose it,
+   start autoscroll, add it to favorites or to the playlist.
+4. Your songs are in **My songs**, also without Wi-Fi. Every list has a search
+   (`pisen` finds *Píseň*).
 
-Add more in **Settings → Song repositories → Add repository…** (or *Manage
-repositories…* in the ☰ menu of Browse online). The address is either:
-- a GitHub repository: `https://github.com/<user>/<repo>` (default branch, `index.json`
-  in the root) or `https://github.com/<user>/<repo>/tree/<branch>/<folder>`, or
-- any URL of the folder with `index.json`, e.g. `https://raw.githubusercontent.com/<user>/<repo>/<branch>/`
-  or a GitHub Pages address (not `https://github.com/<user>/<repo>/raw/…`).
+Want to play together? Open **Jam session → Share songs on the network**: guests
+on the same Wi-Fi open the shown address (or its QR code) on their phones.
 
-### Private GitHub repositories
+## More
 
-A private repository needs an access token: on GitHub, *Settings → Developer
-settings → Personal access tokens → Fine-grained tokens*, with access to that
-repository only and the permission *Contents: read-only*. In the plugin, tap the
-repository in *Song repositories* → *Access token…* and type it, or copy it into
-`koreader/songbook/token.txt` over USB and tap *Load from file* (the file is
-deleted then). Adding a private repository without a token offers this right away.
+- [User guide](https://github.com/mzimandl/songbook.koplugin/blob/master/docs/guide.md):
+  song lists, the open song, playlist, settings and gestures
+- [Jam session](https://github.com/mzimandl/songbook.koplugin/blob/master/docs/jam-session.md):
+  sharing with phones and following another reader
+- [Song repositories](https://github.com/mzimandl/songbook.koplugin/blob/master/docs/repositories.md):
+  adding more songs, private repositories, your own song server
+- [Writing songs](https://github.com/mzimandl/songbook.koplugin/blob/master/docs/chordpro.md):
+  the ChordPro format the plugin reads
+- [Development](https://github.com/mzimandl/songbook.koplugin/blob/master/docs/development.md):
+  code, tests, translations and releases
+- [Changes](https://github.com/mzimandl/songbook.koplugin/blob/master/CHANGELOG.md)
 
-The token is sent only to the GitHub API (`api.github.com`), never to other
-addresses. It is stored in plain text in `koreader/settings/songbook.lua`, so
-give it no more access than this. Songs from a private repository are songs on
-the device like the others: the jam session offers them to its guests too.
-
-The repository's name comes from `"name"` in `index.json` (from `songbook.json`
-in the song repo), else from the URL. `updated` in the index is a content hash,
-so a song is downloaded again only when its file changed.
-
-### index.json
-
-```json
-{ "version": 1, "name": "My songs",
-  "songs": [ { "id": "amazing-grace", "title": "Amazing Grace", "artist": "John Newton",
-               "key": "G", "file": "songs/amazing-grace.cho", "updated": "d583db33c6" } ] }
-```
-
-Only `file` is required in a song: `id` defaults to its file name (it names the
-downloaded file, so keep it once published), `title` to the id, and the song is
-downloaded again whenever `updated` changes. `file` is relative to the folder of
-`index.json` or a full URL. Unknown fields are ignored, so new optional ones keep
-`"version": 1`; a higher version is for changes older plugins would misread, and
-they then report that the repository needs a newer plugin.
-
-## Song lists
-
-The Songbook menu has *Song options* (of the open song), the song lists, *Playlist*,
-*Jam session* and *Settings*. Every list starts with search (case and diacritics
-don't matter: `pisen` finds *Píseň*), and actions for the
-whole list are in the ☰ menu at the left of its title bar. Long-press a song for
-its actions: favorite, collections, playlist, *Play now*, re-download or delete.
-
-- **Browse online**: pick a repository, or *All repositories* for one combined
-  list. Tap a song to download (when new or changed) and open it. ☰ → *Download
-  all* gets the new and changed songs for offline use.
-- **My songs**: downloaded songs, each with its repository, plus `.cho` files you
-  copy to `koreader/songbook/songs/`.
-- **Favorites** (★): adding an online song downloads it.
-- **Collections**: your named song lists (*Campfire*, *Christmas*…), songs from any
-  repository. *New collection…*; in a collection *Add songs…* (tap to add or
-  remove); long-press a collection to rename or delete it (its songs stay).
-
-## Open song
-
-The ☰ button in the bottom right corner of an open song (inverted while the song
-is the one now playing) opens its options: *Transpose*, *Start/Stop autoscroll*,
-*Song length*, favorite, collection, playlist, *Play now* / *Finished*, *Next
-song* and *Open now playing*. The same options are *Song options* in the Songbook
-menu. Taps in that corner beside the button still turn pages.
-
-- **Transpose**: −1 / +1, *Original key* or a key picked directly, then *Apply*.
-  Saved per song.
-- **Autoscroll**: scrolls so that the song ends with its length (`{duration: 3:45}`
-  in the file, or *Song length* set on the device). In scroll mode it moves an
-  eighth of the screen at a time, keeping the played line near the top; in page
-  mode it turns pages. A manual page turn re-times it. Songs open in scroll mode
-  unless you turn it off in Settings.
-
-## Playlist
-
-*Now playing*, *Up next* and *Played*. Opening a song only shows it (unless
-*Settings → Opening a song plays it* is on), so you can look for the next one
-while playing. *Play now* makes a song the one now playing: it is what the jam
-session shares, and the previous one goes to Played (so does it after
-*Finished*). *Next song* plays the first song of Up next.
-
-In the playlist: *Add songs…* (tap to add or remove), tap a song of Up next to
-play it, long-press it to *Play next* or remove it, long-press a played song to
-queue it again. ☰ → *Save played songs as collection…* keeps the evening's set
-list; *Clear playlist* starts over.
-
-## Jam session
-
-**Share songs on the network** starts a small web server. Guests on the same
-Wi-Fi open the shown address (tap it for a QR code) in a phone browser and see
-the song now playing, in your key. Each guest can transpose, switch notation,
-hide chords and change the font size for themselves, and request songs from your
-playlist (they join Up next). There is no password: share only on networks you
-trust.
-
-**Follow another songbook…** lists the readers sharing on the network (or
-*Enter address…*, e.g. `192.168.1.5`). Every song the other reader plays opens on
-yours, in its key; you can still transpose it. While you have another song open,
-a new one is only announced. While following:
-- the other reader is a repository in Browse online (download any of its songs;
-  followed songs themselves are kept apart, not in My songs);
-- *Playlist* shows its playlist; *Request songs…* there, or long-press → *Request
-  to play*, asks it to play a song;
-- with *Share my songs while following* (on by default) your songs are offered to
-  the other reader and its guests too.
-
-Your own playlist is put aside while following and comes back when you stop.
-A reader either shares or follows, not both.
-*Device name* is how other readers see this one (default: the device model).
-The device doesn't go to standby while sharing.
-
-Ports: TCP 8765 (changeable while not sharing), UDP 8766 (answers searches) and
-8767 (a search listens). On Kindle they are opened in the firewall while in use.
-
-Readers with different plugin versions can share and follow each other as long
-as the jam session's API version (`"api"` in `/state.json`) is the same; a reader
-that follows one with a newer API stops and asks to update the plugin.
-
-## Settings
-
-- **Song repositories**: add, edit the URL, rename, set an access token (private GitHub
-  repositories) or remove (optionally with its songs).
-- **Songs folder**: shows where songs are stored.
-- **Formatting**: chord notation (Czech H, B = B♭, or English), show chords,
-  repeat chorus text (print the chorus where the song says `{chorus}`), line width
-  (lower it if lines are cut off on the right).
-- **Scrolling**: continuous scroll mode, autoscroll when a song starts playing,
-  autoscroll step.
-- **Quick menu**: the ☰ button of an open song.
-- **Opening a song plays it**.
-
-## Gestures
-
-Under Taps & gestures, all starting with *Songbook:*.
-- Reader: *transpose up / down*, *transpose / choose key*, *song options*,
-  *add/remove favorite*, *start/stop autoscroll*, *autoscroll faster / slower*
-  (±10 %, kept for the song).
-- General: *my songs*, *favorites*, *collections*, *playlist*, *last song list*
-  (with its search and page), *open the song now playing*, *next song in the playlist*.
-
-## Supported ChordPro
-
-[template.cho](https://github.com/mzimandl/songbook-library/blob/master/template.cho)
-in Songbook Library uses all of them; copy it as a start for a new song.
-
-| | |
-|---|---|
-| Meta | `{title}` `{t}` `{subtitle}` `{st}` `{artist}` `{key}` `{capo}` `{tempo}` `{duration}` `{meta: name value}` … |
-| Sections | `{start_of_chorus}`/`{soc}`, verse, bridge, tab, grid; labels as `{soc: Ref.}` or `label="…"` |
-| Repeat | `{chorus}` |
-| Comments | `{c:}` `{ci:}` `{cb:}`, `#` lines ignored |
-| Chords | `[Am]` inline, slash chords `[C/H]`, annotations `[*N.C.]` (never transposed) |
-| Czech | `Ami`, `Fis`, `Cis`, `Es`, `As`, `H`, `B` (= B♭). `Esus4`/`Asus2` are not read as flats. |
-
-## Notes
-
-- Songs are stored in `koreader/songbook/songs/<repository>/<id>.cho`, rendered
-  to `koreader/songbook/rendered/` (one file per option combination, so the reader
-  never shows stale chords).
-- Songs are set in Droid Sans Mono inside `<pre>`, which keeps the chords
-  aligned even with *Ignore publisher font families*.
-- Opening `.cho` files from the file browser isn't supported; use *My songs*.
-
-## Translations
-
-KOReader's catalog doesn't have the plugin's strings, so they live in
-`songbook/l10n/<lang>.lua` (English → translation). Czech is included; for
-another language copy `cs.lua` and translate the values.
-
-## Development
-
-```
-main.lua                core: settings, migrations, songs and repositories, rendering, gestures
-songbook/ui/            UI, one module per area (see songbook/ui/common.lua):
-  reader.lua            open song: transposition, autoscroll, song button, song options
-  lists.lua             song lists, My songs, favorites
-  collections.lua       collections
-  online.lua            repositories: browsing, downloading, managing them
-  playlist.lua          playlist
-  jam.lua               jam session: sharing, following, finding songbooks
-  menu.lua              Songbook menu and settings
-  common.lua            what they share: plugin class, translations, state, helpers
-songbook/chordpro.lua   ChordPro parser
-songbook/transpose.lua  chord transposition
-songbook/render.lua     song → HTML layout
-songbook/repo.lua       index.json + HTTP fetch
-songbook/jam.lua        jam session: HTTP API, guest page, playlist
-songbook/discovery.lua  finding shared songbooks (UDP)
-songbook/search.lua     search and sorting without case and diacritics
-songbook/l10n.lua       translations
-tests/                  off-device tests
-```
-
-```sh
-luajit tests/run.lua     # modules, translations
-luajit tests/smoke.lua   # the plugin (main.lua, songbook/ui/) against stubbed KOReader modules
-```
-
-Changes are listed in [CHANGELOG.md](CHANGELOG.md). A release is a growing
-`version` in `_meta.lua` (ZenPM installs the master branch), tagged `v<version>`.
-
-For UI work use the KOReader emulator (`./kodev run`) with the plugin symlinked
-into `plugins/`.
+Found a bug or have an idea? [Open an issue](https://github.com/mzimandl/songbook.koplugin/issues).
 
 ## License
 
-Copyright (C) 2026 Martin Zimandl
-
-This plugin is free software: you can redistribute it and/or modify it under the
-terms of the GNU Affero General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later version,
-like KOReader itself. See [LICENSE](LICENSE).
+Copyright (C) 2026 Martin Zimandl. Free software under the
+[GNU Affero General Public License](https://github.com/mzimandl/songbook.koplugin/blob/master/LICENSE),
+version 3 or later, like KOReader itself.
