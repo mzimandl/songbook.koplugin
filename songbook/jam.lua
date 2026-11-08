@@ -310,6 +310,8 @@ var L = %s;
 var P = { t: 0, n: "", c: 1, fs: 16, by: "" };
 try { var saved = JSON.parse(localStorage.getItem("songbook-jam")); for (var k in saved) P[k] = saved[k]; } catch (e) {}
 var rev = null, uid = null, host_notation = "cz", view = "song", songs = null;
+// numbers of the latest song and playlist requests: older answers that arrive late are dropped
+var song_seq = 0, playlist_seq = 0, scroll_up = false;
 function $(id) { return document.getElementById(id); }
 function save() { try { localStorage.setItem("songbook-jam", JSON.stringify(P)); } catch (e) {} }
 function json(r) { return r.json(); }
@@ -337,13 +339,17 @@ function bar() {
 }
 function load(scroll) {
   if (!uid) return;
+  var seq = ++song_seq;
+  scroll_up = scroll_up || scroll;   // a newer request still scrolls a new song to the top
   var url = "/song.html?t=" + P.t + "&n=" + (P.n || host_notation) + "&c=" + P.c + "&w=" + cols()
     + "&rev=" + encodeURIComponent(rev);
   fetch(url, { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (html) {
+    if (seq !== song_seq) return;
     var doc = new DOMParser().parseFromString(html, "text/html");
     $("song").innerHTML = doc.body.innerHTML;
     document.title = doc.title;
-    if (scroll && view == "song") window.scrollTo(0, 0);
+    if (scroll_up && view == "song") window.scrollTo(0, 0);
+    scroll_up = false;
   });
 }
 function pad(n) { return n < 10 ? "0" + n : String(n); }
@@ -360,7 +366,9 @@ function fill(ul, list, extra) {
   if (!list.length) ul.appendChild(el("li", L.nothing, "d"));
 }
 function loadPlaylist() {
+  var seq = ++playlist_seq;
   fetch("/playlist.json", { cache: "no-store" }).then(json).then(function (p) {
+    if (seq !== playlist_seq) return;
     fill($("now"), p.now ? [p.now] : [], function () { return ""; });
     fill($("queue"), p.queue, function (e) { return e.by; });
     fill($("history"), p.history.slice().reverse(), function (e) {
