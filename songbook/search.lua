@@ -2,7 +2,7 @@
 Searching and sorting song lists without regard to case and diacritics
 (pure Lua 5.1 / LuaJIT): "pisen" finds "Píseň", "Čert" sorts among the C's.
 Latin letters with diacritics (Latin-1 Supplement, Latin Extended-A, Romanian
-ș ț) are folded to ASCII; other characters stay as they are, so main.lua
+ș ț) are folded to ASCII; other characters stay as they are, so the UI
 lowercases them first with KOReader's util.stringLower (`lower` below).
 ]]
 

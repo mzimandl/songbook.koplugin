@@ -449,15 +449,19 @@ local cat = L10n.catalog("cs_CZ", function(name) loaded[#loaded + 1] = name; ret
 eq(table.concat(loaded, ",") .. " " .. cat.Hi, "cs_CZ,cs Ahoj", "catalog falls back to the base language")
 local tr = L10n.wrap(function(s) return "<" .. s .. ">" end, cat)
 eq(tr("Hi") .. tr("Bye"), "Ahoj<Bye>", "catalog first, then gettext")
--- every _("…") of main.lua is translated, and the catalog has no stale entries
+-- every _("…") of main.lua and songbook/ui/ is translated, and the catalog has no stale entries
+local used = {}
 local function msgids(path)
     local src = io.open(path):read("*a")
-    local ids = {}
-    for lit in src:gmatch('_%(%s*(".-[^\\]")%s*%)') do ids[loadstring("return " .. lit)()] = true end
-    for lit in src:gmatch('_%(%s*%[%[(.-)%]%]%s*%)') do ids[lit] = true end
-    return ids
+    for lit in src:gmatch('_%(%s*(".-[^\\]")%s*%)') do used[loadstring("return " .. lit)()] = true end
+    for lit in src:gmatch('_%(%s*%[%[(.-)%]%]%s*%)') do used[lit] = true end
 end
-local used = msgids("main.lua")
+msgids("main.lua")
+local ui_files = io.popen("ls songbook/ui/*.lua")
+local n_ui = 0
+for path in ui_files:lines() do msgids(path); n_ui = n_ui + 1 end
+ui_files:close()
+eq(n_ui > 0, true, "UI modules found for the translation check")
 local cs = require("songbook/l10n/cs")
 local missing, stale = {}, {}
 for id in pairs(used) do if not cs[id] then missing[#missing + 1] = id end end

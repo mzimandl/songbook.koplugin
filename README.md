@@ -178,7 +178,16 @@ another language copy `cs.lua` and translate the values.
 ## Development
 
 ```
-main.lua                UI: menus, lists, download, settings, gestures, jam session
+main.lua                core: settings, migrations, songs and repositories, rendering, gestures
+songbook/ui/            UI, one module per area (see songbook/ui/common.lua):
+  reader.lua            open song: transposition, autoscroll, song button, song options
+  lists.lua             song lists, My songs, favorites
+  collections.lua       collections
+  online.lua            repositories: browsing, downloading, managing them
+  playlist.lua          playlist
+  jam.lua               jam session: sharing, following, finding songbooks
+  menu.lua              Songbook menu and settings
+  common.lua            what they share: plugin class, translations, state, helpers
 songbook/chordpro.lua   ChordPro parser
 songbook/transpose.lua  chord transposition
 songbook/render.lua     song → HTML layout
@@ -192,7 +201,7 @@ tests/                  off-device tests
 
 ```sh
 luajit tests/run.lua     # modules, translations
-luajit tests/smoke.lua   # main.lua against stubbed KOReader modules
+luajit tests/smoke.lua   # the plugin (main.lua, songbook/ui/) against stubbed KOReader modules
 ```
 
 Changes are listed in [CHANGELOG.md](CHANGELOG.md). A release is a growing

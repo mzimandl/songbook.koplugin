@@ -1,7 +1,7 @@
 --[[--
 Finding shared songbooks on the local network (pure Lua 5.1 / LuaJIT).
 No KOReader modules: `socket` (LuaSocket) is passed in, so tests can fake it.
-Everything is non-blocking and polled (main.lua polls from UIManager ZMQs).
+Everything is non-blocking and polled (songbook/ui/jam.lua polls from UIManager ZMQs).
 
 A follower broadcasts "SONGBOOK-DISCOVER <version>" from SEARCH_PORT (or any
 port) to DISCOVERY_PORT; a sharing songbook answers to the sender with

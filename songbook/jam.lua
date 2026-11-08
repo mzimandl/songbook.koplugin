@@ -1,6 +1,6 @@
 --[[--
 Jam session web server: request parsing, routing and the guest web page
-(pure Lua 5.1 / LuaJIT). main.lua owns the socket and passes a context:
+(pure Lua 5.1 / LuaJIT). songbook/ui/jam.lua owns the socket and passes a context:
 
 ctx = {
   state     = function(peer_url) -> { uid=, rev=, title=, artist=, notation=, name=, peers= }
@@ -36,7 +36,7 @@ Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
                        ?from=<port>: uid is a song of the asking songbook, shared on that port)
 
 Following another songbook (normalize_url, parse_state, song_id) is also
-here; main.lua does the polling.
+here; songbook/ui/jam.lua does the polling.
 ]]
 
 local Render = require("songbook/render")
