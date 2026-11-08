@@ -110,6 +110,8 @@ return {
     -- online
     ["Loading song list: %1…"] = "Načítám seznam písní: %1…",
     ["Cannot load song list: %1"] = "Seznam písní nelze načíst: %1",
+    ["This repository needs a newer version of the Songbook plugin."] =
+        "Tento repozitář potřebuje novější verzi pluginu Zpěvník.",
     ["All repositories"] = "Všechny repozitáře",
     ["saved"] = "staženo",
     ["update"] = "aktualizace",
@@ -121,6 +123,8 @@ return {
     ["Downloaded."] = "Staženo.",
     ["Downloading %1 / %2…"] = "Stahuji %1 / %2…",
     ["Downloaded: %1, up to date: %2, failed: %3"] = "Staženo: %1, aktuální: %2, selhalo: %3",
+    ["Downloading stopped after %1 failures in a row (%2). Downloaded: %3, not downloaded: %4"] =
+        "Stahování zastaveno po %1 neúspěších za sebou (%2). Staženo: %3, nestaženo: %4",
 
     -- repositories
     ["Add song repository"] = "Přidat repozitář písní",
@@ -222,10 +226,10 @@ return {
     ["Port"] = "Port",
     ["Follow another songbook…"] = "Sledovat jiný zpěvník…",
     ["Following %1"] = "Sleduji %1",
-    ["Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead. Not while sharing."] =
-        "Otevírá písně, které hraje jiné zařízení, jak se mění, v tónině druhého hráče; můžete si je dál transponovat. Váš playlist se vyprázdní a použije se playlist druhého zpěvníku. Nelze při sdílení.",
-    ["Following another songbook clears your playlist and uses theirs instead."] =
-        "Sledování jiného zpěvníku vyprázdní váš playlist a použije jeho playlist.",
+    ["Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. The other songbook's playlist is used instead of yours, which comes back when you stop following. Not while sharing."] =
+        "Otevírá písně, které hraje jiné zařízení, jak se mění, v tónině druhého hráče; můžete si je dál transponovat. Místo vašeho playlistu se použije playlist druhého zpěvníku; ten váš se vrátí, až sledování ukončíte. Nelze při sdílení.",
+    ["The other songbook has a newer version of the Songbook plugin. Update it here to follow it."] =
+        "Druhý zpěvník má novější verzi pluginu Zpěvník. Aktualizujte ho i tady, abyste ho mohli sledovat.",
     ["Device name"] = "Jméno zařízení",
     ["Device name: %1"] = "Jméno zařízení: %1",
     ["Names this device in the jam session: other songbooks see it in the list of shared songbooks and as the source of your songs."] =

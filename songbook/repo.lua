@@ -18,6 +18,12 @@ fetch() uses KOReader's LuaSocket/LuaSec and is only called on-device.
 
 local M = {}
 
+--- Newest index.json format this plugin reads. A server raises "version"
+-- only for changes older plugins would misread; new optional fields keep it.
+M.INDEX_VERSION = 1
+--- parse_index() error for an index of a newer format.
+M.ERR_NEWER = "newer index.json version"
+
 function M.join(base, path)
     if path:match("^https?://") then return path end
     base = base or ""
@@ -92,6 +98,9 @@ function M.parse_index(body, decode)
     local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" then
         return nil, "invalid index.json"
+    end
+    if type(data.version) == "number" and data.version > M.INDEX_VERSION then
+        return nil, M.ERR_NEWER
     end
     local list = data.songs or data
     if type(list) ~= "table" then return nil, "index.json has no songs" end

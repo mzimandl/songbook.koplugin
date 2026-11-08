@@ -34,10 +34,26 @@ The repository's name comes from `"name"` in `index.json` (from `songbook.json`
 in the song repo), else from the URL. `updated` in the index is a content hash,
 so a song is downloaded again only when its file changed.
 
+### index.json
+
+```json
+{ "version": 1, "name": "My songs",
+  "songs": [ { "id": "amazing-grace", "title": "Amazing Grace", "artist": "John Newton",
+               "key": "G", "file": "songs/amazing-grace.cho", "updated": "d583db33c6" } ] }
+```
+
+Only `file` is required in a song: `id` defaults to its file name (it names the
+downloaded file, so keep it once published), `title` to the id, and the song is
+downloaded again whenever `updated` changes. `file` is relative to the folder of
+`index.json` or a full URL. Unknown fields are ignored, so new optional ones keep
+`"version": 1`; a higher version is for changes older plugins would misread, and
+they then report that the repository needs a newer plugin.
+
 ## Song lists
 
 The Songbook menu has *Song options* (of the open song), the song lists, *Playlist*,
-*Jam session* and *Settings*. Every list starts with search, and actions for the
+*Jam session* and *Settings*. Every list starts with search (case and diacritics
+don't matter: `pisen` finds *Píseň*), and actions for the
 whole list are in the ☰ menu at the left of its title bar. Long-press a song for
 its actions: favorite, collections, playlist, *Play now*, re-download or delete.
 
@@ -100,17 +116,22 @@ a new one is only announced. While following:
 - with *Share my songs while following* (on by default) your songs are offered to
   the other reader and its guests too.
 
-Following clears your own playlist. A reader either shares or follows, not both.
+Your own playlist is put aside while following and comes back when you stop.
+A reader either shares or follows, not both.
 *Device name* is how other readers see this one (default: the device model).
 The device doesn't go to standby while sharing.
 
 Ports: TCP 8765 (changeable while not sharing), UDP 8766 (answers searches) and
 8767 (a search listens). On Kindle they are opened in the firewall while in use.
 
+Readers with different plugin versions can share and follow each other as long
+as the jam session's API version (`"api"` in `/state.json`) is the same; a reader
+that follows one with a newer API stops and asks to update the plugin.
+
 ## Settings
 
 - **Song repositories**: add, edit the URL, rename or remove (optionally with its songs).
-- **Songs folder**: where songs are stored.
+- **Songs folder**: shows where songs are stored.
 - **Formatting**: chord notation (Czech H, B = B♭, or English), show chords,
   repeat chorus text (print the chorus where the song says `{chorus}`), line width
   (lower it if lines are cut off on the right).
@@ -164,6 +185,7 @@ songbook/render.lua     song → HTML layout
 songbook/repo.lua       index.json + HTTP fetch
 songbook/jam.lua        jam session: HTTP API, guest page, playlist
 songbook/discovery.lua  finding shared songbooks (UDP)
+songbook/search.lua     search and sorting without case and diacritics
 songbook/l10n.lua       translations
 tests/                  off-device tests
 ```
@@ -172,6 +194,9 @@ tests/                  off-device tests
 luajit tests/run.lua     # modules, translations
 luajit tests/smoke.lua   # main.lua against stubbed KOReader modules
 ```
+
+Changes are listed in [CHANGELOG.md](CHANGELOG.md). A release is a growing
+`version` in `_meta.lua` (ZenPM installs the master branch), tagged `v<version>`.
 
 For UI work use the KOReader emulator (`./kodev run`) with the plugin symlinked
 into `plugins/`.

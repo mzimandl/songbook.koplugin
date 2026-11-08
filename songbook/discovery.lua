@@ -36,6 +36,21 @@ function M.broadcasts(ip)
     return out
 end
 
+--- IPv4 address of this device on the local network from a list of network
+-- interfaces as KOReader's ffi/netinfo retrieves them ({ name, ipv4, wireless };
+-- ipv4 may be "a / b"): a wireless one first. nil when there is none.
+function M.pick_ip(ifaces)
+    local found
+    for _i, iface in ipairs(ifaces or {}) do
+        local ip = type(iface.ipv4) == "string" and iface.ipv4:match("^%s*(%d+%.%d+%.%d+%.%d+)")
+        if ip and not ip:match("^127%.") and not ip:match("^169%.254%.") then
+            if iface.wireless then return ip end
+            found = found or ip
+        end
+    end
+    return found
+end
+
 function M.discover()
     return "SONGBOOK-DISCOVER " .. M.VERSION
 end

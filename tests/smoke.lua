@@ -73,11 +73,22 @@ stub("libs/libkoreader-lfs", {
         return function() i = i + 1; return list[i] end
     end,
     attributes = function(p, what)
+        local mode
         local r = os.execute("test -d '" .. p .. "'")
-        if r == 0 or r == true then return "directory" end
-        local f = io.open(p, "rb")
-        if f then f:close(); return "file" end
-        return nil
+        if r == 0 or r == true then
+            mode = "directory"
+        else
+            local f = io.open(p, "rb")
+            if f then f:close(); mode = "file" end
+        end
+        if not mode then return nil end
+        if what == "mode" then return mode end
+        local h = io.popen("stat -c '%Y %s' '" .. p .. "'")
+        local mtime, size = h:read("*a"):match("(%d+) (%d+)")
+        h:close()
+        local attr = { mode = mode, modification = tonumber(mtime), size = tonumber(size) }
+        if what then return attr[what] end
+        return attr
     end,
 })
 local settings_store = {}
@@ -106,12 +117,13 @@ stub("json", { decode = function(body)
     if decoded[body] then return decoded[body] end
     return { name = index_name, songs = { { id = "test", title = "Test", file = "songs/test.cho", updated = "1" } } }
 end })
+local own_ip = "192.168.1.5"   -- address of the interface with the default route
 local udps = {}   -- fake UDP sockets; inbox = { { msg, ip, port } }, outbox = { { msg, ip, port } }
 local taken_ports = {}
 stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, udp = function()
     local u = { inbox = {}, outbox = {} }
     function u.setpeername() end
-    function u.getsockname() return "192.168.1.5" end
+    function u.getsockname() return own_ip end
     function u.close(self) self.closed = true; if self.port then taken_ports[self.port] = nil end end
     function u.setsockname(self, _, port)
         if taken_ports[port] then return nil, "address already in use" end
@@ -220,6 +232,15 @@ f:write("{title: Žluťoučký kůň}\n{artist: Lidová}\n{key: C}\n[C]Jede [G]k
 f:close()
 local songs = plugin:listLocal()
 check(#songs == 1 and songs[1].title == "Žluťoučký kůň", "listLocal reads meta")
+-- metadata is cached until the file changes
+f = io.open(root .. "/songbook/songs/test.cho", "w")
+f:write("{title: Jiný název}\n")
+f:close()
+check(plugin:listLocal()[1].title == "Jiný název", "changed song file read again")
+f = io.open(root .. "/songbook/songs/test.cho", "w")
+f:write("{title: Žluťoučký kůň}\n{artist: Lidová}\n{key: C}\n[C]Jede [G]kůň\n")
+f:close()
+check(plugin:listLocal()[1].title == "Žluťoučký kůň", "song file read again after restoring")
 
 plugin:openSong("test")
 check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.w42%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
@@ -406,6 +427,24 @@ local function find_button(dialog, text)
     end
 end
 
+-- search ignores case and diacritics
+plugin:onSongbookShowLocal()
+local search_list = last_shown()
+input_text = "ZLUTOUCKY"
+search_list.item_table[1].callback()
+find_button(last_shown(), "Search").callback()
+check(search_list.item_table[1].text == "Search: ZLUTOUCKY" and search_list.item_table[2].song
+    and search_list.item_table[2].song.uid == "test", "search without diacritics")
+input_text = "lidova"
+search_list.item_table[1].callback()
+find_button(last_shown(), "Search").callback()
+check(search_list.item_table[2].song and search_list.item_table[2].song.uid == "test", "search by artist")
+input_text = "kun x"
+search_list.item_table[1].callback()
+find_button(last_shown(), "Search").callback()
+check(search_list.item_table[2].text == "No songs", "search without a match")
+plugin:closeList()
+
 -- Jam session ------------------------------------------------------------------
 local jam_menu = menu_item("jam")
 local tmi = { updateItems = function() end }
@@ -434,6 +473,14 @@ check(#answers.outbox == 1 and answers.outbox[1][1] == "SONGBOOK 1 8765 Songbook
     and answers.outbox[1][2] == "192.168.1.9" and answers.outbox[1][3] == 8767, "search answered once")
 check(jam_menu.text_func() == "Jam session (sharing)", "jam menu label while sharing")
 check(jam_menu.sub_item_table[2].text_func() == "Address: http://192.168.1.5:8765/", "jam address")
+-- a Wi-Fi without a default route: the address of the wireless interface
+own_ip = "0.0.0.0"
+package.loaded["ffi/netinfo"] = { new = function(self) return self end, free = function() end,
+    retrieve = function() return { { name = "eth0", ipv4 = "10.9.9.9" }, { name = "wlan0", ipv4 = "10.42.0.7", wireless = true } } end }
+check(plugin:jamUrl() == "http://10.42.0.7:8765/", "jam address without a default route: " .. tostring(plugin:jamUrl()))
+package.loaded["ffi/netinfo"] = nil
+check(plugin:jamUrl() == nil, "no jam address without any address")
+own_ip = "192.168.1.5"
 check(jam_menu.sub_item_table[3].enabled_func() == false, "port locked while sharing")
 check(jam_menu.sub_item_table[4].enabled_func() == false, "no following while sharing")
 local function jam_get(target)
@@ -672,8 +719,6 @@ input_text = " 10.0.0.2 "
 local n_opened = #opened
 plugin:addToPlaylist("test")
 follow_item.callback(tmi)
-check(last_shown().ok_text == "Follow", "following asks before replacing our playlist")
-last_shown().ok_callback()
 -- the songbooks found on the network, and Enter address…
 local finder_menu = last_shown()
 local search = udp_on(8767)
@@ -901,11 +946,26 @@ check(#opened == n_open + 1 and opened[#opened]:find("/jam~repo_song%-b@"), "ope
 plugin.ui.document.file = opened[#opened]
 follow_item.callback(tmi)
 check(not follow_item.checked_func() and standby == 0, "following stopped from the menu")
+check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "test"
+    and settings_store.playlist_aside == nil, "our playlist back after following")
 for _i, s in ipairs(plugin:onlineServers()) do check(not s.jam, "followed songbook gone from the repositories") end
 plugin:deleteSong("jam/repo_song-b")
 responses[state_url] = nil
 plugin.ui.document.file = opened[n_opened]
 plugin:deleteSong("jam/repo_song-a")
+-- a songbook with a newer jam API is not followed
+decoded.SAPI = { api = 2, uid = "repo/song-a", rev = "9" }
+responses[state_url] = "SAPI"
+plugin:startFollowing(host)
+check(not plugin:isFollowing() and notes[#notes]:find("newer version", 1, true) and standby == 0
+    and #plugin:getPlaylist().queue == 1, "newer jam API: following stopped, playlist back")
+responses[state_url] = nil
+-- KOReader quit while following: the playlist put aside comes back on start
+settings_store.playlist_aside = { history = {}, queue = { { uid = "x", title = "X" } } }
+plugin:savePlaylist({})
+plugin:init()
+check(plugin:getPlaylist().queue[1].uid == "x" and settings_store.playlist_aside == nil, "playlist restored on start")
+plugin:savePlaylist({})
 
 -- Song repositories ----------------------------------------------------------
 
@@ -957,6 +1017,20 @@ find_button(last_shown(), "Download all (1)").callback()
 check(notes[#notes] == "Downloaded: 1, up to date: 1, failed: 0", "download all summary: " .. notes[#notes])
 menu:onLeftButtonTap()
 check(find_button(last_shown(), "All songs downloaded").enabled == false, "nothing left to download")
+-- a lost connection stops Download all after a few failures in a row
+local failing = {}
+for i = 1, 5 do
+    local url = "https://example.com/songs/songs/f" .. i .. ".cho"
+    responses[url] = false
+    failing[i] = { uid = "example.com-songs/f" .. i, file = "songs/f" .. i .. ".cho", updated = "1",
+                   server = plugin:findServer("example.com-songs") }
+end
+local n_requested = #requested
+plugin:downloadSongs(failing)
+check(#requested == n_requested + 3 and notes[#notes]:find("^Downloading stopped after 3 failures"),
+    "download all stops after failures in a row: " .. notes[#notes])
+local parts = io.popen("find '" .. root .. "/songbook' -name '*.part'"):read("*a")
+check(parts == "", "no temporary files left: " .. parts)
 
 -- My songs lists songs from everywhere with their source
 local all = plugin:listLocal()

@@ -22,7 +22,8 @@ ctx = {
 
 Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
   /             guest page, polls /state.json and loads /song.html on change
-  /state.json   the song now playing; "rev" changes with the song or the host's options
+  /state.json   the song now playing; "rev" changes with the song or the host's options;
+                "api" = API_VERSION (missing before 1.0: version 1)
                 ?name=&share=<port>: a following songbook that shares its own songs on
                 that port (same endpoints, `library`); polling keeps it among the peers
   /song.html    song now playing; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords), ?w= columns
@@ -42,6 +43,10 @@ local Render = require("songbook/render")
 
 local M = {}
 
+--- Version of the API other songbooks use (/state.json "api", /song paths,
+-- /queue/add). Raise it only for changes older songbooks would misread;
+-- a follower stops following a songbook with a newer one.
+M.API_VERSION = 1
 M.MAX_QUEUE = 30
 M.MAX_HISTORY = 200
 M.MAX_NAME = 30
@@ -221,12 +226,13 @@ function M.normalize_url(text, default_port)
     return scheme .. authority .. path
 end
 
---- Decode /state.json of another songbook. Returns { uid, rev, transpose,
+--- Decode /state.json of another songbook. Returns { api, uid, rev, transpose,
 -- name, peers } or nil (name nil and peers empty from older songbooks).
 function M.parse_state(body, decode)
     local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" then return nil end
     local state = {
+        api = type(data.api) == "number" and data.api or 1,
         transpose = 0,
         name = M.clean_name(type(data.name) == "string" and data.name or nil),
         peers = parse_peers(data.peers),
@@ -546,7 +552,9 @@ function M.handle(req, ctx)
     elseif path == "/state.json" then
         local peer = ctx.join and M.peer(req)
         if peer then ctx.join(peer) end
-        return M.response(200, "application/json; charset=utf-8", M.json(ctx.state(peer and peer.url)))
+        local state = ctx.state(peer and peer.url)
+        state.api = M.API_VERSION
+        return M.response(200, "application/json; charset=utf-8", M.json(state))
     elseif path == "/song.html" then
         local q = req.query
         local html = ctx.song_html({

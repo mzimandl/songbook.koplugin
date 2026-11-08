@@ -13,6 +13,7 @@ local Jam = require("songbook/jam")
 local L10n = require("songbook/l10n")
 local Render = require("songbook/render")
 local Repo = require("songbook/repo")
+local Search = require("songbook/search")
 local Transpose = require("songbook/transpose")
 
 local ButtonDialog = require("ui/widget/buttondialog")
@@ -67,6 +68,8 @@ local DEFAULTS = {
 
 -- Song repository added on the first start (until then `servers` is unset).
 local DEFAULT_SERVER_URL = "https://github.com/mzimandl/songbook-library"
+-- Download all stops after this many failed songs in a row.
+local DOWNLOAD_MAX_FAILURES = 3
 
 -- KOReader makes a new plugin instance for every reader/file manager, so the
 -- jam server and following live here and work through the newest instance
@@ -94,16 +97,56 @@ local function read_file(path)
     return data
 end
 
+-- Metadata of song files by path: { stamp = "<mtime>:<size>", meta }. Lists
+-- (and the jam session's /index.json) read every song, which is slow on
+-- e-readers with hundreds of them. Module-level: it outlives plugin instances.
+local meta_cache = {}
+
+--- ChordPro.parse_meta() of the file at `path` ({} when it is missing), cached
+-- until the file changes. The table is shared: don't change it.
+local function song_meta(path)
+    local attr = lfs.attributes(path)
+    local stamp = type(attr) == "table" and attr.mode == "file"
+        and tostring(attr.modification) .. ":" .. tostring(attr.size) or nil
+    local hit = meta_cache[path]
+    if hit and stamp and hit.stamp == stamp then return hit.meta end
+    local meta = ChordPro.parse_meta(read_file(path) or "")
+    meta_cache[path] = stamp and { stamp = stamp, meta = meta } or nil
+    return meta
+end
+
+--- Write through a temporary file, so a failed or interrupted write (full
+-- disk, battery) leaves the old file as it was.
 local function write_file(path, data)
-    local f, err = io.open(path, "wb")
+    meta_cache[path] = nil   -- a rewrite within the same second keeps mtime and maybe size
+    local tmp = path .. ".part"
+    local f, err = io.open(tmp, "wb")
     if not f then return nil, err end
-    f:write(data)
-    f:close()
+    local ok, werr = f:write(data)
+    local closed, cerr = f:close()
+    if not ok or not closed then
+        os.remove(tmp)
+        return nil, werr or cerr
+    end
+    local renamed, rerr = os.rename(tmp, path)
+    if not renamed then
+        os.remove(tmp)
+        return nil, rerr
+    end
     return true
 end
 
 local function lower(s)
     return util.stringLower and util.stringLower(s) or s:lower()
+end
+
+-- Search ignores case and diacritics ("pisen" finds "Píseň").
+local function matches(song, query)
+    return Search.matches(song, query and Search.fold(query, lower), lower)
+end
+
+local function sort_songs(songs)
+    return Search.sort(songs, lower)
 end
 
 local function busy(text)
@@ -155,6 +198,7 @@ function Songbook:init()
     jam.owner = self
     hide_songs_from_history()
     self:migrate()
+    self:restorePlaylist()
     if self.settings:readSetting("servers") == nil then
         self:saveServers({ { key = Repo.server_key(DEFAULT_SERVER_URL), url = DEFAULT_SERVER_URL } })
     end
@@ -408,8 +452,6 @@ function Songbook:currentSongId()
     return doc and self:idFromRenderedPath(doc.file)
 end
 
---- Like currentSongId(), but nil for a song received while following a jam
--- session: those are not listed, so they can't be kept in favorites or collections.
 --- uid under which song `uid` is favorited or collected: own songs as they
 -- are; a followed song (jam/) as a song of the followed songbook's repository
 -- (its /index.json ids are Jam.song_id() too), where keepFollowedSong()
@@ -436,6 +478,8 @@ function Songbook:keepFollowedSong(uid)
     return kept
 end
 
+--- Like currentSongId(), but nil for a song received while following a jam
+-- session (jam/): its length and other per-song settings aren't kept.
 function Songbook:currentOwnSongId()
     local uid = self:currentSongId()
     if uid and split_uid(uid) ~= JAM_KEY then return uid end
@@ -631,7 +675,7 @@ end
 function Songbook:songDuration(uid)
     local own = self:getMap("duration")[uid]
     if own then return own end
-    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+    local meta = song_meta(self:songPath(uid))
     return ChordPro.duration(meta.duration)
 end
 
@@ -752,7 +796,7 @@ function Songbook:showDurationDialog(touchmenu_instance)
         if touchmenu_instance then touchmenu_instance:updateItems() end
     end
     local duration = self:songDuration(uid) or 180
-    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+    local meta = song_meta(self:songPath(uid))
     local file_duration = ChordPro.duration(meta.duration)
     UIManager:show(DoubleSpinWidget:new{
         title_text = _("Song length"),
@@ -889,7 +933,7 @@ function Songbook:listLocal()
     local function add(key, dir, name)
         local id = song_file_id(name)
         if not id then return end
-        local meta = ChordPro.parse_meta(read_file(dir .. "/" .. name) or "")
+        local meta = song_meta(dir .. "/" .. name)
         local uid = make_uid(key, id)
         table.insert(songs, { uid = uid, id = id, title = meta.title or id, artist = meta.artist,
                               key = meta.key, source = self:sourceName(uid) })
@@ -904,7 +948,7 @@ function Songbook:listLocal()
             add(nil, self.songs_dir, name)
         end
     end
-    table.sort(songs, function(a, b) return lower(a.title) < lower(b.title) end)
+    sort_songs(songs)
     return songs
 end
 
@@ -919,13 +963,6 @@ local function details(artist, source, status)
     if source and source ~= "" then parts[#parts + 1] = Render.truncate(source, MAX_SOURCE) end
     if status and status ~= "" then parts[#parts + 1] = status end
     return table.concat(parts, " · ")
-end
-
-local function matches(song, query)
-    if not query or query == "" then return true end
-    query = lower(query)
-    return lower(song.title):find(query, 1, true)
-        or (song.artist and lower(song.artist):find(query, 1, true))
 end
 
 --- Dialog with one button per action: { text, callback, enabled, row, short }.
@@ -1164,7 +1201,7 @@ end
 
 function Songbook:getCollections()
     local collections = self.settings:readSetting("collections") or {}
-    table.sort(collections, function(a, b) return lower(a.name) < lower(b.name) end)
+    table.sort(collections, function(a, b) return Search.fold(a.name, lower) < Search.fold(b.name, lower) end)
     return collections
 end
 
@@ -1514,7 +1551,10 @@ function Songbook:fetchIndex(server)
     UIManager:close(msg)
     if not body then return nil, T(_("Cannot load song list: %1"), err) end
     local songs, perr, name = Repo.parse_index(body, require("json").decode)
-    if not songs then return nil, perr end
+    if perr == Repo.ERR_NEWER then
+        return nil, _("This repository needs a newer version of the Songbook plugin.")
+    end
+    if not songs then return nil, T(_("Cannot load song list: %1"), perr) end
     if name ~= server.index_name then
         local servers = self:getServers()
         for _, s in ipairs(servers) do
@@ -1527,7 +1567,7 @@ function Songbook:fetchIndex(server)
         song.uid = make_uid(server.key, song.id)
         song.server = server
     end
-    table.sort(songs, function(a, b) return lower(a.title) < lower(b.title) end)
+    sort_songs(songs)
     return songs
 end
 
@@ -1617,7 +1657,7 @@ function Songbook:showOnlineSongs(servers)
     if #songs == 0 and #errors > 0 then return end
     local multi = #servers > 1
     if multi then
-        table.sort(songs, function(a, b) return lower(a.title) < lower(b.title) end)
+        sort_songs(songs)
     end
 
     local function status(song)
@@ -1700,12 +1740,22 @@ function Songbook:downloadSongs(songs)
     for _i, song in ipairs(songs) do
         if not self:isUpToDate(song) then table.insert(missing, song) end
     end
-    local done, failed = 0, 0
+    local done, failed, in_row = 0, 0, 0
     for i, song in ipairs(missing) do
         local msg = busy(T(_("Downloading %1 / %2…"), i, #missing))
-        local ok = self:download(song)
+        local ok, err = self:download(song)
         UIManager:close(msg)
-        if ok then done = done + 1 else failed = failed + 1 end
+        if ok then
+            done, in_row = done + 1, 0
+        else
+            failed, in_row = failed + 1, in_row + 1
+            -- the connection is gone: every further song would wait for its timeout
+            if in_row >= DOWNLOAD_MAX_FAILURES and i < #missing then
+                notify(T(_("Downloading stopped after %1 failures in a row (%2). Downloaded: %3, not downloaded: %4"),
+                    in_row, err, done, #missing - done))
+                return
+            end
+        end
     end
     notify(T(_("Downloaded: %1, up to date: %2, failed: %3"), done, #songs - #missing, failed))
 end
@@ -1989,7 +2039,7 @@ function Songbook:nowPlayingTitle()
     local uid = self:nowPlayingUid()
     if not uid then return nil end
     local _key, id = split_uid(uid)
-    return ChordPro.parse_meta(read_file(self:songPath(uid)) or "").title or id
+    return song_meta(self:songPath(uid)).title or id
 end
 
 function Songbook:onSongbookOpenNowPlaying()
@@ -2181,7 +2231,7 @@ function Songbook:fetchFollowedSongs()
     local body = Repo.fetch(jam.follow.url .. "index.json", FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
     local songs = body and Repo.parse_index(body, require("json").decode)
     if not songs then return nil end
-    table.sort(songs, function(a, b) return lower(a.title) < lower(b.title) end)
+    sort_songs(songs)
     return songs
 end
 
@@ -2408,7 +2458,9 @@ end
 -- songbook/jam.lua); songs that are only open are not shared.
 
 -- Address of the network interface used for outgoing traffic; connecting a UDP
--- socket sends nothing.
+-- socket sends nothing. Without a default route (a Wi-Fi without internet, e.g.
+-- a travel router) there is no such interface: then the address of a network
+-- interface, from KOReader's ffi/netinfo (getifaddrs; missing on older KOReaders).
 local function local_ip()
     local ok, ip = pcall(function()
         local udp = require("socket").udp()
@@ -2418,6 +2470,15 @@ local function local_ip()
         return addr
     end)
     if ok and ip and ip ~= "0.0.0.0" then return ip end
+    ok, ip = pcall(function()
+        local ni = require("ffi/netinfo"):new()
+        local got, ifaces = pcall(ni.retrieve, ni)
+        ni:free()
+        if not got then error(ifaces) end
+        return Discovery.pick_ip(ifaces)
+    end)
+    if ok then return ip end
+    logger.warn("Songbook: no local address", ip)
 end
 
 -- Kindle firewall rules for sharing on `port` (and answering searches) and for
@@ -2445,9 +2506,17 @@ local function search_rules()
 end
 
 -- Opens (op "-A") or closes ("-D") ports in the Kindle firewall (as httpinspector does).
+-- A rule is added only when missing (-C), so rules left by a crash aren't doubled
+-- and one -D removes it.
 local function kindle_firewall(op, rules)
     if not rules or not Device:isKindle() then return end
-    for _i, rule in ipairs(rules) do os.execute("iptables " .. op .. " " .. rule) end
+    for _i, rule in ipairs(rules) do
+        if op == "-A" then
+            os.execute("iptables -C " .. rule .. " 2>/dev/null || iptables -A " .. rule)
+        else
+            os.execute("iptables " .. op .. " " .. rule)
+        end
+    end
 end
 
 -- UIManager calls a ZMQ's waitEvent() about every 50 ms; it must return nil
@@ -2519,7 +2588,7 @@ function Songbook:jamState(peer_url)
     local state = { notation = self:get("notation"), name = self:deviceName(), peers = peers }
     if uid then
         local _key, id = split_uid(uid)
-        local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+        local meta = song_meta(self:songPath(uid))
         state.uid = uid
         state.rev = uid .. "@" .. self:renderSignature(uid)
         state.title = meta.title or id
@@ -2713,6 +2782,13 @@ function Songbook:followStep()
     local body = Repo.fetch(f.url .. "state.json" .. query, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
     local state = body and Jam.parse_state(body, require("json").decode)
     if not state then return self:followFailed() end
+    if state.api > Jam.API_VERSION then
+        self:stopFollowing()
+        UIManager:show(InfoMessage:new{
+            text = _("The other songbook has a newer version of the Songbook plugin. Update it here to follow it."),
+        })
+        return
+    end
     f.name, f.peers = state.name, state.peers
     if not state.uid or state.rev == f.rev then
         f.failures = 0
@@ -2768,7 +2844,11 @@ function Songbook:startFollowing(url)
             if uid and uid ~= current then self:deleteSong(uid) end
         end
     end
-    -- the followed songbook's playlist is used instead of ours
+    -- the followed songbook's playlist is used instead of ours, which is put
+    -- aside until following stops (also over a crash: see restorePlaylist())
+    if self.settings:readSetting("playlist_aside") == nil then
+        self:set("playlist_aside", self:getPlaylist())
+    end
     self:savePlaylist({})
     jam.follow = { url = url, failures = 0 }
     UIManager:preventStandby()
@@ -2782,6 +2862,16 @@ function Songbook:stopFollowing()
     UIManager:allowStandby()
     self:stopLibrary()
     jam.follow = nil
+    self:restorePlaylist()
+end
+
+--- Bring back our playlist put aside while following (startFollowing()).
+-- init() calls it too, for a KOReader that quit while following.
+function Songbook:restorePlaylist()
+    local p = self.settings:readSetting("playlist_aside")
+    if p == nil or jam.follow then return end
+    self.settings:delSetting("playlist_aside")
+    self:savePlaylist(p)
 end
 
 function Songbook:askFollowUrl(on_saved)
@@ -2960,7 +3050,7 @@ function Songbook:jamMenu()
                 if not self:isFollowing() then return _("Follow another songbook…") end
                 return T(_("Following %1"), follow_name())
             end,
-            help_text = _("Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. Your playlist is cleared and the other songbook's playlist is used instead. Not while sharing."),
+            help_text = _("Open the songs another device is playing, as they change, in the other player's key; you can still transpose them. The other songbook's playlist is used instead of yours, which comes back when you stop following. Not while sharing."),
             keep_menu_open = true,
             enabled_func = function() return not self:isJamRunning() end,
             checked_func = function() return self:isFollowing() end,
@@ -2970,21 +3060,12 @@ function Songbook:jamMenu()
                     touchmenu_instance:updateItems()
                     return
                 end
-                local function ask()
-                    NetworkMgr:runWhenConnected(function()
-                        self:findSongbooks(function(url)
-                            self:startFollowing(url)
-                            touchmenu_instance:updateItems()
-                        end)
+                NetworkMgr:runWhenConnected(function()
+                    self:findSongbooks(function(url)
+                        self:startFollowing(url)
+                        touchmenu_instance:updateItems()
                     end)
-                end
-                local p = self:getPlaylist()
-                if #p.queue + #p.history == 0 then return ask() end
-                UIManager:show(ConfirmBox:new{
-                    text = _("Following another songbook clears your playlist and uses theirs instead."),
-                    ok_text = _("Follow"),
-                    ok_callback = ask,
-                })
+                end)
             end,
         },
         {
@@ -3070,7 +3151,7 @@ function Songbook:songActions()
     local collectable = self:collectableUid(uid)
     if collectable then
         local _key, id = split_uid(uid)
-        local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+        local meta = song_meta(self:songPath(uid))
         local song = { uid = collectable, title = meta.title or id }
         local favorite = self:isFavorite(collectable)
         table.insert(actions, {
@@ -3140,7 +3221,7 @@ function Songbook:showSongDialog()
     local uid = self:currentSongId()
     if not uid then return end
     local _key, id = split_uid(uid)
-    local meta = ChordPro.parse_meta(read_file(self:songPath(uid)) or "")
+    local meta = song_meta(self:songPath(uid))
     local title = meta.title or id
     if meta.artist then title = title .. " – " .. meta.artist end
     show_actions(title, self:songActions())

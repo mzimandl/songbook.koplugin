@@ -6,6 +6,7 @@ local Transpose = require("songbook/transpose")
 local Render = require("songbook/render")
 local Jam = require("songbook/jam")
 local Discovery = require("songbook/discovery")
+local Search = require("songbook/search")
 
 local passed, failed = 0, 0
 local function eq(actual, expected, name)
@@ -203,6 +204,23 @@ eq(#idx, 2, "parse_index skips entries without file")
 eq(idx[1].id, "a-b", "parse_index id from file name")
 eq(idx[2].updated, "3", "parse_index updated as string")
 eq(select(2, Repo.parse_index("", function() error("bad") end)), "invalid index.json", "parse_index bad json")
+eq(#Repo.parse_index("", function() return { version = 1, songs = { { file = "a.cho" } } } end), 1, "parse_index version 1")
+eq(select(2, Repo.parse_index("", function() return { version = 2, songs = { { file = "a.cho" } } } end)), Repo.ERR_NEWER,
+    "parse_index newer version refused")
+
+-- Search ----------------------------------------------------------------------
+eq(Search.fold("Píseň ŽLUŤOUČKÝ kůň"), "pisen zlutoucky kun", "fold Czech")
+eq(Search.fold("Straße Łódź Ærø Șțœ"), "strasse lodz aero stoe", "fold other Latin letters")
+eq(Search.fold("Ёлка", function(s) return (s:gsub("Ё", "ё")) end), "ёлка", "fold leaves other scripts to lower")
+eq(Search.fold(nil), "", "fold nil")
+eq(Search.matches({ title = "Píseň", artist = "Lidová" }, "lidova"), true, "matches artist")
+eq(Search.matches({ title = "Píseň" }, "x"), false, "matches nothing")
+eq(Search.matches({ title = "Píseň" }, ""), true, "matches empty query")
+local sorted = {}
+for _i, s in ipairs(Search.sort({ { title = "Zima" }, { title = "Čert" }, { title = "ahoj" }, { title = "Dům" } })) do
+    sorted[#sorted + 1] = s.title
+end
+eq(table.concat(sorted, " "), "ahoj Čert Dům Zima", "sort without regard to case and diacritics")
 
 -- Jam server ------------------------------------------------------------------
 local req = Jam.parse_request("GET /song.html?t=-2&n=en&x=a%20b+c HTTP/1.1\r\nHost: x\r\n\r\n")
@@ -229,7 +247,7 @@ local ctx = {
 local function handle(target) return Jam.handle(Jam.parse_request("GET " .. target .. " HTTP/1.1\r\n\r\n"), ctx) end
 local resp = handle("/state.json")
 eq(resp:match("^HTTP/1.1 (%d+)"), "200", "jam state status")
-eq(resp:match("\r\n\r\n(.*)$"), '{"rev":"a/b@x","title":"Píseň","uid":"a/b"}', "jam state body")
+eq(resp:match("\r\n\r\n(.*)$"), '{"api":1,"rev":"a/b@x","title":"Píseň","uid":"a/b"}', "jam state body")
 eq(resp:match("Content%-Length: (%d+)"), tostring(#resp:match("\r\n\r\n(.*)$")), "jam content length in bytes")
 resp = handle("/song.html?t=30&n=xx&c=0&w=5")
 eq(resp:match("\r\n\r\n(.*)$"), "<html>song</html>", "jam song body")
@@ -291,6 +309,8 @@ eq(st.uid .. " " .. st.rev .. " " .. st.transpose, "r/x r/x@1 2", "jam parse sta
 st = Jam.parse_state("", decode_table({ notation = "cz" }))
 eq(st and st.uid, nil, "jam parse state without song")
 eq(Jam.parse_state("", function() error("bad") end), nil, "jam parse state bad json")
+eq(st.api, 1, "jam parse state without api: version 1")
+eq(Jam.parse_state("", decode_table({ api = 2 })).api, 2, "jam parse state api")
 eq(st.name == nil and #st.peers, 0, "jam parse state from older songbooks: no name, no peers")
 st = Jam.parse_state("", decode_table({ name = " Kobo\n", peers = {
     { url = "http://10.0.0.3:8765/", name = "Kindle" }, { url = "file:///etc/" }, "junk", { url = "http://[fe80::1]:80/" } } }))
@@ -319,12 +339,12 @@ local function phandle(target, ip)
     r.ip = ip
     return Jam.handle(r, pctx):match("\r\n\r\n(.*)$")
 end
-eq(phandle("/state.json?name=Eva&share=8770", "10.0.0.3"), '{"asked":"http://10.0.0.3:8770/"}', "jam state for a sharing guest")
+eq(phandle("/state.json?name=Eva&share=8770", "10.0.0.3"), '{"api":1,"asked":"http://10.0.0.3:8770/"}', "jam state for a sharing guest")
 eq(joined.url .. " " .. joined.name, "http://10.0.0.3:8770/ Eva", "jam guest joins with its name")
 joined = nil
-eq(phandle("/state.json", "10.0.0.3"), '{"asked":"-"}', "jam state for a guest not sharing")
+eq(phandle("/state.json", "10.0.0.3"), '{"api":1,"asked":"-"}', "jam state for a guest not sharing")
 eq(joined, nil, "jam guest without share port doesn't join")
-eq(phandle("/state.json?share=8770", nil), '{"asked":"-"}', "jam no join without the guest's address")
+eq(phandle("/state.json?share=8770", nil), '{"api":1,"asked":"-"}', "jam no join without the guest's address")
 eq(phandle("/queue/add?from=8770&uid=r%2Fx&by=Eva", "10.0.0.3"), '{"ok":true}', "jam request of a guest's song")
 eq(from, "http://10.0.0.3:8770/ r/x Eva", "jam guest's song fetched from the asking guest")
 from = nil
@@ -411,6 +431,12 @@ eq(Discovery.is_discover("DISCOVER 1"), false, "battleships discover ignored")
 eq(Render.width(Discovery.clean_name(string.rep("ž", 40))), Discovery.MAX_NAME, "name shortened by characters")
 eq(table.concat(Discovery.broadcasts("10.1.2.3"), ","), "255.255.255.255,10.1.2.255", "broadcasts")
 eq(table.concat(Discovery.broadcasts(nil), ","), "255.255.255.255", "broadcasts without our address")
+eq(Discovery.pick_ip({ { name = "eth0", ipv4 = "10.0.0.2" }, { name = "wlan0", ipv4 = "192.168.4.3 / 192.168.4.9", wireless = true } }),
+    "192.168.4.3", "pick_ip: wireless interface first")
+eq(Discovery.pick_ip({ { name = "usb0", ipv4 = "169.254.1.2" }, { name = "eth0", ipv4 = "10.0.0.2" } }), "10.0.0.2",
+    "pick_ip: no link-local address")
+eq(Discovery.pick_ip({ { name = "wlan0", wireless = true } }), nil, "pick_ip: no address")
+eq(Discovery.pick_ip(nil), nil, "pick_ip: no interfaces")
 eq(Discovery.url({ ip = "10.0.0.3", port = 8765 }), "http://10.0.0.3:8765/", "found songbook url")
 eq(Jam.normalize_url("10.0.0.3", 8765), Discovery.url({ ip = "10.0.0.3", port = 8765 }), "same url as typed")
 

@@ -1,10 +1,11 @@
 # KOReader Songbook
 - Repo root is the plugin folder (songbook.koplugin). Pure-Lua modules in songbook/ must not require KOReader modules (testable off-device); only main.lua and Repo.fetch() touch KOReader APIs. Verify API names against koreader/koreader source before using them.
-- LuaJIT 2.1 / Lua 5.1: no utf8 library; count characters with Render.width() / Render.truncate().
+- LuaJIT 2.1 / Lua 5.1: no utf8 library; count characters with Render.width() / Render.truncate(). Compare or sort titles through songbook/search.lua (Search.fold(): lowercase, no diacritics; main.lua passes util.stringLower as `lower`).
 - Tests: `luajit tests/run.lua` and `luajit tests/smoke.lua` must pass before finishing any change (`lua5.1` works too). smoke.lua stubs KOReader and finds items by id: menu_item(name) by `songbook_item` (give new top-level items one), playlist_entry(name), song_action(id).
 - Translations: main.lua's `_` (songbook/l10n.lua) looks up songbook/l10n/<lang>.lua first. Every new `_("…")` needs an entry in songbook/l10n/cs.lua (run.lua checks both ways); _meta.lua keeps its Czech inline.
 - Czech notation: H = B natural, B = B flat. Chords marked [*...] are never transposed.
-- Releases: bump `version` in _meta.lua for every change that should reach devices (ZenPM via mzimandl/koplugins, see the workspace CLAUDE.md).
+- Releases: bump `version` in _meta.lua for every change that should reach devices (ZenPM via mzimandl/koplugins, see the workspace CLAUDE.md), add it to CHANGELOG.md and tag the commit `v<version>`. ZenPM installs the master zip, so master is always releasable; `.gitattributes` keeps tests/, .github/ and CLAUDE.md out of it.
+- Compatibility (since 1.0): index.json `version` (Repo.INDEX_VERSION) and the jam `api` (Jam.API_VERSION, in /state.json; missing = 1) rise only for changes older plugins would misread; new optional fields keep them. A newer index is reported (Repo.ERR_NEWER), a follower stops following a newer API. Discovery.VERSION is the UDP protocol's.
 - Songs: ChordPro (.cho) from static servers (index.json + songs/); the default one is the separate repo mzimandl/songbook-library.
 
 ## Data model (main.lua)
@@ -30,9 +31,10 @@
 
 ## Playlist
 - Setting `playlist` = `{ now, history, queue }` (Now playing / Played / Up next), entries `{ uid, title, artist, by, at }`; `now` may be missing (older settings and hosts). Not tied to the jam session.
+- Following puts our playlist aside in `playlist_aside`; stopFollowing() and init() (after a quit while following) bring it back through restorePlaylist().
 - Opening a song only shows it. playSong() makes it the song now playing (Jam.play(): the previous one to history, the new one out of the queue) and opens it; finishPlaying() moves it to history. `play_on_open` makes openSong() play every song (not while following, not jam/ songs).
 - nowPlayingUid() (`now.uid`, or the followed jam/ song) is what the jam session shares, what autoscroll on open waits for and what the song button marks.
-- Guests add via /queue/add (at most Jam.MAX_QUEUE; local adds aren't limited). Following clears our playlist; the Playlist list then shows the host's /playlist.json read-only and its picker requests the host's songs. An open Playlist list refreshes through `jam.playlist_refresh`.
+- Guests add via /queue/add (at most Jam.MAX_QUEUE; local adds aren't limited). While following, the Playlist list shows the host's /playlist.json read-only and its picker requests the host's songs. An open Playlist list refreshes through `jam.playlist_refresh`.
 
 ## Autoscroll
 - Per reader instance (`self.autoscroll`), stopped in onCloseDocument()/onSuspend. Setting `autoscroll` starts it for the song now playing only (onReaderReady(), playSong()). Length = songDuration(uid).
@@ -53,3 +55,6 @@
 - Song lists open over the kept-open Songbook menu and over each other; each is registered with trackList(), and song callbacks call closeList(), which closes all of them and the menu.
 - TouchMenu items with `keep_menu_open` don't redraw by themselves: call `touchmenu_instance:updateItems()` (or replace `item_table` for `sub_item_table_func` submenus).
 - Jam.json() encodes an empty table as `[]` (lists may be empty; objects never are).
+- write_file() writes `<path>.part` and renames it, so a failed write keeps the old file; lists only match `.cho`/`.html` endings.
+- Read song metadata with song_meta(path) (module-level cache by mtime and size, cleared by write_file()), not ChordPro.parse_meta(read_file()); its table is shared, don't change it.
+- local_ip(): the default-route trick (UDP "connect" to 8.8.8.8), else Discovery.pick_ip() over ffi/netinfo (pcall: not in older KOReaders).

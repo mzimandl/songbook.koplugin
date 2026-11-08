@@ -1,0 +1,5 @@
+# Left out of the zip that ZenPM installs (GitHub's source archives honor export-ignore).
+/tests export-ignore
+/.github export-ignore
+/CLAUDE.md export-ignore
+/.gitattributes export-ignore
