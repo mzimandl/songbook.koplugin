@@ -7,7 +7,8 @@ Long lines wrap only at word boundaries, keeping every chord over its syllable.
 
 opts = {
   transpose     = 0,          -- semitones
-  notation      = "cz",       -- "cz" (H/B) or "en"
+  notation      = "cz",       -- shown notation: "cz" (H/B, Ami) or "en" (B/Bb, Am);
+                              -- songs are read in their {meta: notation}, else this one
   max_cols      = 42,         -- wrap width in characters
   show_chords   = true,       -- false = lyrics only
   repeat_chorus = false,      -- {chorus} replays the last chorus instead of a label
@@ -143,7 +144,8 @@ local function transpose_segments(segments, opts, flats)
     for i, seg in ipairs(segments) do
         local chord = seg.chord
         if chord and not seg.annotation then
-            chord = Transpose.chord(chord, opts.transpose, { notation = opts.notation, flats = flats })
+            chord = Transpose.chord(chord, opts.transpose,
+                { notation = opts.notation, from = opts.from, flats = flats })
         end
         out[i] = { chord = chord, text = seg.text }
     end
@@ -245,7 +247,8 @@ function M.html(song, opts)
     opts.labels = labels
 
     local meta = song.meta or {}
-    local flats = Transpose.key_prefers_flats(meta.key, opts.transpose, opts.notation)
+    opts.from = Transpose.song_notation(meta) or opts.notation
+    local flats = Transpose.key_prefers_flats(meta.key, opts.transpose, opts.from)
     local title = meta.title or opts.fallback_title or "?"
 
     local out = {}
@@ -270,7 +273,7 @@ function M.html(song, opts)
 
     local info = {}
     if meta.key and opts.show_chords then
-        local k = Transpose.key(meta.key, opts.transpose, { notation = opts.notation, flats = flats })
+        local k = Transpose.key(meta.key, opts.transpose, { notation = opts.notation, from = opts.from, flats = flats })
         info[#info + 1] = labels.key .. ": " .. k
     end
     if meta.capo and meta.capo ~= "" and meta.capo ~= "0" and opts.show_chords then

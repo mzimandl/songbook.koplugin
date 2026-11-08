@@ -5,7 +5,7 @@ the chords above the lyrics, change their key, let them scroll by themselves and
 play together with friends: their phones and readers show the song you play.
 
 - Songs from online song collections, at hand also offline; your own collections and favorites
-- Transposition to any key, Czech (H, B) or English chord names
+- Transposition to any key, Czech (H, B, Ami) or English (B, Bb, Am) chord names
 - Autoscroll timed by the song's length
 - Playlist for the evening: now playing, up next, played
 - Jam session over Wi-Fi: others follow your song on a phone or another reader

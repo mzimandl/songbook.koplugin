@@ -4,6 +4,12 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.2.0 – 2026-11-08
+
+- Chords are shown in the chosen notation also without transposing: Czech
+  H, B, Ami or English B, Bb, Am. A song tells its own notation with
+  `{meta: notation en}` (or `cz`); without it, it is read in the chosen one.
+
 ## 1.1.0 – 2026-11-08
 
 - My songs, Favorites and collections: ☰ → *Add to playlist* puts the listed

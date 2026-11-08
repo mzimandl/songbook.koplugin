@@ -187,6 +187,9 @@ function M.parse_meta(text)
         local name, value = parse_directive(line)
         if name and META_KEYS[name] and meta[name] == nil then
             meta[name] = value
+        elseif name == "meta" then
+            local k, v = value:match("^(%S+)%s+(.*)$")
+            if k and meta[k:lower()] == nil then meta[k:lower()] = trim(v) end
         end
     end
     return meta

@@ -59,8 +59,9 @@ function Songbook:showKeyDialog()
         return true
     end
     local text = read_file(self:songPath(uid)) or ""
-    local choices = Transpose.key_choices(ChordPro.parse_meta(text).key or ChordPro.first_chord(text),
-        self:get("notation"))
+    local meta = ChordPro.parse_meta(text)
+    local choices = Transpose.key_choices(meta.key or ChordPro.first_chord(text),
+        self:get("notation"), Transpose.song_notation(meta))
     local saved = self:getMap("transpose")[uid] or 0
     local dialog
     local function show(t)

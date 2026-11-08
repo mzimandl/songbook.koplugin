@@ -63,7 +63,8 @@ list; *Clear playlist* starts over.
   (private GitHub repositories) or remove (optionally with its songs). See
   [Song repositories](repositories.md).
 - **Songs folder**: shows where the songs are stored.
-- **Formatting**: chord names (Czech H, B = B♭, or English), show chords, repeat
+- **Formatting**: chord names (Czech H, B = B♭, Ami, or English B, Bb, Am;
+  songs are converted to it), show chords, repeat
   the chorus text where the song says `{chorus}`, line width (lower it if lines
   are cut off on the right).
 - **Scrolling**: continuous scroll mode, autoscroll when a song starts playing,

@@ -2,8 +2,12 @@
 Chord transposition (pure Lua 5.1 / LuaJIT).
 
 Notation:
-  "cz" (default) : H = B natural, B = B flat. Accepts Ami, Fis, Es, As, Cis...
-  "en"           : B = B natural, Bb = B flat (H still accepted as B natural).
+  "cz" (default) : H = B natural, B = B flat, minor "mi" (Ami). Accepts Fis, Es, As, Cis...
+  "en"           : B = B natural, Bb = B flat, minor "m" (Am); H still accepted as B natural.
+
+Chords are read in the song's notation (opts.from, default opts.notation) and
+written in opts.notation, also without a shift: the root (H <-> B, B <-> Bb)
+and the minor suffix (Ami <-> Am) are converted.
 
 Sharp vs flat spelling is chosen from the transposed song key when known,
 otherwise from the original chord's accidental, otherwise from the direction.
@@ -79,11 +83,11 @@ local function is_minor(suffix)
     return suffix:match("^m") ~= nil and suffix:match("^maj") == nil
 end
 
---- Decide flat spelling from the (original) song key and the shift.
+--- Decide flat spelling from the (original) song key, in the song's notation `from`, and the shift.
 -- Returns true/false, or nil when the key doesn't decide (C / Am, or unknown).
-function M.key_prefers_flats(key, n, notation)
+function M.key_prefers_flats(key, n, from)
     if not key or key == "" then return nil end
-    local semi, suffix = M.parse_note(key, notation)
+    local semi, suffix = M.parse_note(key, from)
     if not semi then return nil end
     local major = (semi + (n or 0) + (is_minor(suffix) and 3 or 0)) % 12
     if major == 0 then return nil end
@@ -91,10 +95,12 @@ function M.key_prefers_flats(key, n, notation)
 end
 
 local function transpose_note(s, n, opts)
-    local semi, rest, acc, style = M.parse_note(s, opts.notation)
+    local semi, rest, acc, style = M.parse_note(s, opts.from or opts.notation)
     if not semi then return nil end
     local flats = opts.flats
-    if flats == nil then
+    if n % 12 == 0 then
+        flats = acc ~= "sharp"        -- unshifted: keep the spelling (Czech B -> Bb)
+    elseif flats == nil then
         if acc == "flat" then flats = true
         elseif acc == "sharp" then flats = false
         else flats = n < 0 end
@@ -102,18 +108,38 @@ local function transpose_note(s, n, opts)
     return note_name(semi + n, flats, style, opts.notation), rest
 end
 
---- Transpose one chord symbol by n semitones.
--- opts = { notation = "cz"|"en", flats = true|false|nil }
+--- The notation a song declares with {meta: notation cz|en}, or nil.
+function M.song_notation(meta)
+    local v = meta and meta.notation and meta.notation:lower()
+    if v == "cz" or v == "en" then return v end
+end
+
+--- The chord suffix with its minor mark in `notation`: "mi" (cz) or "m" (en).
+-- "maj", "ma7" (major seventh) and "min" are left as they are.
+function M.suffix(rest, notation)
+    if notation == "en" then
+        if rest:match("^mi") and not rest:match("^min") then return "m" .. rest:sub(3) end
+    elseif rest:match("^m") and not rest:match("^maj") and not rest:match("^ma%d")
+            and not rest:match("^mi") then
+        return "mi" .. rest:sub(2)
+    end
+    return rest
+end
+
+--- Transpose one chord symbol by n semitones and write it in opts.notation.
+-- opts = { notation = "cz"|"en", from = notation of the song (default notation),
+--          flats = true|false|nil }
 -- Unparseable chords (N.C., x, %) are returned unchanged.
 function M.chord(chord, n, opts)
     opts = opts or {}
     n = n or 0
-    if n % 12 == 0 or not chord or chord == "" then return chord end
+    if not chord or chord == "" then return chord end
 
     local prefix, body = chord:match("^([^A-H]*)(.*)$")
     if prefix:match("%w") then return chord end   -- "N.C.", "x2", ...
     local root, rest = transpose_note(body, n, opts)
     if not root then return chord end
+    rest = M.suffix(rest, opts.notation)
 
     -- slash chord bass: "/H", "/F#" (but not "6/9")
     local before, bass = rest:match("^(.-)/([A-H].*)$")
@@ -131,17 +157,20 @@ function M.key(key, n, opts)
     return M.chord(key, n, opts)
 end
 
---- The 12 keys `key` can be transposed to, from C up: list of
+--- The 12 keys `key` (in notation `from`, default `notation`) can be transposed
+-- to, from C up, written in `notation`: list of
 -- { name = transposed key, shift = semitones in -5..6 }. nil for an unparseable key.
-function M.key_choices(key, notation)
-    local semi = key and M.parse_note(key, notation)
+function M.key_choices(key, notation, from)
+    from = from or notation
+    local semi = key and M.parse_note(key, from)
     if not semi then return nil end
     local choices = {}
     for target = 0, 11 do
         local n = (target - semi) % 12
         if n > 6 then n = n - 12 end
-        local flats = M.key_prefers_flats(key, n, notation)
-        choices[#choices + 1] = { name = M.key(key, n, { notation = notation, flats = flats }), shift = n }
+        local flats = M.key_prefers_flats(key, n, from)
+        choices[#choices + 1] = { name = M.key(key, n, { notation = notation, from = from, flats = flats }),
+            shift = n }
     end
     return choices
 end
