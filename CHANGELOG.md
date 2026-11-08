@@ -8,8 +8,9 @@ First stable release. From now on the formats below stay readable by later
 versions; settings of earlier installs are migrated.
 
 - **Songs**: ChordPro from static song repositories (GitHub or any web folder
-  with `index.json`), Songbook Library added on the first start; My songs,
-  favorites, collections, search; own `.cho` files in `koreader/songbook/songs/`.
+  with `index.json`; private GitHub ones with an access token), Songbook Library
+  added on the first start; My songs, favorites, collections, search; own `.cho`
+  files in `koreader/songbook/songs/`.
 - **Reading**: chords above the lyrics, transposition and choosing the key,
   Czech (H, B = B♭) or English notation, lyrics only, repeated chorus, scroll
   mode, song button with the song's options, autoscroll timed by the song's length.
@@ -18,6 +19,14 @@ versions; settings of earlier installs are migrated.
   readers on the Wi-Fi, guests' song requests, follow another songbook (found on
   the network or by address), guests share their own songs.
 - Czech translation; gestures for the main actions.
+
+## 0.7.0 – 2026-11-08
+
+- Private GitHub repositories, with an access token typed in the repository's
+  settings or loaded from `koreader/songbook/token.txt`.
+- The jam session's web page no longer shows an older song or key when answers
+  to its requests arrive out of order.
+- Licensed under AGPL-3.0-or-later, like KOReader.
 
 ## 0.6.5 – 2026-11-08
 

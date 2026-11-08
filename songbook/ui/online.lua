@@ -6,6 +6,7 @@ local C = require("songbook/ui/common")
 local Repo = require("songbook/repo")
 
 local ButtonDialog = require("ui/widget/buttondialog")
+local ConfirmBox = require("ui/widget/confirmbox")
 local InputDialog = require("ui/widget/inputdialog")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
@@ -15,6 +16,7 @@ local util = require("util")
 local Songbook = C.Songbook
 local _, T = C._, C.T
 local JAM_KEY = C.JAM_KEY
+local read_file = C.read_file
 local write_file = C.write_file
 local sort_songs = C.sort_songs
 local busy = C.busy
@@ -29,12 +31,37 @@ local DOWNLOAD_MAX_FAILURES = 3
 
 -- Browsing and downloading ----------------------------------------------------
 
+--- Why a GitHub repository refused a request with HTTP status `code`, or nil.
+local function access_hint(server, code)
+    if not Repo.github(server.url) then return nil end
+    local token = server.token
+    if code == 401 and token then
+        return _("The access token was refused: it may have expired. Set it again under Access token.")
+    elseif (code == 403 or code == 404) and token then
+        return _("Check the address, and that the token can read this repository's contents.")
+    elseif code == 404 then
+        return _("If the repository is private, set its access token under Access token.")
+    end
+end
+
+--- Fetch `path` of `server` (with its access token, see Repo.request()).
+-- Returns body or nil, error message, HTTP status code.
+local function fetch_from(server, path)
+    local url, headers = Repo.request(server.url, path, server.token)
+    return Repo.fetch(url, nil, nil, headers)
+end
+
 --- Load a server's index. Songs get `uid` and `server` fields.
+-- Returns songs or nil, error message, HTTP status code.
 function Songbook:fetchIndex(server)
     local msg = busy(T(_("Loading song list: %1…"), self:serverName(server)))
-    local body, err = Repo.fetch(Repo.join(Repo.base_url(server.url), "index.json"))
+    local body, err, code = fetch_from(server, "index.json")
     UIManager:close(msg)
-    if not body then return nil, T(_("Cannot load song list: %1"), err) end
+    if not body then
+        local text = T(_("Cannot load song list: %1"), err)
+        local hint = access_hint(server, code)
+        return nil, hint and text .. "\n\n" .. hint or text, code
+    end
     local songs, perr, name = Repo.parse_index(body, require("json").decode)
     if perr == Repo.ERR_NEWER then
         return nil, _("This repository needs a newer version of the Songbook plugin.")
@@ -67,7 +94,7 @@ function Songbook:isUpToDate(song)
 end
 
 function Songbook:download(song)
-    local body, err = Repo.fetch(Repo.join(Repo.base_url(song.server.url), song.file))
+    local body, err = fetch_from(song.server, song.file)
     if not body then return nil, err end
     util.makePath(self.songs_dir .. "/" .. song.server.key)
     local ok, werr = write_file(self:songPath(song.uid), body)
@@ -325,9 +352,19 @@ end
 function Songbook:loadServerName(key, done)
     NetworkMgr:runWhenOnline(function()
         local server = self:findServer(key)
-        if server then
-            local songs, err = self:fetchIndex(server)
-            if not songs then notify(err) end
+        local songs, err, code
+        if server then songs, err, code = self:fetchIndex(server) end
+        if server and not songs then
+            if code == 404 and Repo.github(server.url) and not server.token then
+                -- most likely a private repository
+                UIManager:show(ConfirmBox:new{
+                    text = err,
+                    ok_text = _("Access token…"),
+                    ok_callback = function() self:askServerToken(server, done) end,
+                })
+            else
+                notify(err)
+            end
         end
         done()
     end)
@@ -398,6 +435,11 @@ function Songbook:showServerActions(server, on_changed)
                 end) },
             },
             {
+                { text = server.token and _("Access token (set)…") or _("Access token…"),
+                  enabled = Repo.github(server.url) ~= nil,
+                  callback = close_then(function()
+                    self:askServerToken(server, on_changed)
+                end) },
                 { text = _("Remove"), callback = close_then(function()
                     self:askRemoveServer(server, on_changed)
                 end) },
@@ -405,6 +447,68 @@ function Songbook:showServerActions(server, on_changed)
         },
     }
     UIManager:show(dialog)
+end
+
+--- Where a token can be copied over USB (koreader/songbook/token.txt), to load
+-- it instead of typing it.
+function Songbook:tokenFile()
+    return self.data_dir .. "/token.txt"
+end
+
+--- A token as GitHub makes them (ghp_…, github_pat_…), or nil.
+local function clean_token(text)
+    local token = util.trim(text or ""):match("^%S+$")
+    return token and token:match("^[%w_]+$") and token or nil
+end
+
+--- Access token of a private GitHub repository: typed (hidden), loaded from
+-- tokenFile() (which is deleted then) or removed. The token is checked by
+-- loading the repository's index.
+function Songbook:askServerToken(server, on_changed)
+    local dialog
+    local function save(token)
+        UIManager:close(dialog)
+        self:updateServer(server.key, { token = token or false })
+        server.token = token
+        on_changed()
+        if token then self:loadServerName(server.key, on_changed) end
+    end
+    local file = self:tokenFile()
+    local has_file = lfs.attributes(file, "mode") == "file"
+    dialog = InputDialog:new{
+        title = _("Access token"),
+        description = T(_("For a private GitHub repository: a fine-grained personal access token (GitHub → Settings → Developer settings) with access to this repository only and the permission Contents: read-only.\n\nInstead of typing it, you can copy it into %1 and load it from there."), file),
+        input = "",
+        input_hint = server.token and _("Token is set; type a new one") or "github_pat_…",
+        text_type = "password",
+        buttons = {
+            {
+                { text = _("Load from file"), enabled = has_file, callback = function()
+                    local token = clean_token((read_file(file) or ""):match("[^\r\n]*"))
+                    if not token then
+                        UIManager:close(dialog)
+                        return notify(T(_("No token found in %1."), file))
+                    end
+                    os.remove(file)
+                    save(token)
+                end },
+                { text = _("Remove token"), enabled = server.token and true or false, callback = function() save(nil) end },
+            },
+            {
+                { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+                { text = _("Save"), is_enter_default = true, callback = function()
+                    local token = clean_token(dialog:getInputText())
+                    if not token then
+                        UIManager:close(dialog)
+                        return notify(_("That doesn't look like a GitHub token."))
+                    end
+                    save(token)
+                end },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
 end
 
 function Songbook:askServerName(server, on_changed)

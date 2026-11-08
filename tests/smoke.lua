@@ -147,10 +147,15 @@ local function udp_on(port)
 end
 stub("ltn12", { sink = { table = function(t) return t end } })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
-local requested, responses = {}, {}   -- responses[url] = body, or false for 404
+local requested, responses = {}, {}   -- responses[url] = body, false for 404 or an HTTP error code
+local last_request
 stub("socket.http", { request = function(req)
     table.insert(requested, req.url)
+    last_request = req
     if responses[req.url] == false then return 1, 404, {}, "HTTP/1.1 404 Not Found" end
+    if type(responses[req.url]) == "number" then
+        return 1, responses[req.url], {}, "HTTP/1.1 " .. responses[req.url] .. " Error"
+    end
     table.insert(req.sink, responses[req.url] or "{title: Downloaded}\n[Am]La")
     return 1, 200, {}, "HTTP/1.1 200 OK"
 end })
@@ -1070,8 +1075,59 @@ last_shown().buttons[1][2].callback()
 check(#tm.item_table == 4 and tm.item_table[3].text == "other/repo (dev)", "list refreshed after add")
 check(requested[#requested] == "https://raw.githubusercontent.com/other/repo/dev/index.json",
     "added repository's index loaded for its name")
-check(notes[#notes]:find("Cannot load song list", 1, true), "failed index reported")
+local not_found = last_shown()
+check(not_found.text:find("Cannot load song list", 1, true) and not_found.text:find("private", 1, true)
+    and not_found.ok_text == "Access token…", "missing GitHub index: offer an access token")
+check(last_request.headers.Authorization == nil and last_request.redirect ~= false, "no token, redirects followed")
 responses["https://raw.githubusercontent.com/other/repo/dev/index.json"] = nil
+-- private GitHub repository: the token goes to the GitHub API only
+local private = plugin:getServers()[#plugin:getServers()]
+local api = "https://api.github.com/repos/other/repo/contents/"
+responses[api .. "index.json?ref=dev"] = "private index"
+decoded["private index"] = { name = "Private songs", songs = {
+    { id = "p", title = "Soukromá", file = "songs/p q.cho" }, { id = "cdn", title = "CDN", file = "https://cdn.example/c.cho" } } }
+not_found.ok_callback()
+local token_dialog = last_shown()
+check(token_dialog.title == "Access token" and token_dialog.text_type == "password" and token_dialog.input == ""
+    and find_button(token_dialog, "Remove token").enabled == false, "token dialog: hidden input, nothing to remove")
+input_text = "not a token"
+find_button(token_dialog, "Save").callback()
+check(notes[#notes] == "That doesn't look like a GitHub token." and not private.token, "malformed token refused")
+plugin:askServerToken(private, function() end)
+input_text = " github_pat_ABC_123 "
+find_button(last_shown(), "Save").callback()
+check(settings_store.servers[#settings_store.servers].token == "github_pat_ABC_123", "token saved")
+check(requested[#requested] == api .. "index.json?ref=dev" and last_request.headers.Authorization == "Bearer github_pat_ABC_123"
+    and last_request.headers.Accept == "application/vnd.github.raw+json" and last_request.redirect == false,
+    "index loaded through the API with the token, no redirects")
+check(plugin:serverName(private) == "Private songs", "private repository named from its index")
+local private_songs = plugin:fetchIndex(private)
+local by_id = {}
+for _i, song in ipairs(private_songs) do by_id[song.id] = song end
+check(plugin:download(by_id.p) and requested[#requested] == api .. "songs/p%20q.cho?ref=dev"
+    and last_request.headers.Authorization == "Bearer github_pat_ABC_123", "song downloaded through the API")
+plugin:download(by_id.cdn)
+check(requested[#requested] == "https://cdn.example/c.cho" and last_request.headers.Authorization == nil,
+    "no token for a song at another address")
+responses[api .. "index.json?ref=dev"] = 401
+local _songs, refused = plugin:fetchIndex(private)
+check(refused:find("refused", 1, true), "refused token explained: " .. tostring(refused))
+responses[api .. "index.json?ref=dev"] = "private index"
+-- a token copied over USB is loaded and its file deleted
+local token_file = root .. "/songbook/token.txt"
+f = io.open(token_file, "w"); f:write("ghp_FromFile9\n"); f:close()
+plugin:askServerToken(private, function() end)
+find_button(last_shown(), "Load from file").callback()
+check(private.token == "ghp_FromFile9" and not io.open(token_file), "token loaded from file, file deleted")
+plugin:showServerActions(private, function() end)
+check(find_button(last_shown(), "Access token (set)…") ~= nil, "repository shows its token is set")
+plugin:askServerToken(private, function() end)
+find_button(last_shown(), "Remove token").callback()
+check(not settings_store.servers[#settings_store.servers].token, "token removed")
+plugin:showServerActions(plugin:getServers()[1], function() end)
+check(find_button(last_shown(), "Access token…").enabled == false, "no token for other servers")
+plugin:deleteSong(by_id.p.uid)
+plugin:deleteSong(by_id.cdn.uid)
 input_text = "https://example.com/named"
 responses["https://example.com/named/index.json"] = "named index"
 decoded["named index"] = { name = "Named songs", songs = {} }

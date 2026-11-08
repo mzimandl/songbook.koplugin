@@ -112,6 +112,22 @@ return {
     ["Cannot load song list: %1"] = "Seznam písní nelze načíst: %1",
     ["This repository needs a newer version of the Songbook plugin."] =
         "Tento repozitář potřebuje novější verzi pluginu Zpěvník.",
+    ["The access token was refused: it may have expired. Set it again under Access token."] =
+        "Přístupový token byl odmítnut, možná vypršel. Nastavte ho znovu v Přístupovém tokenu.",
+    ["Check the address, and that the token can read this repository's contents."] =
+        "Zkontrolujte adresu a to, že token smí číst obsah tohoto repozitáře.",
+    ["If the repository is private, set its access token under Access token."] =
+        "Pokud je repozitář soukromý, nastavte jeho přístupový token v Přístupovém tokenu.",
+    ["Access token…"] = "Přístupový token…",
+    ["Access token (set)…"] = "Přístupový token (nastaven)…",
+    ["Access token"] = "Přístupový token",
+    ["For a private GitHub repository: a fine-grained personal access token (GitHub → Settings → Developer settings) with access to this repository only and the permission Contents: read-only.\n\nInstead of typing it, you can copy it into %1 and load it from there."] =
+        "Pro soukromý repozitář na GitHubu: osobní přístupový token typu fine-grained (GitHub → Settings → Developer settings) s přístupem jen k tomuto repozitáři a oprávněním Contents: read-only.\n\nMísto psaní ho můžete zkopírovat do %1 a načíst odtud.",
+    ["Token is set; type a new one"] = "Token je nastaven; napište nový",
+    ["Load from file"] = "Načíst ze souboru",
+    ["No token found in %1."] = "V %1 není žádný token.",
+    ["Remove token"] = "Odebrat token",
+    ["That doesn't look like a GitHub token."] = "Tohle nevypadá jako token GitHubu.",
     ["All repositories"] = "Všechny repozitáře",
     ["saved"] = "staženo",
     ["update"] = "aktualizace",

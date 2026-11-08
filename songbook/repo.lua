@@ -12,8 +12,12 @@ index.json ("name" is optional, shown as the repository name):
                    "artist": "John Newton", "key": "G",
                    "file": "songs/amazing-grace.cho", "updated": "2026-10-31" } ] }
 
-Pure helpers (join, base_url, server_key, sanitize_id, parse_index) have no KOReader dependencies;
-fetch() uses KOReader's LuaSocket/LuaSec and is only called on-device.
+Private GitHub repositories are read through the GitHub REST API with an
+access token (request()); the token is sent only to api.github.com.
+
+Pure helpers (join, base_url, github, request, server_key, sanitize_id,
+parse_index) have no KOReader dependencies; fetch() uses KOReader's
+LuaSocket/LuaSec and is only called on-device.
 ]]
 
 local M = {}
@@ -51,6 +55,37 @@ function M.base_url(url)
     end
     if not ref then ref, sub = "HEAD", "" end
     return "https://raw.githubusercontent.com/" .. user .. "/" .. repo .. "/" .. ref .. sub .. "/"
+end
+
+--- The GitHub repository of a server URL (github.com or raw.githubusercontent.com):
+-- { owner, repo, ref ("HEAD" = default branch), path (folder, "" for the root) }, or nil.
+function M.github(url)
+    local owner, repo, ref, path = M.base_url(url):match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([^/]+)/?(.-)/*$")
+    if not owner then return nil end
+    return { owner = owner, repo = repo, ref = ref, path = path }
+end
+
+local function encode_path(path)
+    return (path:gsub("[^%w%-_%.~/]", function(c) return string.format("%%%02X", c:byte()) end))
+end
+
+--- URL and request headers (or nil) for `path` of the repository at `url`:
+-- a path relative to its folder ("index.json", "songs/x.cho") or a full URL.
+-- With an access `token`, a relative path of a GitHub repository goes to the
+-- REST API (contents endpoint, raw media type), which serves private
+-- repositories too; full URLs and other servers never get the token.
+function M.request(url, path, token)
+    local gh = token and token ~= "" and not path:match("^https?://") and M.github(url)
+    if not gh then return M.join(M.base_url(url), path), nil end
+    local file = path:gsub("^/+", "")
+    if gh.path ~= "" then file = gh.path .. "/" .. file end
+    local api = "https://api.github.com/repos/" .. gh.owner .. "/" .. gh.repo .. "/contents/" .. encode_path(file)
+    if gh.ref ~= "HEAD" then api = api .. "?ref=" .. encode_path(gh.ref) end
+    return api, {
+        ["Authorization"] = "Bearer " .. token,
+        ["Accept"] = "application/vnd.github.raw+json",
+        ["X-GitHub-Api-Version"] = "2022-11-28",
+    }
 end
 
 --- Short display name derived from a server URL ("user/repo", or host/path).
@@ -124,26 +159,32 @@ function M.parse_index(body, decode)
     return songs, nil, name
 end
 
---- HTTP GET. Returns body or nil, error message. On-device only.
--- Timeouts in seconds default to socketutil's LARGE ones.
-function M.fetch(url, block_timeout, total_timeout)
+--- HTTP GET. Returns body or nil, error message, HTTP status code (nil when
+-- there was no answer). On-device only.
+-- Timeouts in seconds default to socketutil's LARGE ones. `headers` (from
+-- request()) are added; a request with Authorization follows no redirects,
+-- as LuaSocket would send the token to the new address too.
+function M.fetch(url, block_timeout, total_timeout, headers)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
     local socket = require("socket")
     local socketutil = require("socketutil")
 
     local sink = {}
+    local all = { ["User-Agent"] = "KOReader-Songbook", ["Cache-Control"] = "no-cache" }
+    for k, v in pairs(headers or {}) do all[k] = v end
     socketutil:set_timeout(block_timeout or socketutil.LARGE_BLOCK_TIMEOUT,
         total_timeout or socketutil.LARGE_TOTAL_TIMEOUT)
     local code, _, status = socket.skip(1, http.request{
         url = url,
         method = "GET",
         sink = ltn12.sink.table(sink),
-        headers = { ["User-Agent"] = "KOReader-Songbook", ["Cache-Control"] = "no-cache" },
+        headers = all,
+        redirect = all["Authorization"] == nil,
     })
     socketutil:reset_timeout()
     if code ~= 200 then
-        return nil, tostring(status or code)
+        return nil, tostring(status or code), tonumber(code)
     end
     return table.concat(sink)
 end

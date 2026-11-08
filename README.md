@@ -30,6 +30,20 @@ repositories…* in the ☰ menu of Browse online). The address is either:
 - any URL of the folder with `index.json`, e.g. `https://raw.githubusercontent.com/<user>/<repo>/<branch>/`
   or a GitHub Pages address (not `https://github.com/<user>/<repo>/raw/…`).
 
+### Private GitHub repositories
+
+A private repository needs an access token: on GitHub, *Settings → Developer
+settings → Personal access tokens → Fine-grained tokens*, with access to that
+repository only and the permission *Contents: read-only*. In the plugin, tap the
+repository in *Song repositories* → *Access token…* and type it, or copy it into
+`koreader/songbook/token.txt` over USB and tap *Load from file* (the file is
+deleted then). Adding a private repository without a token offers this right away.
+
+The token is sent only to the GitHub API (`api.github.com`), never to other
+addresses. It is stored in plain text in `koreader/settings/songbook.lua`, so
+give it no more access than this. Songs from a private repository are songs on
+the device like the others: the jam session offers them to its guests too.
+
 The repository's name comes from `"name"` in `index.json` (from `songbook.json`
 in the song repo), else from the URL. `updated` in the index is a content hash,
 so a song is downloaded again only when its file changed.
@@ -130,7 +144,8 @@ that follows one with a newer API stops and asks to update the plugin.
 
 ## Settings
 
-- **Song repositories**: add, edit the URL, rename or remove (optionally with its songs).
+- **Song repositories**: add, edit the URL, rename, set an access token (private GitHub
+  repositories) or remove (optionally with its songs).
 - **Songs folder**: shows where songs are stored.
 - **Formatting**: chord notation (Czech H, B = B♭, or English), show chords,
   repeat chorus text (print the chorus where the song says `{chorus}`), line width
