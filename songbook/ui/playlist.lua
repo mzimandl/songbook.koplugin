@@ -542,8 +542,9 @@ function Songbook:savePlaylistAsCollection()
         local collections = self:getCollections()
         local c = self:findCollection(name, collections)
         for _i, e in ipairs(history) do
-            if lfs.attributes(self:songPath(e.uid), "mode") then c.songs[e.uid] = true end
+            if lfs.attributes(self:songPath(e.uid), "mode") then C.collection_set(c, e.uid, true) end
         end
+        c.sort = "added"   -- in the order they were played
         self:saveCollections(collections)
         notify(T(_("Saved %1 songs to \"%2\"."), count_keys(c.songs), name))
     end)

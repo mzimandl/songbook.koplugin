@@ -490,7 +490,7 @@ function Songbook:deleteSong(uid)
     self:setMapValue("favorites", uid, nil)
     self:setMapValue("duration", uid, nil)
     local collections = self:getCollections()
-    for _, c in ipairs(collections) do c.songs[uid] = nil end
+    for _, c in ipairs(collections) do C.collection_set(c, uid, false) end
     self:saveCollections(collections)
     self:removeStaleRenders(uid, nil)
 end

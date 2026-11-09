@@ -4,6 +4,13 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.2 – 2026-11-09
+
+- Collections can list their songs in the order they were added: ☰ → *Sort
+  by order added* (or back *by title*), kept per collection; *Add to
+  playlist* follows it. Played songs saved as a collection keep the order they
+  were played in. Songs added before this version sort first, by title.
+
 ## 1.3.0-beta.1 – 2026-11-09
 
 - Chords stay over their syllables in any font: each chord and its syllable

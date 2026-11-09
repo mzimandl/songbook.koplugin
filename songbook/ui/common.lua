@@ -127,6 +127,16 @@ local function sort_songs(songs)
     return Search.sort(songs, lower)
 end
 
+--- Put `uid` into collection table `c` (at the end of its order) or take it out.
+local function collection_set(c, uid, on)
+    c.order = c.order or {}
+    for i = #c.order, 1, -1 do
+        if c.order[i] == uid then table.remove(c.order, i) end
+    end
+    if on then table.insert(c.order, uid) end
+    c.songs[uid] = on and true or nil
+end
+
 local function busy(text)
     local msg = InfoMessage:new{ text = text }
     UIManager:show(msg)
@@ -259,6 +269,7 @@ return {
     lower = lower,
     matches = matches,
     sort_songs = sort_songs,
+    collection_set = collection_set,
     busy = busy,
     notify = notify,
     split_uid = split_uid,

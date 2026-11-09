@@ -480,10 +480,42 @@ plugin:setInCollection("Set", "test", true)
 plugin:showCollection("Set")
 local set_list = last_shown()
 set_list:onLeftButtonTap()
-check(last_shown().buttons[1][1].text == "Add songs…" and last_shown().buttons[2][1].text == "Add to playlist (1)",
-    "collection menu: Add songs… and Add to playlist")
-last_shown().buttons[2][1].callback()
+check(last_shown().buttons[1][1].text == "Add songs…" and last_shown().buttons[2][1].text == "Sort by order added"
+    and last_shown().buttons[3][1].text == "Add to playlist (1)", "collection menu: Add songs…, sort and Add to playlist")
+last_shown().buttons[3][1].callback()
 check(#plugin:getPlaylist().queue == 1 and plugin:getPlaylist().queue[1].uid == "test", "collection added to the playlist")
+plugin:savePlaylist({})
+plugin:closeList()
+-- sorting: by title, or in the order the songs were added
+plugin:setInCollection("Set", "druha", true)
+local function set_order()
+    plugin:showCollection("Set")
+    local list = last_shown()
+    local uids = {}
+    for _i, item in ipairs(list.item_table) do if item.song then uids[#uids + 1] = item.song.uid end end
+    return table.concat(uids, ","), list
+end
+check(set_order() == "druha,test", "collection sorted by title")
+local _o, set_list2 = set_order()
+list_action(set_list2, "Sort by order added").callback()
+check(plugin:findCollection("Set").sort == "added" and set_order() == "test,druha", "collection in the order added")
+_o, set_list2 = set_order()
+check(list_action(set_list2, "Sort by title") ~= nil, "the action switches back to titles")
+list_action(set_list2, "Add to playlist (2)").callback()
+queue = plugin:getPlaylist().queue
+check(queue[1].uid == "test" and queue[2].uid == "druha", "collection goes to the playlist in its order")
+plugin:savePlaylist({})
+plugin:setInCollection("Set", "test", false)
+plugin:setInCollection("Set", "test", true)
+check(set_order() == "druha,test" and table.concat(plugin:findCollection("Set").order, ",") == "druha,test",
+    "a song added again goes to the end")
+do  -- songs added by an older version (in `songs`, not in `order`) come first
+    local collections = plugin:getCollections()
+    plugin:findCollection("Set", collections).order = { "druha" }
+    plugin:saveCollections(collections)
+end
+check(set_order() == "test,druha", "songs missing from the order come first")
+plugin:closeList()
 plugin:onSongbookShowFavorites()
 check(list_action(last_shown(), "All in the playlist") ~= nil, "favorites have the action too")
 plugin:closeList()
@@ -607,6 +639,8 @@ pl_menu:onLeftButtonTap()
 find_button(last_shown(), "Save played songs as collection…").callback()
 find_button(last_shown(), "Save").callback()
 check(plugin:isInCollection("Jam test", "test"), "played songs saved as collection")
+check(plugin:findCollection("Jam test").sort == "added" and plugin:findCollection("Jam test").order[1] == "test",
+    "played songs keep the order they were played in")
 pl_menu:onLeftButtonTap()
 find_button(last_shown(), "Clear playlist").callback()
 last_shown().ok_callback()

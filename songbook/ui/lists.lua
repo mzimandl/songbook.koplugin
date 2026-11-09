@@ -184,8 +184,9 @@ end
 -- empty = { text, help, action } for an empty list: `text` is shown in it,
 -- `help` once as a message, `action` (see showList()) below the text.
 -- on_close as in showList(); last: see song_lists.last; collection: name of the
--- collection the list shows (its songs can be removed from it).
-function Songbook:showLocal(title, filter, empty, on_close, last, collection)
+-- collection the list shows (its songs can be removed from it); arrange(songs):
+-- optional, sorts the filtered songs (by title already) another way and returns them.
+function Songbook:showLocal(title, filter, empty, on_close, last, collection, arrange)
     local function load()
         local songs = self:listLocal()
         if not filter then return songs end
@@ -193,7 +194,7 @@ function Songbook:showLocal(title, filter, empty, on_close, last, collection)
         for _i, song in ipairs(songs) do
             if filter(song) then table.insert(out, song) end
         end
-        return out
+        return arrange and arrange(out) or out
     end
     -- the first build reuses this list; refreshes read the folder again
     local first = load()
@@ -246,6 +247,7 @@ function Songbook:showLocal(title, filter, empty, on_close, last, collection)
         if collection then
             table.insert(actions, 1, { text = _("Add songs…"),
                 callback = function() self:showCollectionPicker(collection, refresh) end })
+            table.insert(actions, 2, self:collectionSortAction(collection, refresh))
         end
         return actions
     end, { last = last, empty = empty })

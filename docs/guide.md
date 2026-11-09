@@ -21,10 +21,13 @@ collections, playlist, *Play now*, download again or delete.
 - **Collections**: your own song lists (*Campfire*, *Christmas*…), with songs from
   any repository. *New collection…*; in a collection *Add songs…* (tap to add or
   remove); long-press a collection to rename or delete it (its songs stay).
+  A collection lists its songs by title; ☰ → *Sort by order added* keeps them in
+  the order you added them (songs added again go to the end), ☰ → *Sort by
+  title* switches back. Each collection remembers its own choice.
 
 In My songs, Favorites and a collection, ☰ → *Add to playlist* puts the listed
-songs into *Up next* (after a search only those found; songs already in the
-playlist are skipped).
+songs into *Up next* in the list's order (after a search only those found;
+songs already in the playlist are skipped).
 
 ## The open song
 
@@ -55,7 +58,7 @@ In the playlist: *Add songs…* (tap to add or remove; a whole list of songs com
 from ☰ → *Add to playlist* in My songs, Favorites or a collection), tap a song of Up next to
 play it, long-press it to *Play next* or remove it, long-press a played song to
 queue it again. ☰ → *Save played songs as collection…* keeps the evening's set
-list; *Clear playlist* starts over.
+list (sorted in the order played); *Clear playlist* starts over.
 
 ## Settings
 

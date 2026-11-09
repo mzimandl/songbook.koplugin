@@ -19,11 +19,52 @@ local details = C.details
 local show_actions = C.show_actions
 local list_menu = C.list_menu
 local count_keys = C.count_keys
+local collection_set = C.collection_set
 
 -- Collections -------------------------------------------------------------------
 --
--- Named song lists made on the device: { { name = "...", songs = { [uid] = true } } }.
--- Names are unique, so they identify a collection.
+-- Named song lists made on the device:
+--   { { name = "...", songs = { [uid] = true }, order = { uid, ... }, sort = "added" }, ... }
+-- Names are unique, so they identify a collection. `songs` says what is in it
+-- (as in 1.2 and older, which keep reading it); `order` lists the songs in the
+-- order they were added and may miss songs added by older versions or keep
+-- removed ones, so it is only used for sorting. `sort` = "added" lists the songs
+-- in that order, otherwise (nil) by title.
+
+
+--- Sort `songs` (song tables with `uid`, sorted by title) for collection `c`:
+-- in place, by c.sort. Songs missing from c.order come first, by title.
+function Songbook:sortCollectionSongs(c, songs)
+    if c.sort ~= "added" then return songs end
+    local rank = {}
+    for i, uid in ipairs(c.order or {}) do rank[uid] = i end
+    local by_title = {}
+    for i, song in ipairs(songs) do by_title[song] = i end
+    table.sort(songs, function(a, b)
+        local ra, rb = rank[a.uid] or 0, rank[b.uid] or 0
+        if ra ~= rb then return ra < rb end
+        return by_title[a] < by_title[b]
+    end)
+    return songs
+end
+
+--- ☰ action of a collection's list: switch its sort between title and order added.
+function Songbook:collectionSortAction(name, refresh)
+    local c = self:findCollection(name)
+    local added = c and c.sort == "added"
+    return {
+        text = added and _("Sort by title") or _("Sort by order added"),
+        enabled = c ~= nil,
+        callback = function()
+            local collections = self:getCollections()
+            local found = self:findCollection(name, collections)
+            if not found then return end
+            found.sort = not added and "added" or nil
+            self:saveCollections(collections)
+            refresh()
+        end,
+    }
+end
 
 function Songbook:getCollections()
     local collections = self.settings:readSetting("collections") or {}
@@ -80,7 +121,7 @@ function Songbook:setInCollection(name, uid, on)
     local collections = self:getCollections()
     local c = self:findCollection(name, collections)
     if not c then return end
-    c.songs[uid] = on and true or nil
+    collection_set(c, uid, on)
     self:saveCollections(collections)
 end
 
@@ -222,7 +263,10 @@ function Songbook:showCollection(name, on_close)
         text = _("This collection is empty"),
         help = _("Long-press a song in a list and choose \"Collections…\", or use the song button while a song is open."),
         action = { text = _("Add songs…"), callback = function(refresh) self:showCollectionPicker(name, refresh) end },
-    }, on_close, { kind = "collection", arg = name }, name)
+    }, on_close, { kind = "collection", arg = name }, name, function(songs)
+        local c = self:findCollection(name)
+        return c and self:sortCollectionSongs(c, songs) or songs
+    end)
 end
 
 --- Songs on the device to put into collection `name`: a tap adds or removes

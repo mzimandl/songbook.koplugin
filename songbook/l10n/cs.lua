@@ -103,6 +103,8 @@ return {
     ["This collection is empty"] = "Kolekce je prázdná",
     ["Long-press a song in a list and choose \"Collections…\", or use the song button while a song is open."] =
         "Podržte píseň v seznamu a zvolte „Kolekce…“, nebo použijte tlačítko písně při otevřené písni.",
+    ["Sort by title"] = "Řadit podle názvu",
+    ["Sort by order added"] = "Řadit podle přidání",
     ["Add songs…"] = "Přidat písně…",
     ["Add to \"%1\""] = "Přidat do „%1“",
     ["Remove from \"%1\""] = "Odebrat z „%1“",

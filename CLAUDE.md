@@ -14,7 +14,7 @@
 ## Data model
 - Setting `servers` = list of `{ key, url, name, index_name, token }`. `token` (optional; false = removed) is a GitHub access token for private repositories: Repo.request() turns paths into GitHub API requests with it, only for relative paths of a GitHub URL (never full URLs in index.json, other hosts or jam servers), and Repo.fetch() follows no redirects with it. Never show it, log it or serve it in the jam session. `key` (Repo.server_key(), made once) is the folder name and never changes. While `servers` is unset (first start) init() adds DEFAULT_SERVER_URL; an emptied list stays empty.
 - A song's uid: `"<key>/<id>"` (`songs/<key>/<id>.cho`) or `"<id>"` for .cho files copied into `songs/`. Rendered: `rendered/<uid with / → ~>@<options>.html`.
-- Per-song maps keyed by uid: `downloaded`, `transpose`, `favorites`, `duration` (seconds, overrides `{duration}`); `collections` = list of `{ name, songs = { [uid] = true } }` (unique names). deleteSong() must clean all of them (not the playlist).
+- Per-song maps keyed by uid: `downloaded`, `transpose`, `favorites`, `duration` (seconds, overrides `{duration}`); `collections` = list of `{ name, songs = { [uid] = true }, order = { uid, ... }, sort = "added"|nil }` (unique names). `songs` is what is in it (1.2 and older read only it and keep it `true`); `order` (addition order, may miss songs added by older versions or keep removed ones) only sorts, when `sort` = "added" (sortCollectionSongs()). Change membership through collection_set() (common.lua). deleteSong() must clean all of them (not the playlist).
 - Rendered songs stay out of KOReader's history: init() wraps ReadHistory addItem()/updateLastBookTime() (hide_songs_from_history()), so "lastfile" stays the last book.
 
 ## Migrations
