@@ -231,7 +231,6 @@ function Songbook:jamSongHtml(opts)
         transpose = Jam.add_semitones(self:getMap("transpose")[uid], opts.shift),
         notation = opts.notation,
         show_chords = opts.show_chords,
-        max_cols = opts.max_cols,
         web = true,
     }))
 end

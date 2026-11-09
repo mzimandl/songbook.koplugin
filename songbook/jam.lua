@@ -5,7 +5,7 @@ Jam session web server: request parsing, routing and the guest web page
 ctx = {
   state     = function(peer_url) -> { uid=, rev=, title=, artist=, notation=, name=, peers= }
               (uid nil = no song; peers = { { url=, name= } } without the asking peer_url)
-  song_html = function(opts) -> html or nil      -- opts = { shift=, notation=, show_chords=, max_cols= }
+  song_html = function(opts) -> html or nil      -- opts = { shift=, notation=, show_chords= }
   song_cho  = function() -> ChordPro text or nil
   songs     = function() -> list of { uid=, title=, artist=, key=, updated= } (all songs on the device)
   song_file = function(uid) -> ChordPro text or nil
@@ -277,8 +277,7 @@ button.on { background: #8883; }
 #t { min-width: 2em; text-align: center; }
 #status { margin-left: auto; font-size: 0.85em; opacity: 0.7; }
 #song, #list { margin: 0.8em; }
-#song pre { font-size: var(--fs, 16px); }
-#probe { position: absolute; visibility: hidden; }
+#song .l, #song .ly, #song pre { font-size: var(--fs, 16px); }
 #list h2 { font-size: 1.1em; margin: 1em 0 0.3em 0; }
 #list ul { list-style: none; padding: 0; margin: 0; }
 #list li { padding: 0.35em 0; border-bottom: 1px solid #8882; display: flex; gap: 0.5em; align-items: baseline; }
@@ -304,7 +303,6 @@ button.on { background: #8883; }
 <p id="msg"></p><ul id="songs"></ul>
 <h2 id="h_history"></h2><ul id="history"></ul>
 </div>
-<pre id="probe">0000000000</pre>
 <script>
 var L = %s;
 var P = { t: 0, n: "", c: 1, fs: 16, by: "" };
@@ -321,12 +319,6 @@ function el(tag, text, cls) {
   if (cls) e.className = cls;
   return e;
 }
-function cols() {
-  var probe = $("probe");
-  probe.style.fontSize = P.fs + "px";
-  var w = probe.getBoundingClientRect().width / 10;
-  return Math.max(16, Math.floor(($("song").clientWidth - 4) / w));
-}
 function bar() {
   $("t").textContent = P.t > 0 ? "+" + P.t : String(P.t);
   $("nota").textContent = (P.n || host_notation) == "cz" ? "H" : "B";
@@ -341,7 +333,7 @@ function load(scroll) {
   if (!uid) return;
   var seq = ++song_seq;
   scroll_up = scroll_up || scroll;   // a newer request still scrolls a new song to the top
-  var url = "/song.html?t=" + P.t + "&n=" + (P.n || host_notation) + "&c=" + P.c + "&w=" + cols()
+  var url = "/song.html?t=" + P.t + "&n=" + (P.n || host_notation) + "&c=" + P.c
     + "&rev=" + encodeURIComponent(rev);
   fetch(url, { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (html) {
     if (seq !== song_seq) return;
@@ -569,7 +561,6 @@ function M.handle(req, ctx)
             shift = int_param(q.t, -11, 11) or 0,
             notation = (q.n == "cz" or q.n == "en") and q.n or nil,
             show_chords = q.c ~= "0",
-            max_cols = int_param(q.w, 16, 160),
         })
         if not html then return M.response(404, "text/plain", "No song is being played") end
         return M.response(200, "text/html; charset=utf-8", html)

@@ -39,7 +39,6 @@ local Songbook = WidgetContainer:extend{
 
 local DEFAULTS = {
     notation = "cz",
-    max_cols = 42,
     show_chords = true,
     repeat_chorus = false,
     jam_port = 8765,

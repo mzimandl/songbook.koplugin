@@ -64,6 +64,15 @@ marks export-ignore: tests, docs, workflows) and the version's CHANGELOG section
 as notes. The README's download button points to the latest release's zip. For a
 tag pushed earlier, run the workflow by hand (Actions → Release → Run workflow).
 
-The development version is also available through ZenPM from
-[koplugins](https://github.com/mzimandl/koplugins), which installs the master
-branch; its workflow copies the version into its manifest.
+Releases also reach readers through ZenPM from
+[koplugins](https://github.com/mzimandl/koplugins): the *Release* workflow asks
+it to sync, and it lists every release in its manifest.
+
+### Betas
+
+Betas are built on the `beta` branch with a pre-release version such as
+`1.3.0-beta.1` (in `_meta.lua`, a CHANGELOG section `## 1.3.0-beta.1 – <date>`
+and the tag `v1.3.0-beta.1`). The tag makes a GitHub pre-release: the README's
+download button skips it, and ZenPM offers it only to readers with **Beta
+updates** on in its settings. The final version merges `beta` into `master`
+and is tagged as usual (`v1.3.0`).

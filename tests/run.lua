@@ -163,29 +163,32 @@ eq(Render.html(ChordPro.parse("{title: A}\n{tempo: 90}\n{duration: 245}\n[C]x"),
     true, "length in the header")
 
 -- Layout ------------------------------------------------------------------
-local function rows(line, cols)
-    return Render.layout_line(ChordPro.parse_lyrics(line), cols)
+local function words(line)
+    local out = {}
+    for _i, w in ipairs(Render.words(ChordPro.parse_lyrics(line))) do
+        local cells = {}
+        for _j, c in ipairs(w.cells) do cells[#cells + 1] = (c.chord and "[" .. c.chord .. "]" or "") .. c.text end
+        out[#out + 1] = table.concat(cells, "|")
+    end
+    return table.concat(out, " ")
 end
-local r = rows("[Ami]Ahoj [G]světe")
-eq(r[1].chords, "Ami  G", "chords aligned (utf8)")
-eq(r[1].lyrics, "Ahoj světe", "lyrics")
-r = rows("Žlu[Ami]ťou[Dmaj7]čký")
-eq(r[1].chords, "   Ami Dmaj7", "utf8 alignment with diacritics")
-eq(r[1].lyrics, "Žluťou-čký", "mid-word hyphen padding")
-r = rows("[C][G][Ami]")
-eq(r[1].chords, "C G Ami", "chord-only line")
-eq(r[1].lyrics, "", "chord-only line has no lyrics")
-r = rows("[C]jedna dva [G]tři čtyři [Ami]pět šest sedm", 12)
-eq(#r, 4, "wrap into 4 rows")
-eq(r[1].lyrics, "jedna dva", "wrap row 1")
-eq(r[2].chords, "G", "wrap row 2 chord at col 0")
-eq(r[2].lyrics, "tři čtyři", "wrap row 2")
-eq(r[3].chords, "Ami", "wrap row 3 chord")
-eq(r[3].lyrics, "pět šest", "wrap row 3")
-eq(r[4].lyrics, "sedm", "wrap row 4")
-for i, row in ipairs(r) do
-    eq(math.max(Render.width(row.chords), Render.width(row.lyrics)) <= 12, true, "row " .. i .. " fits")
-end
+eq(words("[Ami]Ahoj [G]světe"), "[Ami]Ahoj [G]světe", "words with chords")
+eq(words("Žlu[Ami]ťou[Dmaj7]čký kůň"), "Žlu|[Ami]ťou|[Dmaj7]čký kůň", "syllables stay one word")
+eq(words("[C][G][Ami]"), "[C]|[G]|[Ami]", "stacked chords on one spot")
+eq(words("slovo[G] [D] slovo"), "slovo [G] [D] slovo", "chords between words are words")
+eq(words("  [C]jedna  dva "), "[C]jedna dva", "spaces collapse")
+eq(words("bez akordů"), "bez akordů", "plain words")
+local line = Render.html(ChordPro.parse("Žlu[Ami]ťou[D]čký kůň [G]běží"), {})
+eq(line:find('<p class="l">Žlu', 1, true) == nil, true, "a word with chords is one block")
+eq(line:find('<span class="w"><span class="s"><span class="c">&#160;</span><span class="t">Žlu</span></span>'
+    .. '<span class="s"><span class="c">Ami</span><span class="t">ťou</span></span>', 1, true) ~= nil, true,
+    "syllables stacked under chords")
+eq(line:find('</span></span> kůň <span class="s"><span class="c">G</span><span class="t">běží</span></span></p>', 1, true) ~= nil,
+    true, "plain word between blocks")
+eq(Render.html(ChordPro.parse("[C]"), {}):find('<span class="t">&#160;</span>', 1, true) ~= nil, true,
+    "chord without text keeps the lyrics row")
+eq(Render.html(ChordPro.parse("{sot}\ne|--0--|\n{eot}"), {}):find("<pre>e|--0--|</pre>", 1, true) ~= nil, true,
+    "tab lines stay monospace")
 eq(Render.width("žluťoučký"), 9, "utf8 width")
 eq(Render.truncate("Krátké", 6), "Krátké", "truncate fits")
 eq(Render.truncate("Žluťoučký kůň", 6), "Žluťo…", "truncate utf8 with ellipsis")
@@ -197,7 +200,8 @@ local html = Render.html(song, { transpose = 2, notation = "cz" })
 eq(html:find("<h1>Testovací píseň</h1>", 1, true) ~= nil, true, "html title")
 eq(html:find("Key: Hmi", 1, true) ~= nil, true, "html transposed key")
 eq(html:find("Transposed +2", 1, true) ~= nil, true, "html transposed note")
-eq(html:find('<span class="c">Hmi  A', 1, true) ~= nil, true, "html chord row transposed")
+eq(html:find('<span class="c">Hmi</span>', 1, true) ~= nil and html:find('<span class="c">A</span>', 1, true) ~= nil,
+    true, "html chords transposed")
 eq(html:find('<div class="chorus">', 1, true) ~= nil, true, "html chorus")
 local html2 = Render.html(song, { repeat_chorus = true })
 local _, n = html2:gsub('<div class="chorus">', "")
@@ -310,9 +314,8 @@ eq(resp:match("\r\n\r\n(.*)$"), "<html>song</html>", "jam song body")
 eq(got.shift, 11, "jam song shift clamped")
 eq(got.notation, nil, "jam song bad notation ignored")
 eq(got.show_chords, false, "jam song chords off")
-eq(got.max_cols, 16, "jam song width clamped")
 handle("/song.html")
-eq(got.shift .. tostring(got.show_chords) .. tostring(got.max_cols), "0truenil", "jam song defaults")
+eq(got.shift .. tostring(got.show_chords), "0true", "jam song defaults")
 eq(handle("/song.cho"):match("^HTTP/1.1 (%d+)"), "404", "jam no song source")
 eq(handle("/nothing"):match("^HTTP/1.1 (%d+)"), "404", "jam unknown path")
 eq(Jam.handle(Jam.parse_request("POST / HTTP/1.1\r\n\r\n"), ctx):match("^HTTP/1.1 (%d+)"), "405", "jam only GET")

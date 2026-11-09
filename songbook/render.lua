@@ -1,18 +1,16 @@
 --[[--
 Song table -> HTML renderer (pure Lua 5.1 / LuaJIT).
 
-Chords are placed above lyrics in a monospace <pre>. Alignment is computed in
-UTF-8 characters (Lua's # counts bytes, which would break "ř", "č", ...).
-Long lines wrap only at word boundaries, keeping every chord over its syllable.
+Each chord is stacked over its syllable in an inline block (see line_html()),
+so chords stay aligned in any font and long lines wrap between words.
 
 opts = {
   transpose     = 0,          -- semitones
   notation      = "cz",       -- shown notation: "cz" (H/B, Ami) or "en" (B/Bb, Am);
                               -- songs are read in their {meta: notation}, else this one
-  max_cols      = 42,         -- wrap width in characters
   show_chords   = true,       -- false = lyrics only
   repeat_chorus = false,      -- {chorus} replays the last chorus instead of a label
-  font_size     = nil,        -- CSS size for <pre>, e.g. "0.9em"
+  font_size     = nil,        -- CSS size of the song lines (default 1em)
   web           = false,      -- HTML5 page for phone browsers (jam session) instead of e-reader XHTML
   labels        = { key=, capo=, transposed=, chorus= },
 }
@@ -55,88 +53,41 @@ end
 
 local function rtrim(s) return (s:gsub("%s+$", "")) end
 
-local function pad(s, cols, fill)
-    local w = width(s)
-    if w >= cols then return s end
-    return s .. string.rep(fill or " ", cols - w)
-end
-
 local function escape(s)
     return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
 end
 
--- Split segments into word pieces so lines can wrap between words.
-local function to_pieces(segments)
-    local pieces = {}
+--- Split one lyrics line (already-transposed segments) into words.
+-- Returns a list of words { chord = true|nil, cells = { { chord =, text = }, ... } }:
+-- a cell is a chord with the text under it, up to the next chord or space. A
+-- chord standing on a space (or alone, "[G] [D]") gets a word of its own.
+function M.words(segments)
+    local words, cur = {}, nil
+    local function add(chord, text)
+        if not cur then cur = { cells = {} }; words[#words + 1] = cur end
+        cur.cells[#cur.cells + 1] = { chord = chord, text = text }
+        if chord then cur.chord = true end
+    end
     for _, seg in ipairs(segments) do
-        local first = true
-        local text = seg.text or ""
+        local chord, text = seg.chord, seg.text or ""
         if text == "" then
-            table.insert(pieces, { chord = seg.chord, text = "" })
+            if chord then add(chord, "") end
         else
-            for word in text:gmatch("%S*%s*") do
+            if chord and text:match("^%s") then
+                cur = nil
+                add(chord, "")
+                chord = nil
+            end
+            for space, word in text:gmatch("(%s*)(%S*)") do
+                if space ~= "" then cur = nil end
                 if word ~= "" then
-                    table.insert(pieces, { chord = first and seg.chord or nil, text = word })
-                    first = false
+                    add(chord, word)
+                    chord = nil
                 end
             end
         end
     end
-    return pieces
-end
-
--- Lay out a run of pieces into one chord row + one lyric row.
-local function layout_group(pieces)
-    local chords, lyrics = "", ""
-    for _, p in ipairs(pieces) do
-        if p.chord then
-            local col = width(lyrics)
-            local need = width(chords)
-            if need > col then
-                local last = lyrics:sub(-1)
-                local mid_word = last ~= "" and not last:match("%s")
-                    and p.text ~= "" and not p.text:sub(1, 1):match("%s")
-                lyrics = pad(lyrics, need, mid_word and "-" or " ")
-                col = need
-            end
-            chords = pad(chords, col) .. p.chord .. " "
-        end
-        lyrics = lyrics .. p.text
-    end
-    return rtrim(chords), rtrim(lyrics)
-end
-
-local function group_width(pieces)
-    local c, l = layout_group(pieces)
-    return math.max(width(c), width(l))
-end
-
---- Lay out one lyrics line (already-transposed segments).
--- Returns a list of { chords = "...", lyrics = "..." } rows (either may be "").
-function M.layout_line(segments, max_cols)
-    max_cols = max_cols or 1000
-    local pieces = to_pieces(segments)
-    local rows, group = {}, {}
-
-    local function emit()
-        if #group == 0 then return end
-        local c, l = layout_group(group)
-        table.insert(rows, { chords = c, lyrics = l })
-        group = {}
-    end
-
-    for _, p in ipairs(pieces) do
-        table.insert(group, p)
-        if #group > 1 and group_width(group) > max_cols then
-            table.remove(group)
-            emit()
-            -- don't start a continuation row with whitespace
-            local stripped = { chord = p.chord, text = (p.text:gsub("^%s+", "")) }
-            if stripped.chord or stripped.text ~= "" then group = { stripped } end
-        end
-    end
-    emit()
-    return rows
+    return words
 end
 
 local function transpose_segments(segments, opts, flats)
@@ -163,10 +114,15 @@ body { margin: 0; }
 h1 { font-size: 1.4em; margin: 0 0 0.15em 0; text-align: left; hyphens: none; }
 .artist { font-style: italic; margin: 0; text-indent: 0; }
 .info { font-size: 0.8em; margin: 0.2em 0 0.9em 0; text-indent: 0; }
+.blk { margin: 0 0 0.9em 0; page-break-inside: avoid; }
+.l { margin: 0; text-indent: -1em; padding-left: 1em; text-align: left; hyphens: none;
+     line-height: 1.15; font-size: %s; }
+.w { display: inline-block; white-space: nowrap; text-indent: 0; }
+.s { display: inline-block; text-indent: 0; }
+.s > span { display: block; text-indent: 0; white-space: pre; }
+.c { font-weight: bold; padding-right: 0.3em; }
 pre { font-family: "Droid Sans Mono", "DejaVu Sans Mono", "Noto Sans Mono", monospace;
-      font-size: %s; white-space: pre; line-height: 1.2; margin: 0 0 0.9em 0;
-      page-break-inside: avoid; }
-.c { font-weight: bold; }
+      white-space: pre; margin: 0; }
 .cm { font-style: italic; }
 .chorus { margin-left: 0.6em; padding-left: 0.6em; border-left: 0.15em solid black; }
 .label { font-weight: bold; margin: 0 0 0.2em 0; text-indent: 0; }
@@ -187,7 +143,36 @@ body { margin: 0.8em; font-family: sans-serif; background: #fff; color: #111; }
 
 --- Stylesheet of a rendered song; `web` adds the browser rules.
 function M.css(font_size, web)
-    return CSS:format(font_size or "0.9em") .. (web and WEB_CSS or "")
+    return CSS:format(font_size or "1em") .. (web and WEB_CSS or "")
+end
+
+-- A chord over its text, stacked; empty parts keep their row with a no-break space.
+local function cell_html(cell)
+    local chord = cell.chord and escape(cell.chord) or "&#160;"
+    local text = cell.text ~= "" and escape(cell.text) or "&#160;"
+    return '<span class="s"><span class="c">' .. chord .. '</span><span class="t">' .. text .. "</span></span>"
+end
+
+-- One lyrics line: words without a chord stay plain text (on the lyrics'
+-- baseline); words with chords become inline blocks that never break inside, so
+-- every chord stays over its syllable in any font and the line wraps between words.
+local function line_html(segments)
+    local parts = {}
+    for _, word in ipairs(M.words(segments)) do
+        if not word.chord then
+            local t = {}
+            for _i, cell in ipairs(word.cells) do t[#t + 1] = escape(cell.text) end
+            parts[#parts + 1] = table.concat(t)
+        elseif #word.cells == 1 then
+            parts[#parts + 1] = cell_html(word.cells[1])
+        else
+            local t = {}
+            for _i, cell in ipairs(word.cells) do t[#t + 1] = cell_html(cell) end
+            parts[#parts + 1] = '<span class="w">' .. table.concat(t) .. "</span>"
+        end
+    end
+    if #parts == 0 then return "&#160;" end
+    return table.concat(parts, " ")
 end
 
 local function render_block_lines(block, opts, flats, out)
@@ -207,22 +192,19 @@ local function render_block_lines(block, opts, flats, out)
         return
     end
 
-    local rows = {}
+    out[#out + 1] = '<div class="blk">'
     for _, line in ipairs(block.lines) do
         if line.type == "lyrics" then
-            for _, r in ipairs(M.layout_line(transpose_segments(line.segments, opts, flats), opts.max_cols)) do
-                if r.chords ~= "" then rows[#rows + 1] = '<span class="c">' .. escape(r.chords) .. "</span>" end
-                if r.lyrics ~= "" then rows[#rows + 1] = escape(r.lyrics) end
-            end
+            out[#out + 1] = '<p class="l">' .. line_html(transpose_segments(line.segments, opts, flats)) .. "</p>"
         elseif line.type == "comment" then
-            rows[#rows + 1] = '<span class="cm">' .. escape(line.text) .. "</span>"
+            out[#out + 1] = '<p class="l cm">' .. escape(line.text) .. "</p>"
         elseif line.type == "raw" then
-            rows[#rows + 1] = escape(line.text)
+            out[#out + 1] = "<pre>" .. escape(line.text) .. "</pre>"
         elseif line.type == "empty" then
-            rows[#rows + 1] = ""
+            out[#out + 1] = '<p class="l">&#160;</p>'
         end
     end
-    out[#out + 1] = "<pre>" .. table.concat(rows, "\n") .. "</pre>"
+    out[#out + 1] = "</div>"
 end
 
 local function render_block(block, opts, flats, out)
@@ -240,7 +222,6 @@ function M.html(song, opts)
     opts = opts or {}
     opts.transpose = opts.transpose or 0
     opts.notation = opts.notation or "cz"
-    opts.max_cols = opts.max_cols or 42
     if opts.show_chords == nil then opts.show_chords = true end
     local labels = {}
     for k, v in pairs(DEFAULT_LABELS) do labels[k] = (opts.labels and opts.labels[k]) or v end

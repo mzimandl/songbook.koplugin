@@ -142,26 +142,6 @@ function Songbook:settingsMenu()
                     checked_func = function() return self:get("repeat_chorus") end,
                     callback = function() self:setAndRefresh("repeat_chorus", not self:get("repeat_chorus")) end,
                 },
-                {
-                    text_func = function()
-                        return T(_("Line width: %1 characters"), self:get("max_cols"))
-                    end,
-                    keep_menu_open = true,
-                    callback = function(touchmenu_instance)
-                        UIManager:show(SpinWidget:new{
-                            title_text = _("Line width"),
-                            info_text = _("Lines with chords wrap at word boundaries above this width. Lower it if lines are cut off at the right edge."),
-                            value = self:get("max_cols"),
-                            value_min = 16,
-                            value_max = 160,
-                            default_value = DEFAULTS.max_cols,
-                            callback = function(spin)
-                                self:setAndRefresh("max_cols", spin.value)
-                                if touchmenu_instance then touchmenu_instance:updateItems() end
-                            end,
-                        })
-                    end,
-                },
             },
         },
         {

@@ -65,8 +65,7 @@ list; *Clear playlist* starts over.
 - **Songs folder**: shows where the songs are stored.
 - **Formatting**: chord names (Czech H, B = B♭, Ami, or English B, Bb, Am;
   songs are converted to it), show chords, repeat
-  the chorus text where the song says `{chorus}`, line width (lower it if lines
-  are cut off on the right).
+  the chorus text where the song says `{chorus}`.
 - **Scrolling**: continuous scroll mode, autoscroll when a song starts playing,
   autoscroll step.
 - **Quick menu**: the ☰ button of an open song.
@@ -85,8 +84,10 @@ In KOReader's *Taps and gestures*, all starting with *Songbook:*.
 
 - Songs are stored in `koreader/songbook/songs/<repository>/<id>.cho` and
   rendered to `koreader/songbook/rendered/`.
-- Songs are set in a monospace font (Droid Sans Mono), which keeps the chords
-  above their syllables, also with *Ignore publisher font families*.
+- Songs use the reader's font. Every chord is placed over its syllable as a
+  small block, so the chords stay aligned in any font and size, and long lines
+  wrap between words (the rest of the line is indented). This needs the
+  document's styles: keep *Embedded style* on (in the bottom menu).
 - `.cho` files can't be opened from KOReader's file browser; copy them to
   `koreader/songbook/songs/` and open them from *My songs*.
 - Songs you open stay out of KOReader's reading history, so it lists only books.

@@ -4,6 +4,13 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.1 – 2026-11-09
+
+- Chords stay over their syllables in any font: each chord and its syllable
+  are set as one block instead of a monospace chord line, which drifted with
+  KOReader's synthetic bold. Songs use the reader's font, long lines wrap
+  between words by themselves, so the *Line width* setting is gone.
+
 ## 1.2.0 – 2026-11-08
 
 - Chords are shown in the chosen notation also without transposing: Czech

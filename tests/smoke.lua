@@ -248,10 +248,10 @@ f:close()
 check(plugin:listLocal()[1].title == "Žluťoučký kůň", "song file read again after restoring")
 
 plugin:openSong("test")
-check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.w42%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
+check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
 check(doc_store[opened[1]].copt_view_mode == 1, "songs open in scroll mode")
 local html = io.open(opened[1]):read("*a")
-check(html:find("Jede kůň", 1, true), "rendered lyrics")
+check(html:find('<span class="t">Jede</span>', 1, true) and html:find('<span class="t">kůň</span>', 1, true), "rendered lyrics")
 ReadHistory:addItem(opened[1])
 ReaderUI.instance = { document = { file = opened[1] } }
 ReadHistory:updateLastBookTime()

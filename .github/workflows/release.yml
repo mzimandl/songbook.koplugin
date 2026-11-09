@@ -3,8 +3,12 @@ name: Release
 # A tag v<version> (pushed after the version bump) gets a GitHub release with
 # songbook.koplugin.zip: the plugin folder as it goes into koreader/plugins/
 # (git archive leaves out what .gitattributes marks export-ignore). The README's
-# download button points to the latest release's zip. Run it by hand for a tag
-# pushed before this workflow existed.
+# download button points to the latest release's zip. A tag with a pre-release
+# part (v1.3.0-beta.1) makes a GitHub pre-release: "latest" skips it, ZenPM offers
+# it only with Beta updates on. Then it asks koplugins to sync its ZenPM
+# manifest (secret KOPLUGINS_TOKEN: a fine-grained token for mzimandl/koplugins
+# with Contents: read and write). Run it by hand for a tag pushed before this
+# workflow existed.
 on:
   push:
     tags: ["v*"]
@@ -35,8 +39,19 @@ jobs:
           version="${TAG#v}"
           # the version's section of CHANGELOG.md
           awk -v v="$version" 'index($0, "## " v " ") == 1 { p = 1; next } /^## / { if (p) exit } p' CHANGELOG.md > notes.md
+          pre=""
+          case "$version" in *-*) pre="--prerelease" ;; esac
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" songbook.koplugin.zip --clobber
           else
-            gh release create "$TAG" songbook.koplugin.zip --title "Songbook $version" --notes-file notes.md
+            gh release create "$TAG" songbook.koplugin.zip --title "Songbook $version" --notes-file notes.md $pre
           fi
+      - name: Ask koplugins to sync its ZenPM manifest
+        run: |
+          curl --fail-with-body -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/mzimandl/koplugins/dispatches \
+            -d '{"event_type": "sync-versions"}'
+        env:
+          TOKEN: ${{ secrets.KOPLUGINS_TOKEN }}

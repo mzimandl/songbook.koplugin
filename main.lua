@@ -317,7 +317,7 @@ end
 -- document cache never shows a stale rendering.
 function Songbook:renderSignature(uid)
     local t = self:getMap("transpose")[uid] or 0
-    return string.format("t%+d.%s.w%d.c%d.r%d", t, self:get("notation"), self:get("max_cols"),
+    return string.format("t%+d.%s.c%d.r%d", t, self:get("notation"),
         self:get("show_chords") and 1 or 0, self:get("repeat_chorus") and 1 or 0)
 end
 
@@ -380,7 +380,7 @@ function Songbook:removeStaleRenders(uid, keep)
 end
 
 --- HTML of song `uid`; fields of `opts` override the settings
--- (transpose, notation, max_cols, show_chords, web). Returns html or nil, err.
+-- (transpose, notation, show_chords, web). Returns html or nil, err.
 function Songbook:songHtml(uid, opts)
     opts = opts or {}
     local _key, id = split_uid(uid)
@@ -398,7 +398,6 @@ function Songbook:songHtml(uid, opts)
     return Render.html(song, {
         transpose = opts.transpose or self:getMap("transpose")[uid] or 0,
         notation = opts.notation or self:get("notation"),
-        max_cols = opts.max_cols or self:get("max_cols"),
         show_chords = show_chords,
         repeat_chorus = self:get("repeat_chorus"),
         web = opts.web,
