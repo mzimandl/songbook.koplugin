@@ -69,8 +69,9 @@ function Songbook:showList(title, get_songs, make_item, on_hold, on_close, actio
         end
         return items
     end
+    -- -1: stay on the current page (a toggle in a long list must not jump to the top)
     refresh = function()
-        menu:switchItemTable(title, build())
+        menu:switchItemTable(title, build(), -1)
     end
 
     menu = list_menu(title, build(), actions and function() return actions(refresh, shown) end, {

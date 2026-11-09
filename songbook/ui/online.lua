@@ -396,7 +396,7 @@ function Songbook:showRepositories(on_close)
         })
         return items
     end
-    refresh = function() menu:switchItemTable(nil, build()) end
+    refresh = function() menu:switchItemTable(nil, build(), -1) end
     menu = list_menu(_("Song repositories"), build())
     if on_close then
         local close = menu.onClose

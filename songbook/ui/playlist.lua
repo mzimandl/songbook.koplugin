@@ -455,7 +455,7 @@ function Songbook:onSongbookShowPlaylist()
             if not new_p or new_body == body then return end   -- no redraw when nothing changed
             p, body = new_p, new_body
         end
-        menu:switchItemTable(title, build())
+        menu:switchItemTable(title, build(), -1)
     end
     if not remote then song_lists.last = { kind = "playlist" } end
     self:trackList(menu)

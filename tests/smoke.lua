@@ -37,7 +37,7 @@ stub("ui/widget/notification", { notify = function(_, text) table.insert(toasts,
 stub("ui/event", { new = function(_, name, arg) return { name = name, arg = arg } end })
 local clock = 0
 stub("ui/time", { now = function() return clock end, to_s = function(t) return t end })
-stub("ui/widget/menu", class({ switchItemTable = function(self, t, items) self.item_table = items end }))
+stub("ui/widget/menu", class({ switchItemTable = function(self, t, items, itemnumber) self.item_table = items; self.switched_to = itemnumber end }))
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
 local zmqs, standby, scheduled, scheduled_in, ticks = {}, 0, nil, nil, {}
 stub("ui/uimanager", {
@@ -498,6 +498,7 @@ end
 check(set_order() == "druha,test", "collection sorted by title")
 local _o, set_list2 = set_order()
 list_action(set_list2, "Sort by order added").callback()
+check(set_list2.switched_to == -1, "a refreshed list stays on its page")
 check(plugin:findCollection("Set").sort == "added" and set_order() == "test,druha", "collection in the order added")
 _o, set_list2 = set_order()
 check(list_action(set_list2, "Sort by title") ~= nil, "the action switches back to titles")

@@ -59,6 +59,7 @@
 - `_` is gettext: don't name a loop variable `_` when the loop body (or a closure in it) calls `_()`; use `_i`.
 - KOReader's Menu gives `mandatory` (right-hand text) all the width it needs and truncates the title: keep it short (details()). It calls `close_callback` after every item tap, not only on close.
 - Song lists open over the kept-open Songbook menu and over each other; each is registered with trackList(), and song callbacks call closeList(), which closes all of them and the menu.
+- Menu:switchItemTable(title, items) goes back to page 1; refreshes pass itemnumber -1 to stay on the page (only a new search starts at the top).
 - TouchMenu items with `keep_menu_open` don't redraw by themselves: call `touchmenu_instance:updateItems()` (or replace `item_table` for `sub_item_table_func` submenus).
 - Jam.json() encodes an empty table as `[]` (lists may be empty; objects never are).
 - write_file() writes `<path>.part` and renames it, so a failed write keeps the old file; lists only match `.cho`/`.html` endings.

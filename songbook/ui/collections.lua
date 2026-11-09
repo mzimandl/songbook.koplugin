@@ -210,7 +210,7 @@ function Songbook:onSongbookShowCollections()
                 collection = c.name,
                 callback = function()
                     -- songs may be removed from the collection meanwhile: update the counts
-                    self:showCollection(c.name, function() menu:switchItemTable(nil, build()) end)
+                    self:showCollection(c.name, function() menu:switchItemTable(nil, build(), -1) end)
                 end,
             })
         end
@@ -236,7 +236,7 @@ function Songbook:onSongbookShowCollections()
                     self:askCollectionName(_("Rename collection"), name, function(new)
                         local ok, err = self:renameCollection(name, new)
                         if not ok then notify(err) return end
-                        menu:switchItemTable(nil, build())
+                        menu:switchItemTable(nil, build(), -1)
                     end)
                 end },
                 { text = _("Delete"), callback = function()
@@ -245,7 +245,7 @@ function Songbook:onSongbookShowCollections()
                         ok_text = _("Delete"),
                         ok_callback = function()
                             self:deleteCollection(name)
-                            menu:switchItemTable(nil, build())
+                            menu:switchItemTable(nil, build(), -1)
                         end,
                     })
                 end },
