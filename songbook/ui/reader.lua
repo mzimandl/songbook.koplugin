@@ -173,7 +173,15 @@ function Songbook:autoscrollStep()
         at_end = pos + h >= height
     end
     if at_end then
-        self:stopAutoscroll()
+        -- the last lines are on the screen: run out the song's length, so the
+        -- jam guests' pages (which may be longer) scroll to the end too
+        local left = a.duration - (now() - a.start)
+        if left <= 0 then
+            self:stopAutoscroll()
+        else
+            UIManager:unschedule(a.task)
+            UIManager:scheduleIn(math.max(left, AUTOSCROLL_MIN_WAIT), a.task)
+        end
         return
     end
     local played = (now() - a.start) / a.duration * height

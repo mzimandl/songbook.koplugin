@@ -387,6 +387,12 @@ check(scheduled_in == 11.25, "manual move re-anchors the timing: " .. tostring(s
 plugin:onSongbookAutoscrollSpeed(1.1)
 check(settings_store.duration.test == 200 and toasts[#toasts] == "Autoscroll: 3:20", "slower autoscroll keeps the length")
 pos = 2400
+plugin:onPosUpdate(pos)
+scheduled()
+local a_end = plugin.autoscroll
+check(plugin:isAutoscrolling() and math.abs(scheduled_in - (a_end.start + a_end.duration - clock)) < 1e-9,
+    "on the last screen autoscroll runs out the song's length: " .. tostring(scheduled_in))
+clock = a_end.start + a_end.duration
 scheduled()
 check(not plugin:isAutoscrolling() and standby == 0 and scheduled == nil, "autoscroll stops at the end")
 settings_store.autoscroll = true

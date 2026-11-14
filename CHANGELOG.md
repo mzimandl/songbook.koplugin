@@ -4,6 +4,13 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.5 – 2026-11-14
+
+- Jam session: the guests' pages follow the autoscroll to the end of the song.
+  On its last screen the reader now keeps autoscrolling for the rest of the
+  song's length instead of stopping, so longer guest pages don't stop a screen
+  early.
+
 ## 1.3.0-beta.4 – 2026-11-14
 
 - Jam session: while the song autoscrolls on the host's reader, the guests'
