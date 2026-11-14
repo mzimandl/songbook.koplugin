@@ -21,6 +21,7 @@ songbook/render.lua     song → HTML layout
 songbook/repo.lua       index.json + HTTP fetch, GitHub API for private repositories
 songbook/jam.lua        jam session: HTTP API, guest page, playlist
 songbook/discovery.lua  finding shared songbooks (UDP)
+songbook/httpget.lua    HTTP GET that never blocks (following)
 songbook/search.lua     search and sorting without case and diacritics
 songbook/l10n.lua       translations
 tests/                  off-device tests

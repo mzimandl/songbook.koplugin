@@ -5,6 +5,7 @@ another songbook, finding shared songbooks and the Jam session menu.
 
 local C = require("songbook/ui/common")
 local Discovery = require("songbook/discovery")
+local HttpGet = require("songbook/httpget")
 local Jam = require("songbook/jam")
 local Render = require("songbook/render")
 local Repo = require("songbook/repo")
@@ -43,6 +44,7 @@ local FOLLOW_MAX_FAILURES = 4
 local SEARCH_INTERVAL = 1         -- seconds between searches for shared songbooks
 local SEARCH_EXPIRE = 5           -- seconds: songbooks not heard of leave the list
 -- seconds: a following songbook that stopped polling leaves the shared sources
+-- (a follower's poll may take FOLLOW_TIMEOUT longer while a request runs)
 local PEER_EXPIRE = 3 * FOLLOW_INTERVAL + 3
 
 -- Jam session -------------------------------------------------------------------
@@ -354,8 +356,8 @@ function Songbook:stopLibrary()
     jam.library = nil
 end
 
--- Following another songbook: poll its /state.json and open each song it
--- plays (saved to songs/jam/) in the host's key. While another song is open
+-- Following another songbook: poll its /state.json (follow_get(): without
+-- blocking the UI) and open each song it plays (saved to songs/jam/) in the host's key. While another song is open
 -- (browsing), a new song is only announced; Open now playing goes to it.
 local follow_poll
 
@@ -374,10 +376,63 @@ function Songbook:followFailed()
     end
 end
 
+-- GET `url` of the followed songbook and call cb(body or nil), without
+-- blocking the UI: a gone songbook would freeze the reader for every poll's
+-- timeout. The request is polled from a UIManager ZMQ (f.request while it
+-- runs); an answer that is there at once is handled at once. Addresses
+-- HttpGet can't read (https) are fetched the blocking way.
+local function follow_get(url, cb)
+    local f = jam.follow
+    local req = HttpGet.start(require("socket"), url, FOLLOW_TIMEOUT[2], now())
+    if not req then return cb(Repo.fetch(url, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])) end
+    if req:poll(now()) then return cb(req.body) end
+    f.request = req
+    f.request_zmq = poller(function()
+        if f.request ~= req or not req:poll(now()) then return end
+        f.request = nil
+        -- not from inside UIManager's loop over its ZMQs
+        UIManager:nextTick(function()
+            UIManager:removeZMQ(f.request_zmq)
+            f.request_zmq = nil
+            if jam.follow == f then cb(req.body) end
+        end)
+    end, "follow")
+end
+
+-- Stop a running request of `f` (following stops).
+local function follow_cancel(f)
+    if f.request then f.request:close() end
+    if f.request_zmq then UIManager:removeZMQ(f.request_zmq) end
+    f.request, f.request_zmq = nil, nil
+end
+
+-- Run a step of following on the newest plugin instance; an error counts as
+-- a failed poll.
+local function follow_run(method, ...)
+    local owner = jam.owner
+    local ok, err = pcall(owner[method], owner, ...)
+    if not ok then
+        logger.warn("Songbook: following failed", err)
+        if jam.follow then jam.owner:followFailed() end
+    end
+end
+
+--- One poll: ask the followed songbook for its state (followState() gets the
+-- answer). Skipped while the last request is still running.
 function Songbook:followStep()
     local f = jam.follow
+    if f.request then return end
     local query = Jam.query({ name = jam.library and self:deviceName(), share = jam.library and jam.library.port })
-    local body = Repo.fetch(f.url .. "state.json" .. query, FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
+    follow_get(f.url .. "state.json" .. query, function(body)
+        follow_run("followState", body)
+        -- the playlist list (when open) reads the followed playlist the blocking way: only when it answers
+        if body and jam.follow and jam.playlist_refresh then pcall(jam.playlist_refresh) end
+    end)
+end
+
+--- The answer to a poll (`body` nil: none): a new song is fetched first.
+function Songbook:followState(body)
+    local f = jam.follow
     local state = body and Jam.parse_state(body, require("json").decode)
     if not state then return self:followFailed() end
     if state.api > Jam.API_VERSION then
@@ -396,11 +451,20 @@ function Songbook:followStep()
         self:followScroll()
         return
     end
+    if state.uid == f.uid then return self:followApply(state) end
+    -- by uid, not /song.cho: the host may have switched songs since state.json
+    follow_get(f.url .. Jam.song_path(state.uid), function(cho)
+        follow_run("followApply", state, cho or false)
+    end)
+end
+
+--- Take over `state` of the followed songbook; `cho` is the text of its new
+-- song (false: it could not be fetched).
+function Songbook:followApply(state, cho)
+    local f = jam.follow
     local uid = make_uid(JAM_KEY, Jam.song_id(state.uid))
-    if state.uid ~= f.uid then
-        -- by uid, not /song.cho: the host may have switched songs since state.json
-        local cho = Repo.fetch(f.url .. Jam.song_path(state.uid), FOLLOW_TIMEOUT[1], FOLLOW_TIMEOUT[2])
-        if not cho then return self:followFailed() end
+    if cho == false then return self:followFailed() end
+    if cho then
         util.makePath(self.songs_dir .. "/" .. JAM_KEY)
         if not write_file(self:songPath(uid), cho) then return self:followFailed() end
     end
@@ -455,15 +519,8 @@ end
 
 follow_poll = function()
     if not jam.follow then return end
-    local ok, err = pcall(jam.owner.followStep, jam.owner)
-    if not ok then
-        logger.warn("Songbook: following failed", err)
-        if jam.follow then jam.owner:followFailed() end
-    end
-    if jam.follow then
-        if jam.playlist_refresh then pcall(jam.playlist_refresh) end
-        UIManager:scheduleIn(FOLLOW_INTERVAL, follow_poll)
-    end
+    follow_run("followStep")
+    if jam.follow then UIManager:scheduleIn(FOLLOW_INTERVAL, follow_poll) end
 end
 
 function Songbook:startFollowing(url)
@@ -496,6 +553,7 @@ end
 function Songbook:stopFollowing()
     if not jam.follow then return end
     UIManager:unschedule(follow_poll)
+    follow_cancel(jam.follow)
     C.keep_awake(false)
     self:stopLibrary()
     jam.follow = nil

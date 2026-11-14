@@ -206,6 +206,52 @@ eq(html:find('<div class="chorus">', 1, true) ~= nil, true, "html chorus")
 local html2 = Render.html(song, { repeat_chorus = true })
 local _, n = html2:gsub('<div class="chorus">', "")
 eq(n, 2, "repeat_chorus replays chorus")
+do  -- HttpGet: a GET that never waits
+    local H = require("songbook/httpget")
+    local function url(u) local h, p, path = H.parse_url(u); return h and (h .. " " .. p .. " " .. path) end
+    eq(url("http://10.0.0.2:8765/state.json?name=A"), "10.0.0.2 8765 /state.json?name=A", "http url")
+    eq(url("http://host"), "host 80 /", "http url without port and path")
+    eq(url("http://[fe80::1]:8765/x"), "fe80::1 8765 /x", "http url with an IPv6 host")
+    eq(url("https://host/x"), nil, "https is not read")
+    eq(url("http://host:99999/"), nil, "bad port")
+    local code, body, complete = H.parse_response("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
+    eq(code == 200 and body == "hello" and complete, true, "response with its whole body")
+    code, body, complete = H.parse_response("HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nhello")
+    eq(code == 200 and complete, false, "response with a part of its body")
+    eq(H.parse_response("HTTP/1.1 200 OK\r\nContent-Len"), nil, "headers not complete")
+    -- a fake socket: connecting takes two polls, the answer comes in two parts
+    local steps = 0
+    local parts = { "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nab", "cd" }
+    local tcp = { sent = "" }
+    function tcp.settimeout() end
+    function tcp.connect() return nil, "timeout" end
+    function tcp.getpeername() return "10.0.0.2" end
+    function tcp.send(self, data, i) self.sent = self.sent .. data:sub(i, i + 9); return nil, "timeout", math.min(#data, i + 9) end
+    function tcp.receive() local p = table.remove(parts, 1); if p then return nil, "timeout", p end; return nil, "timeout", "" end
+    function tcp.close(self) self.closed = true end
+    local fake = { tcp = function() return tcp end, select = function(_r, w) steps = steps + 1; return {}, steps >= 2 and w or {} end }
+    local req = H.start(fake, "http://10.0.0.2:8765/state.json", 4, 100)
+    eq(req:poll(100), false, "connecting: not done")
+    local polls = 1
+    while not req:poll(100) and polls < 50 do polls = polls + 1 end
+    eq(req.body, "abcd", "answer read in parts")
+    eq(tcp.sent:match("^GET /state.json HTTP/1.1\r\nHost: 10.0.0.2:8765\r\n") ~= nil and tcp.closed, true, "request sent in parts, socket closed")
+    -- the deadline
+    tcp = { settimeout = function() end, connect = function() return nil, "timeout" end, close = function(self) self.closed = true end }
+    fake = { tcp = function() return tcp end, select = function() return {}, {} end }
+    req = H.start(fake, "http://10.0.0.2:8765/", 4, 100)
+    eq(req:poll(103), false, "before the deadline")
+    eq(req:poll(104.5) and req.err == "timeout" and req.body == nil and tcp.closed, true, "no answer in time")
+    -- refused at once, and an HTTP error
+    tcp = { settimeout = function() end, connect = function() return nil, "connection refused" end, close = function() end }
+    req = H.start({ tcp = function() return tcp end }, "http://10.0.0.2:8765/", 4, 100)
+    eq(req:poll(100) and req.err, "connection refused", "refused connection")
+    tcp = { settimeout = function() end, connect = function() return 1 end, close = function() end,
+        send = function(_, data) return #data end,
+        receive = function() return nil, "closed", "HTTP/1.1 404 Not Found\r\n\r\nno" end }
+    req = H.start({ tcp = function() return tcp end }, "http://10.0.0.2:8765/x", 4, 100)
+    eq(req:poll(100) and req.err == "HTTP 404" and req.code == 404 and req.body == nil, true, "HTTP error")
+end
 do  -- a label can't end the guest page's script
     local page = Jam.page({ title = "x</script><b>" })
     local _, n = page:gsub("</script>", "")

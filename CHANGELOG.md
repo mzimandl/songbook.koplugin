@@ -4,6 +4,12 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.11 – 2026-11-14
+
+- Jam session: following no longer freezes the reader when the other songbook
+  stops answering (it slept, left the Wi-Fi). The reader keeps working and
+  following ends after a few failed tries, as before.
+
 ## 1.3.0-beta.10 – 2026-11-14
 
 - Jam session: a reader that follows another one scrolls along with its

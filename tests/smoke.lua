@@ -129,7 +129,42 @@ end })
 local own_ip = "192.168.1.5"   -- address of the interface with the default route
 local udps = {}   -- fake UDP sockets; inbox = { { msg, ip, port } }, outbox = { { msg, ip, port } }
 local taken_ports = {}
-stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, udp = function()
+-- Fake TCP for songbook/httpget.lua: answers from `responses` like the fake
+-- socket.http below, at once; with tcp_slow set the connection stays "in
+-- progress" (a songbook that is gone) until tcp_slow is cleared.
+local tcps, tcp_slow = {}, false
+local fake_http   -- set below: url -> status, body
+local function fake_tcp()
+    local t = { sent = "" }
+    function t.settimeout() end
+    function t.connect(self, host, port)
+        self.host, self.port = host, port
+        if tcp_slow then return nil, "timeout" end
+        self.connected = true
+        return 1
+    end
+    function t.getpeername(self) return self.connected and self.host or nil end
+    function t.send(self, data, i)
+        self.sent = self.sent .. data:sub(i or 1)
+        return #data
+    end
+    function t.receive(self)
+        if self.answered then return nil, "closed", "" end
+        self.answered = true
+        local path = self.sent:match("^GET (%S+) HTTP")
+        local code, body = fake_http(("http://%s:%d%s"):format(self.host, self.port, path))
+        return nil, "closed", ("HTTP/1.1 %d X\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s"):format(code, #body, body)
+    end
+    function t.close(self) self.closed = true end
+    table.insert(tcps, t)
+    return t
+end
+local function fake_select(_r, w)
+    if tcp_slow then return {}, {} end
+    for _i, t in ipairs(w) do t.connected = true end
+    return {}, w
+end
+stub("socket", { skip = function(n, ...) return select(n + 1, ...) end, tcp = fake_tcp, select = fake_select, udp = function()
     local u = { inbox = {}, outbox = {} }
     function u.setpeername() end
     function u.getsockname() return own_ip end
@@ -158,6 +193,12 @@ stub("ltn12", { sink = { table = function(t) return t end } })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
 local requested, responses = {}, {}   -- responses[url] = body, false for 404 or an HTTP error code
 local last_request
+fake_http = function(url)
+    table.insert(requested, url)
+    if responses[url] == false then return 404, "" end
+    if type(responses[url]) == "number" then return responses[url], "" end
+    return 200, responses[url] or "{title: Downloaded}\n[Am]La"
+end
 stub("socket.http", { request = function(req)
     table.insert(requested, req.url)
     last_request = req
@@ -1068,6 +1109,45 @@ do  -- the followed song scrolls with the host's autoscroll
     pos = 0
     plugin.ui.document.file = file_before
     poll()   -- scheduled again as the tests below expect
+end
+do  -- polls don't block: a songbook that doesn't answer is waited for in the background
+    local f = require("songbook/ui/common").jam.follow
+    local poll = scheduled
+    local n_tcp, n_zmq, n_req = #tcps, #zmqs, #requested
+    check(n_tcp > 0, "following polls through the non-blocking client")
+    tcp_slow = true
+    poll()
+    check(#tcps == n_tcp + 1 and f.request ~= nil and #zmqs == n_zmq + 1 and #requested == n_req,
+        "a poll without an answer at once returns and waits in the background")
+    poll()
+    check(#tcps == n_tcp + 1, "no second request while one is running")
+    zmqs[#zmqs].waitEvent()
+    check(f.request ~= nil and #ticks == 0, "still waiting")
+    tcp_slow = false
+    zmqs[#zmqs].waitEvent()
+    check(f.request == nil and #ticks == 1, "the answer came")
+    table.remove(ticks, 1)()
+    check(#zmqs == n_zmq and requested[#requested] == state_url and f.failures == 0 and tcps[#tcps].closed,
+        "the answer is handled and the background poller is gone")
+    -- no answer in time: a failed poll, without ever blocking
+    tcp_slow = true
+    poll()
+    clock = clock + 5
+    zmqs[#zmqs].waitEvent()
+    table.remove(ticks, 1)()
+    check(f.failures == 1 and f.request == nil and #zmqs == n_zmq and tcps[#tcps].closed, "a timeout is a failed poll")
+    -- following stops while a request runs: it is dropped
+    poll()
+    local running = tcps[#tcps]
+    check(f.request ~= nil, "another request running")
+    require("songbook/ui/common").jam.owner:stopFollowing()
+    check(running.closed and #zmqs < n_zmq + 1 and f.request == nil, "stopping drops the running request")
+    -- follow again for the tests below
+    tcp_slow = false
+    local n_opened_before = #opened
+    plugin:startFollowing(host)
+    check(plugin:isFollowing() and require("songbook/ui/common").jam.follow.failures == 0, "following again")
+    for _i = n_opened_before + 1, #opened do opened[_i] = nil end
 end
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
