@@ -206,6 +206,12 @@ eq(html:find('<div class="chorus">', 1, true) ~= nil, true, "html chorus")
 local html2 = Render.html(song, { repeat_chorus = true })
 local _, n = html2:gsub('<div class="chorus">', "")
 eq(n, 2, "repeat_chorus replays chorus")
+do  -- a label can't end the guest page's script
+    local page = Jam.page({ title = "x</script><b>" })
+    local _, n = page:gsub("</script>", "")
+    eq(n, 1, "only the page's own </script>")
+    eq(page:find('"title":"x<\\/script><b>"', 1, true) ~= nil, true, "the label is still there, escaped")
+end
 do  -- lyrics only: chord lines without words leave nothing behind
     local s = ChordPro.parse("[Am] [G]\nSome [C]words\n\n{c: Interlude}\n[Am] [G]\n\n{c: 2x}\n\n{soc}\n[F] [G]\n{eoc}\n")
     local h = Render.html(s, { show_chords = false })

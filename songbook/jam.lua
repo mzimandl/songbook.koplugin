@@ -504,7 +504,8 @@ function M.page(labels, css)
     for k, v in pairs(l) do js[k] = v end
     js.waiting = escape(l.waiting)   -- inserted as HTML
     -- Plain gsub replacements: labels may contain "%".
-    local values = { escape(l.title), css or "", escape(l.chords), escape(l.waiting), M.json(js) }
+    -- "</" must not end the script (a device name is free text)
+    local values = { escape(l.title), css or "", escape(l.chords), escape(l.waiting), (M.json(js):gsub("</", "<\\/")) }
     local i = 0
     return (PAGE:gsub("%%(.)", function(c)
         if c ~= "s" then return c end   -- "%%" in PAGE is a literal "%"

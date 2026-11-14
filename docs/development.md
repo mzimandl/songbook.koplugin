@@ -58,7 +58,9 @@ another language copy `cs.lua` and translate the values.
 
 A release is a growing `version` in `_meta.lua`, listed in
 [CHANGELOG.md](../CHANGELOG.md) and tagged `v<version>`. Pushing the tag runs the
-*Release* workflow (`.github/workflows/release.yml`): it makes a GitHub release
+*Release* workflow (`.github/workflows/release.yml`): it checks that the tag is
+the `version` in `_meta.lua` and has a CHANGELOG section, runs the tests (a
+failure releases nothing) and makes a GitHub release
 with `songbook.koplugin.zip` (the plugin folder, without what `.gitattributes`
 marks export-ignore: tests, docs, workflows) and the version's CHANGELOG section
 as notes. The README's download button points to the latest release's zip. For a

@@ -1,6 +1,8 @@
 -- Czech translation of the plugin's strings (msgid → translation), see songbook/l10n.lua.
 -- tests/run.lua checks that every _("…") in main.lua has an entry here.
 return {
+    ["the server sent a web page, not a song"] = "server poslal webovou stránku, ne píseň",
+    ["This repository is already added: %1"] = "Tento repozitář už je přidaný: %1",
     -- gestures
     ["Songbook: transpose up"] = "Zpěvník: transponovat nahoru",
     ["Songbook: transpose down"] = "Zpěvník: transponovat dolů",

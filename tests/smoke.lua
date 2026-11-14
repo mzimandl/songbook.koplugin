@@ -98,12 +98,13 @@ stub("libs/libkoreader-lfs", {
     end,
 })
 local settings_store = {}
+local settings_flushes = 0
 stub("luasettings", { open = function()
     return {
         readSetting = function(_, k) return settings_store[k] end,
         saveSetting = function(_, k, v) settings_store[k] = v end,
         delSetting = function(_, k) settings_store[k] = nil end,
-        flush = function() end,
+        flush = function() settings_flushes = settings_flushes + 1 end,
     }
 end })
 local doc_store = {}   -- path -> doc settings
@@ -367,6 +368,7 @@ plugin:onSongbookTranspose(0)
 settings_store.scroll_mode = nil
 
 -- autoscroll: 3200 px song on an 800 px screen in scroll mode
+local goto_percent
 local orig_setDirty = require("ui/uimanager").setDirty
 local doc = plugin.ui.document
 local pos = 0
@@ -378,6 +380,7 @@ plugin.ui.view = { view_mode = "scroll", dialog = {}, footer = { getBookProgress
 settings_store.autoscroll_step = 4
 plugin.ui.dimen = { h = 800 }
 plugin.ui.handleEvent = function(_, ev)
+    if ev.name == "GotoPercent" then goto_percent = ev.arg end
     if ev.name == "GotoViewRel" then
         pos = math.min(pos + ev.arg * 800, 2400)
         require("ui/uimanager"):setDirty(plugin.ui.view.dialog, "partial")
@@ -471,6 +474,54 @@ check(pos == 400 and scheduled_in == 6.25, "autoscroll catches up in one move on
 window_stack = {}
 plugin:stopAutoscroll()
 check(plugin:jamState().scroll == nil, "no scroll once autoscroll stops")
+do  -- a song rendered again (transposed) comes back where it was, autoscroll goes on
+    local reopen = require("songbook/ui/common").reopen
+    pos = 800
+    plugin:startAutoscroll(true)
+    plugin:onSongbookTranspose(1)
+    check(reopen.uid == "test" and reopen.percent == 25 and reopen.autoscroll == true,
+        "position and autoscroll noted before the song opens again: " .. tostring(reopen.percent))
+    plugin:onCloseDocument()
+    goto_percent = nil
+    plugin:onReaderReady()
+    check(goto_percent == 25 and plugin:isAutoscrolling() and reopen.uid == nil,
+        "the new document goes back to the position and autoscrolls: " .. tostring(goto_percent))
+    plugin:stopAutoscroll()
+    pos = 0
+    plugin:onSongbookTranspose(0)
+    check(reopen.percent == 0, "at the top nothing to go back to")
+    goto_percent = nil
+    plugin:onReaderReady()
+    check(goto_percent == nil and not plugin:isAutoscrolling(), "a song at its top just opens")
+end
+do  -- many songs are deleted with one write of the settings
+    os.execute("mkdir -p '" .. root .. "/songbook/songs/bulk'")
+    local uids = {}
+    for i = 1, 3 do
+        uids[i] = "bulk/s" .. i
+        local bf = io.open(root .. "/songbook/songs/bulk/s" .. i .. ".cho", "w"); bf:write("{title: S" .. i .. "}\n"); bf:close()
+        plugin:setFavorite(uids[i], true)
+        plugin:setMapValue("transpose", uids[i], 2)
+    end
+    local before = settings_flushes
+    plugin:deleteSongs(uids)
+    check(settings_flushes - before == 1, "one settings write for three deleted songs: " .. (settings_flushes - before))
+    check(not plugin:isFavorite("bulk/s2") and settings_store.transpose["bulk/s3"] == nil
+        and io.open(root .. "/songbook/songs/bulk/s1.cho") == nil, "deleted songs leave nothing behind")
+    os.remove(root .. "/songbook/songs/bulk")
+end
+do  -- a web page instead of a song is not saved; the same repository isn't added twice
+    local Repo = require("songbook/repo")
+    local server = plugin:addServer("https://example.com/dups")
+    local song = { uid = server.key .. "/page", server = server, file = "songs/page.cho" }
+    responses[(Repo.request(server.url, song.file, server.token))] = "<!DOCTYPE html>\n<html><body>Login</body></html>"
+    local ok, err = plugin:download(song)
+    check(not ok and err:find("web page", 1, true) and io.open(plugin:songPath(song.uid)) == nil,
+        "a web page is not saved as a song: " .. tostring(err))
+    check(plugin:findServerByUrl(server.url .. "/") == server and plugin:findServerByUrl("https://example.org/none") == nil,
+        "a repository is found by its address")
+    plugin:removeServer(server.key, true)
+end
 
 local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end

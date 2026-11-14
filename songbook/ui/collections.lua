@@ -9,6 +9,7 @@ local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
+local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
 
 local Songbook = C.Songbook
@@ -18,7 +19,6 @@ local notify = C.notify
 local details = C.details
 local show_actions = C.show_actions
 local list_menu = C.list_menu
-local count_keys = C.count_keys
 local collection_set = C.collection_set
 
 -- Collections -------------------------------------------------------------------
@@ -64,6 +64,16 @@ function Songbook:collectionSortAction(name, refresh)
             refresh()
         end,
     }
+end
+
+--- How many of the songs in set `songs` ({ [uid] = true }) are on the device
+-- (a collection may still name songs deleted outside the plugin).
+function Songbook:countOnDevice(songs)
+    local n = 0
+    for uid in pairs(songs) do
+        if lfs.attributes(self:songPath(uid), "mode") == "file" then n = n + 1 end
+    end
+    return n
 end
 
 function Songbook:getCollections()
@@ -206,7 +216,7 @@ function Songbook:onSongbookShowCollections()
         for _i, c in ipairs(self:getCollections()) do
             table.insert(items, {
                 text = c.name,
-                mandatory = tostring(count_keys(c.songs)),
+                mandatory = tostring(self:countOnDevice(c.songs)),
                 collection = c.name,
                 callback = function()
                     -- songs may be removed from the collection meanwhile: update the counts

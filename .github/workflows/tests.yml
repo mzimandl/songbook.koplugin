@@ -1,0 +1,23 @@
+name: Tests
+
+# The off-device tests on every push and pull request (the Release workflow
+# runs them too, before it releases).
+on:
+  push:
+    branches: [master, beta]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LuaJIT
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq luajit
+      - name: Modules and translations
+        run: luajit tests/run.lua
+      - name: Plugin against stubbed KOReader
+        run: luajit tests/smoke.lua

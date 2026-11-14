@@ -326,7 +326,15 @@ function Songbook:onReaderReady()
     if not uid then return end
     if self:get("song_button") then self:addSongButton() end
     self:showScrollProgress()
-    if self:get("autoscroll") and self:nowPlayingUid() == uid then self:startAutoscroll(true) end
+    -- rendered again (transposed, …): back to where it was, autoscroll goes on
+    local reopen = C.reopen
+    local again = reopen.uid == uid
+    local was_scrolling = again and reopen.autoscroll
+    if again and reopen.percent and reopen.percent > 0 then
+        self.ui:handleEvent(Event:new("GotoPercent", reopen.percent))
+    end
+    reopen.uid, reopen.percent, reopen.autoscroll = nil, nil, nil
+    if was_scrolling or (self:get("autoscroll") and self:nowPlayingUid() == uid) then self:startAutoscroll(true) end
 end
 
 -- Corner of the screen the song button's tap zone covers; taps there that

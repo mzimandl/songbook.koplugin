@@ -57,6 +57,9 @@
 - Render.html(): each lyrics line is a `<p class="l">`; Render.words() splits it into words, and a word with chords becomes inline blocks (`.w` > `.s` = chord `.c` over text `.t`), so the reader's own font and line breaking keep chords aligned (no monospace column counting: KOReader's synthetic bold of Droid Sans Mono made it drift). Words without chords stay plain text on the same baseline. Tab/grid lines stay `<pre>`. The same HTML serves the jam guest page (`web`).
 
 ## Gotchas
+- A song opened again while it is open (transposition, options, the followed songbook's key) is a new document and plugin instance: openSong() → rememberPosition() fills `C.reopen` (uid, percent, autoscroll), onReaderReady() goes back with the GotoPercent event and restarts autoscroll.
+- Deleting goes through deleteSongs(uids): the settings are written once for any number of songs (removeServer(), startFollowing()); don't loop deleteSong().
+- Tests run in CI: .github/workflows/tests.yml on pushes to master/beta, and in release.yml before a release (which also checks tag = `version` in _meta.lua and a CHANGELOG section). They pass on Ubuntu's stock luajit.
 - songPath(uid) is `<uid>.cho`, or a copied `<uid>.chopro` when there is no .cho; always go through it (never build the path by hand). The plugin itself only writes .cho.
 - Lyrics-only rendering (`show_chords = false`) drops chord lines without words, and a whole block that has only such lines (render.lua chords_only()).
 - `_` is gettext: don't name a loop variable `_` when the loop body (or a closure in it) calls `_()`; use `_i`.

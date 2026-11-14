@@ -66,6 +66,12 @@ local FOLLOW_TIMEOUT = { 2, 4 }   -- block, total seconds
 -- being opened again (its query and page). The song opens in a new plugin instance.
 local song_lists = {}
 
+-- A song that is opened again while it is open (transposed, other options,
+-- the followed songbook changed its key) is a new document in a new plugin
+-- instance: `reopen` = { uid, percent, autoscroll } carries where it was (and
+-- a running autoscroll) over to onReaderReady().
+local reopen = {}
+
 
 local function read_file(path)
     local f = io.open(path, "rb")
@@ -281,6 +287,7 @@ return {
     JAM_KEY = JAM_KEY,
     FOLLOW_TIMEOUT = FOLLOW_TIMEOUT,
     song_lists = song_lists,
+    reopen = reopen,
     MAX_ARTIST = MAX_ARTIST,
     MAX_SOURCE = MAX_SOURCE,
     read_file = read_file,

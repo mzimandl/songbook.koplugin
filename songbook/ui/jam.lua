@@ -436,11 +436,13 @@ function Songbook:startFollowing(url)
     local dir = self.songs_dir .. "/" .. JAM_KEY
     if lfs.attributes(dir, "mode") == "directory" then
         local current = self:currentSongId()
+        local uids = {}
         for name in lfs.dir(dir) do
             local id = song_file_id(name)
             local uid = id and make_uid(JAM_KEY, id)
-            if uid and uid ~= current then self:deleteSong(uid) end
+            if uid and uid ~= current then uids[#uids + 1] = uid end
         end
+        self:deleteSongs(uids)
     end
     -- the followed songbook's playlist is used instead of ours, which is put
     -- aside until following stops (also over a crash: see restorePlaylist())

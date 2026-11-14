@@ -96,6 +96,11 @@ end
 function Songbook:download(song)
     local body, err = fetch_from(song.server, song.file)
     if not body then return nil, err end
+    -- a Wi-Fi login page or an error page answers 200 too
+    local start = body:sub(1, 200):lower()
+    if start:match("^%s*<!doctype html") or start:match("^%s*<html") then
+        return nil, _("the server sent a web page, not a song")
+    end
     util.makePath(self.songs_dir .. "/" .. song.server.key)
     local ok, werr = write_file(self:songPath(song.uid), body)
     if not ok then return nil, werr end
@@ -305,6 +310,15 @@ function Songbook:takenKeys()
     return taken
 end
 
+--- The saved repository with the same address as `url`, or nil.
+function Songbook:findServerByUrl(url)
+    local function address(u) return (Repo.base_url(u):gsub("/+$", "")) end
+    local base = address(url)
+    for _i, server in ipairs(self:getServers()) do
+        if address(server.url) == base then return server end
+    end
+end
+
 function Songbook:addServer(url)
     local servers = self:getServers()
     local server = { key = Repo.server_key(url, self:takenKeys()), url = url }
@@ -335,14 +349,17 @@ function Songbook:removeServer(key, delete_songs)
     if not delete_songs then return end
     local dir = self.songs_dir .. "/" .. key
     if lfs.attributes(dir, "mode") ~= "directory" then return end
+    local uids, other = {}, {}
     for name in lfs.dir(dir) do
         local id = song_file_id(name)
         if id then
-            self:deleteSong(make_uid(key, id))
+            uids[#uids + 1] = make_uid(key, id)
         elseif name ~= "." and name ~= ".." then
-            os.remove(dir .. "/" .. name)
+            other[#other + 1] = name
         end
     end
+    self:deleteSongs(uids)
+    for _i, name in ipairs(other) do os.remove(dir .. "/" .. name) end
     os.remove(dir)
 end
 
@@ -388,6 +405,10 @@ function Songbook:showRepositories(on_close)
             bold = true,
             callback = function()
                 self:askServerUrl(_("Add song repository"), "", function(url)
+                    local known = self:findServerByUrl(url)
+                    if known then
+                        return notify(T(_("This repository is already added: %1"), self:serverName(known)))
+                    end
                     local server = self:addServer(url)
                     refresh()
                     self:loadServerName(server.key, refresh)

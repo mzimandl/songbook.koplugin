@@ -372,11 +372,15 @@ function Songbook:currentOwnSongId()
     if uid and split_uid(uid) ~= JAM_KEY then return uid end
 end
 
-function Songbook:removeStaleRenders(uid, keep)
-    local prefix = render_stem(uid) .. "@"
+--- Remove the rendered files of the songs in `uids` (one pass over the
+-- folder), except `keep` (a path) and the open document.
+function Songbook:removeRenders(uids, keep)
+    local stems = {}
+    for _i, uid in ipairs(uids) do stems[render_stem(uid)] = true end
     for name in lfs.dir(self.render_dir) do
         local path = self.render_dir .. "/" .. name
-        if name:sub(1, #prefix) == prefix and name:match("%.html$") and path ~= keep
+        local stem = name:match("^(.+)@[^@]+%.html$")
+        if stem and stems[stem] and path ~= keep
                 and not (self.ui.document and self.ui.document.file == path) then
             os.remove(path)
             pcall(function()
@@ -384,6 +388,10 @@ function Songbook:removeStaleRenders(uid, keep)
             end)
         end
     end
+end
+
+function Songbook:removeStaleRenders(uid, keep)
+    self:removeRenders({ uid }, keep)
 end
 
 --- HTML of song `uid`; fields of `opts` override the settings
@@ -437,11 +445,25 @@ function Songbook:openSong(uid)
     -- while following, the followed songbook's playlist is used
     if not jam.follow and self:get("play_on_open") then self:playlistPlay(uid) end
     if self:get("scroll_mode") then self:preferScrollMode(path) end
+    self:rememberPosition(uid)
     if self.ui.document then
         self.ui:switchDocument(path)
     else
         require("apps/reader/readerui"):showReader(path)
     end
+end
+
+--- Before song `uid` opens: when it is the open song (rendered again), note
+-- where it is scrolled to and whether it autoscrolls, for onReaderReady() of
+-- the new document (see `reopen` in common.lua).
+function Songbook:rememberPosition(uid)
+    local reopen = C.reopen
+    reopen.uid, reopen.percent, reopen.autoscroll = nil, nil, nil
+    local doc = self.ui.document
+    if not doc or self:currentSongId() ~= uid then return end
+    local ok, percent = pcall(function() return doc:getCurrentPos() / doc.info.doc_height * 100 end)
+    if not ok or percent ~= percent then return end
+    reopen.uid, reopen.percent, reopen.autoscroll = uid, percent, self:isAutoscrolling()
 end
 
 --- Open the rendered song in continuous (scroll) mode, unless its view mode
@@ -492,16 +514,26 @@ function Songbook:listLocal()
     return songs
 end
 
-function Songbook:deleteSong(uid)
-    os.remove(self:songPath(uid))
-    self:setMapValue("downloaded", uid, nil)
-    self:setMapValue("transpose", uid, nil)
-    self:setMapValue("favorites", uid, nil)
-    self:setMapValue("duration", uid, nil)
+--- Delete the songs `uids` from the device with all that is kept for them.
+-- The settings are written once, however many songs there are.
+function Songbook:deleteSongs(uids)
+    if #uids == 0 then return end
+    for _i, uid in ipairs(uids) do os.remove(self:songPath(uid)) end
+    for _i, key in ipairs({ "downloaded", "transpose", "favorites", "duration" }) do
+        local map = self:getMap(key)
+        for _j, uid in ipairs(uids) do map[uid] = nil end
+        self.settings:saveSetting(key, map)
+    end
     local collections = self:getCollections()
-    for _, c in ipairs(collections) do C.collection_set(c, uid, false) end
-    self:saveCollections(collections)
-    self:removeStaleRenders(uid, nil)
+    for _i, c in ipairs(collections) do
+        for _j, uid in ipairs(uids) do C.collection_set(c, uid, false) end
+    end
+    self:saveCollections(collections)   -- flushes the settings
+    self:removeRenders(uids)
+end
+
+function Songbook:deleteSong(uid)
+    self:deleteSongs({ uid })
 end
 
 function Songbook:setAndRefresh(key, value)

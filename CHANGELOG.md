@@ -4,6 +4,16 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.9 – 2026-11-14
+
+- A song stays where it was scrolled to when it is transposed or its options
+  change, and a running autoscroll goes on.
+- Removing a repository with its songs is much faster (the settings are
+  written once, not for every song).
+- A web page (a Wi-Fi login) is no longer saved as a song; the same repository
+  can't be added twice; a collection's count shows the songs on the device.
+- The tests run before every release.
+
 ## 1.3.0-beta.8 – 2026-11-14
 
 - The reader no longer suspends by itself after some idle minutes while it
