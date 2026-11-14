@@ -115,11 +115,13 @@ Songbook.onSongbookShowKeyDialog = Songbook.showKeyDialog
 -- view, the view moves by `step` screens (1/`autoscroll_step` of the screen
 -- in scroll mode, keeping AUTOSCROLL_PLAYED screens of played lines visible;
 -- a whole page in page mode). A manual move re-anchors the timing at the new
--- position.
+-- position. While a menu is open over the song the view waits and then
+-- catches up in one move.
 
 local AUTOSCROLL_PAGE = { step = 1, trigger = 0.9, page = true }
 local AUTOSCROLL_PLAYED = 0.25
 local AUTOSCROLL_MIN_WAIT = 0.5   -- seconds
+local AUTOSCROLL_COVERED_WAIT = 1   -- seconds between checks while a menu is open
 
 --- Length of song `uid` in seconds: set on the device, else {duration} in the file.
 function Songbook:songDuration(uid)
@@ -186,11 +188,29 @@ function Songbook:autoscrollStep()
     end
     local played = (now() - a.start) / a.duration * height
     if played >= pos + mode.trigger * h then
+        if self:songCovered() then
+            -- a menu or dialog is open: moving would repaint the song under it
+            UIManager:unschedule(a.task)
+            UIManager:scheduleIn(AUTOSCROLL_COVERED_WAIT, a.task)
+            return
+        end
+        -- after waiting under a menu, catch up in one move
+        local steps = math.max(1, math.floor((played - pos - mode.trigger * h) / (mode.step * h)) + 1)
         a.moving = true
-        self.ui:handleEvent(Event:new("GotoViewRel", mode.step))
+        self.ui:handleEvent(Event:new("GotoViewRel", steps * mode.step))
         a.moving = false
     end
     self:scheduleAutoscroll()
+end
+
+--- Whether a widget (a menu, a dialog; not a toast) is shown over the song.
+function Songbook:songCovered()
+    if not UIManager.topdown_widgets_iter then return false end
+    for w in UIManager:topdown_widgets_iter() do
+        if w == self.ui then return false end
+        if not w.toast and not w.invisible then return true end
+    end
+    return false
 end
 
 function Songbook:startAutoscroll(quiet)

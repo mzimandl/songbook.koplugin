@@ -4,6 +4,13 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.6 – 2026-11-14
+
+- Jam session: the guests' pages follow the autoscroll smoothly, without the
+  small jumps every few seconds.
+- Autoscroll doesn't move the song while a menu or dialog is open over it (the
+  song flickered under the menu); it catches up when the menu closes.
+
 ## 1.3.0-beta.5 – 2026-11-14
 
 - Jam session: the guests' pages follow the autoscroll to the end of the song.

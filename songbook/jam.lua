@@ -336,12 +336,34 @@ function bar() {
   $("follow").hidden = !scroll;
   $("follow").className = P.follow && !paused ? "on" : "";
 }
-// Keep the line the host is playing a quarter down the screen: the progress
-// from the last /state.json, moved on by the time since then.
+// The host's progress now: from the last /state.json, moved on by the time
+// since then, plus the part of the correction made so far.
+function progress(t) {
+  var d = t - scroll.at;
+  return scroll.progress + d / 1000 / scroll.duration + scroll.corr * Math.min(1, d / SMOOTH);
+}
+// Each /state.json arrives a little late (the network, a busy reader), so a
+// small difference from our own estimate is spread over the next seconds
+// instead of jumping; a large one (the host moved) is taken at once.
+var SMOOTH = 3000, JUMP = 2;   // ms, seconds of the song
+function setScroll(s) {
+  var t = performance.now();
+  if (!s) { scroll = null; return; }
+  if (scroll && scroll.duration == s.duration) {
+    var p = progress(t);
+    var corr = s.progress - p;
+    if (Math.abs(corr) * s.duration < JUMP) {
+      scroll = { progress: p, duration: s.duration, at: t, corr: corr };
+      return;
+    }
+  }
+  scroll = { progress: s.progress, duration: s.duration, at: t, corr: 0 };
+}
+// Keep the line the host is playing a quarter down the screen.
 function follow() {
   requestAnimationFrame(follow);
   if (!scroll || !P.follow || paused || view != "song" || !uid) return;
-  var p = Math.min(1, scroll.progress + (performance.now() - scroll.at) / 1000 / scroll.duration);
+  var p = Math.min(1, progress(performance.now()));
   var song = $("song");
   var y = Math.max(0, Math.round(song.offsetTop + p * song.offsetHeight - window.innerHeight / 4));
   if (Math.abs(y - window.scrollY) >= 1) window.scrollTo(0, y);
@@ -422,12 +444,11 @@ function poll() {
       uid = null; rev = "";
     } else if (s.rev !== rev) {
       var changed = s.uid !== uid;
-      if (changed) paused = false;
+      if (changed) { paused = false; scroll = null; }
       uid = s.uid; rev = s.rev;
       load(changed);
     }
-    scroll = s.uid && s.scroll && s.scroll.duration > 0
-      ? { progress: s.scroll.progress, duration: s.scroll.duration, at: performance.now() } : null;
+    setScroll(s.uid && s.scroll && s.scroll.duration > 0 ? s.scroll : null);
     bar();
     if (view == "list") loadPlaylist();
   }).catch(function () { $("status").textContent = L.offline; })

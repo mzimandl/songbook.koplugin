@@ -40,6 +40,7 @@ stub("ui/time", { now = function() return clock end, to_s = function(t) return t
 stub("ui/widget/menu", class({ switchItemTable = function(self, t, items, itemnumber) self.item_table = items; self.switched_to = itemnumber end }))
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
 local zmqs, standby, scheduled, scheduled_in, ticks = {}, 0, nil, nil, {}
+local window_stack = {}   -- for UIManager:topdown_widgets_iter()
 stub("ui/uimanager", {
     show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
     insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
@@ -50,6 +51,10 @@ stub("ui/uimanager", {
     unschedule = function(_, f) if scheduled == f then scheduled = nil end end,
     allowStandby = function() standby = standby - 1 end,
     isWidgetShown = function() return true end,
+    topdown_widgets_iter = function()
+        local i = #window_stack + 1
+        return function() i = i - 1; return window_stack[i] end
+    end,
     setDirty = function() end,
 })
 local sent
@@ -435,6 +440,16 @@ do  -- jam guests get the host's autoscroll of the song now playing
     check(plugin:jamState().scroll == nil, "no scroll for another song than the one shared")
     a.uid = "test"
 end
+-- under a menu the song doesn't move (no repaints under it), then catches up at once
+window_stack = { plugin.ui, { name = "menu" } }
+clock = clock + 6.25 + 12.5
+scheduled()
+check(pos == 100 and scheduled_in == 1, "autoscroll waits while a menu is open: " .. pos .. " " .. tostring(scheduled_in))
+window_stack = { plugin.ui, { toast = true } }
+scheduled()
+check(pos == 400 and scheduled_in == 6.25, "autoscroll catches up in one move once the menu closes: "
+    .. pos .. " " .. tostring(scheduled_in))
+window_stack = {}
 plugin:stopAutoscroll()
 check(plugin:jamState().scroll == nil, "no scroll once autoscroll stops")
 
