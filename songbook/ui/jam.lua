@@ -388,8 +388,12 @@ function Songbook:followStep()
         return
     end
     f.name, f.peers = state.name, state.peers
+    -- the host's autoscroll and when we heard of it, for followScroll()
+    f.scroll = state.scroll
+    if f.scroll then f.scroll.at = now() end
     if not state.uid or state.rev == f.rev then
         f.failures = 0
+        self:followScroll()
         return
     end
     local uid = make_uid(JAM_KEY, Jam.song_id(state.uid))
@@ -407,12 +411,45 @@ function Songbook:followStep()
     -- the first song after following starts opens too
     local following_open = open == nil or f.uid == nil or open == self:nowPlayingUid()
     f.failures, f.rev, f.uid, f.transpose = 0, state.rev, state.uid, state.transpose
-    if same then return end
+    if same then return self:followScroll() end
     self:setMapValue("transpose", uid, state.transpose ~= 0 and state.transpose or nil)
     if following_open then
         self:openSong(uid)
     elseif new_song then
         Notification:notify(T(_("Now playing: %1"), self:nowPlayingTitle()))
+    end
+end
+
+-- A second or two of difference isn't worth a jump of the page.
+local FOLLOW_SCROLL_SLACK = 1.5   -- seconds
+
+--- Scroll the followed song with the host's autoscroll (setting
+-- `jam_follow_scroll`): our autoscroll runs with the host's length and start
+-- (`synced`), and stops when the host's does. Called after every poll, and
+-- from onReaderReady() and Start autoscroll with the last state. Scrolling by
+-- hand or stopping autoscroll pauses it for this song (f.scroll_paused = uid)
+-- until Start autoscroll.
+function Songbook:followScroll()
+    local f = jam.follow
+    if not f then return end
+    local uid = self:nowPlayingUid()
+    if not uid or self:currentSongId() ~= uid then return end
+    local a = self.autoscroll
+    local s = f.scroll
+    if not s then
+        f.scroll_paused = nil
+        if a and a.synced then self:stopAutoscroll() end
+        return
+    end
+    if not self:get("jam_follow_scroll") or f.scroll_paused == uid then return end
+    local start = s.at - s.progress * s.duration
+    if not a then
+        -- the host has finished: nothing to start for
+        if now() - start >= s.duration then return end
+        self:startAutoscroll(true, { duration = s.duration, start = start })
+    elseif not a.synced or a.duration ~= s.duration or math.abs(a.start - start) > FOLLOW_SCROLL_SLACK then
+        a.synced, a.duration, a.start = true, s.duration, start
+        self:scheduleAutoscroll()
     end
 end
 
@@ -666,6 +703,21 @@ function Songbook:jamMenu()
                         touchmenu_instance:updateItems()
                     end)
                 end)
+            end,
+        },
+        {
+            text = _("Scroll with the followed songbook"),
+            help_text = _("While the other songbook autoscrolls the song, this one scrolls along with it. Scrolling by hand or stopping autoscroll pauses it for that song; Start autoscroll resumes it."),
+            keep_menu_open = true,
+            checked_func = function() return self:get("jam_follow_scroll") end,
+            callback = function(touchmenu_instance)
+                self:set("jam_follow_scroll", not self:get("jam_follow_scroll"))
+                if self:get("jam_follow_scroll") then
+                    self:followScroll()
+                elseif self.autoscroll and self.autoscroll.synced then
+                    self:stopAutoscroll()
+                end
+                touchmenu_instance:updateItems()
             end,
         },
         {

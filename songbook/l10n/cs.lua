@@ -1,6 +1,10 @@
 -- Czech translation of the plugin's strings (msgid → translation), see songbook/l10n.lua.
 -- tests/run.lua checks that every _("…") in main.lua has an entry here.
 return {
+    ["Scroll with the followed songbook"] = "Posouvat se sledovaným zpěvníkem",
+    ["While the other songbook autoscrolls the song, this one scrolls along with it. Scrolling by hand or stopping autoscroll pauses it for that song; Start autoscroll resumes it."] =
+        "Když druhý zpěvník píseň sám posouvá, posouvá se s ním i tento. Ruční posun nebo zastavení posouvání to pro danou píseň pozastaví; Spustit posouvání to obnoví.",
+    ["Scrolling with the other songbook paused"] = "Posun s druhým zpěvníkem pozastaven",
     ["the server sent a web page, not a song"] = "server poslal webovou stránku, ne píseň",
     ["This repository is already added: %1"] = "Tento repozitář už je přidaný: %1",
     -- gestures

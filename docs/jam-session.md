@@ -31,6 +31,11 @@ address…* (for example `192.168.1.5`). Every song the other reader plays opens
 on yours, in its key; you can still transpose it. While you look at another
 song, a new one is only announced.
 
+While the other reader autoscrolls the song, yours scrolls along with it
+(*Scroll with the followed songbook*, on by default), with the other reader's
+song length. Scrolling by hand or *Stop autoscroll* pauses it for that song;
+*Start autoscroll* resumes it.
+
 While following:
 - the other reader is a song repository in *Browse online*: download any of its
   songs (the followed songs themselves are kept apart, not in My songs);

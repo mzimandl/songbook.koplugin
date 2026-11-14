@@ -386,6 +386,12 @@ eq(st and st.uid, nil, "jam parse state without song")
 eq(Jam.parse_state("", function() error("bad") end), nil, "jam parse state bad json")
 eq(st.api, 1, "jam parse state without api: version 1")
 eq(Jam.parse_state("", decode_table({ api = 2 })).api, 2, "jam parse state api")
+st = Jam.parse_state("", decode_table({ uid = "x", rev = "1", scroll = { progress = 0.5, duration = 200 } }))
+eq(st.scroll and st.scroll.progress == 0.5 and st.scroll.duration == 200, true, "jam parse state scroll")
+eq(Jam.parse_state("", decode_table({ uid = "x", rev = "1", scroll = { progress = 2, duration = 200 } })).scroll, nil,
+    "jam parse state: bad scroll ignored")
+eq(Jam.parse_state("", decode_table({ scroll = { progress = 0.5, duration = 200 } })).scroll, nil,
+    "jam parse state: no scroll without a song")
 eq(st.name == nil and #st.peers, 0, "jam parse state from older songbooks: no name, no peers")
 st = Jam.parse_state("", decode_table({ name = " Kobo\n", peers = {
     { url = "http://10.0.0.3:8765/", name = "Kindle" }, { url = "file:///etc/" }, "junk", { url = "http://[fe80::1]:80/" } } }))

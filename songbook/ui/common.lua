@@ -49,6 +49,7 @@ local DEFAULTS = {
     song_button = true,
     play_on_open = false,
     jam_share_songs = true,
+    jam_follow_scroll = true,
 }
 
 -- The jam session's server and following work through the newest plugin

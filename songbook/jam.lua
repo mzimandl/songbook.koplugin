@@ -229,7 +229,7 @@ function M.normalize_url(text, default_port)
 end
 
 --- Decode /state.json of another songbook. Returns { api, uid, rev, transpose,
--- name, peers } or nil (name nil and peers empty from older songbooks).
+-- name, peers, scroll } or nil (name nil and peers empty from older songbooks).
 function M.parse_state(body, decode)
     local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" then return nil end
@@ -242,6 +242,12 @@ function M.parse_state(body, decode)
     if type(data.uid) == "string" and data.uid ~= "" and type(data.rev) == "string" then
         state.uid, state.rev = data.uid, data.rev
         if type(data.transpose) == "number" then state.transpose = M.add_semitones(data.transpose, 0) end
+        -- the host's autoscroll of this song (since 1.3)
+        local s = data.scroll
+        if type(s) == "table" and type(s.progress) == "number" and type(s.duration) == "number"
+                and s.duration > 0 and s.progress >= 0 and s.progress <= 1 then
+            state.scroll = { progress = s.progress, duration = s.duration }
+        end
     end
     return state
 end

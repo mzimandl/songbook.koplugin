@@ -234,10 +234,12 @@ function Songbook:songCovered()
     return false
 end
 
-function Songbook:startAutoscroll(quiet)
+--- Start autoscrolling the open song. `sync` = { duration, start }: with the
+-- followed songbook's length and start time instead of ours (see followScroll()).
+function Songbook:startAutoscroll(quiet, sync)
     local uid = self:currentSongId()
     if not uid or self.autoscroll then return end
-    local duration = self:songDuration(uid)
+    local duration = sync and sync.duration or self:songDuration(uid)
     if not duration then
         if not quiet then notify(_("This song has no length. Set it with Song length in the song's options.")) end
         return
@@ -245,7 +247,11 @@ function Songbook:startAutoscroll(quiet)
     self.autoscroll = { uid = uid, duration = duration }
     self.autoscroll.task = function() self:autoscrollStep() end
     jam.autoscroll = self.autoscroll   -- for the jam session's guests
-    self:anchorAutoscroll()
+    if sync then
+        self.autoscroll.synced, self.autoscroll.start = true, sync.start
+    else
+        self:anchorAutoscroll()
+    end
     C.keep_awake(true)
     self:scheduleAutoscroll()
     Notification:notify(T(_("Autoscroll: %1"), ChordPro.format_duration(duration)))
@@ -260,10 +266,24 @@ function Songbook:stopAutoscroll()
     C.keep_awake(false)
 end
 
+--- uid of the open song when it is the followed one and the followed
+-- songbook autoscrolls it, else nil.
+function Songbook:hostScrollsOpenSong()
+    local f = jam.follow
+    local uid = f and f.scroll and self:nowPlayingUid()
+    if uid and uid == self:currentSongId() then return uid end
+end
+
 function Songbook:onSongbookAutoscroll()
+    local hosted = self:get("jam_follow_scroll") and self:hostScrollsOpenSong()
     if self.autoscroll then
+        -- stopped by hand: don't start again with the next poll
+        if hosted then jam.follow.scroll_paused = hosted end
         self:stopAutoscroll()
         Notification:notify(_("Autoscroll stopped"))
+    elseif hosted then
+        jam.follow.scroll_paused = nil
+        self:followScroll()
     else
         self:startAutoscroll()
     end
@@ -335,6 +355,7 @@ function Songbook:onReaderReady()
     end
     reopen.uid, reopen.percent, reopen.autoscroll = nil, nil, nil
     if was_scrolling or (self:get("autoscroll") and self:nowPlayingUid() == uid) then self:startAutoscroll(true) end
+    self:followScroll()   -- while following: with the host's autoscroll instead
 end
 
 -- Corner of the screen the song button's tap zone covers; taps there that
@@ -418,7 +439,12 @@ end
 -- A move the autoscroll didn't make (page turn, pan, re-rendering).
 function Songbook:onPosUpdate()
     local a = self.autoscroll
-    if a and not a.moving then
+    if a and not a.moving and a.synced then
+        -- scrolled by hand: stop following the host's autoscroll for this song
+        if jam.follow then jam.follow.scroll_paused = a.uid end
+        self:stopAutoscroll()
+        Notification:notify(_("Scrolling with the other songbook paused"))
+    elseif a and not a.moving then
         self:anchorAutoscroll()
         self:scheduleAutoscroll()
     end

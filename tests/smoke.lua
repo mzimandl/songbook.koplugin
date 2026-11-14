@@ -992,7 +992,7 @@ library.receiveCallback("GET /index.json HTTP/1.1\r\n\r\n", {})
 check(sent:find("^HTTP/1.1 200") and sent:find('"uid":"test"', 1, true), "own songs listed")
 library.receiveCallback("GET /state.json HTTP/1.1\r\n\r\n", {})
 check(sent:find("^HTTP/1.1 404"), "follower's library has no jam state")
-local share_item = jam_menu.sub_item_table[6]
+local share_item = jam_menu.sub_item_table[7]
 check(name_item.enabled_func() == false, "no renaming while following")
 share_item.callback(tmi)
 check(not share_item.checked_func() and not library.started and zmqs[#zmqs] ~= library, "own songs no longer shared")
@@ -1014,6 +1014,61 @@ responses[state_url] = "S3"
 scheduled()
 check(#opened == n_opened + 2 and opened[#opened]:find("@t%+0") and requested[#requested] == state_url,
     "host transposition followed without download")
+do  -- the followed song scrolls with the host's autoscroll
+    local jam_state = require("songbook/ui/common").jam
+    local file_before = plugin.ui.document.file
+    plugin.ui.document.file = opened[#opened]
+    pos, clock = 0, 5000
+    decoded.S4 = { uid = "repo/song-a", rev = "3", transpose = 0, scroll = { progress = 0.25, duration = 200 } }
+    responses[state_url] = "S4"
+    scheduled()
+    local poll = scheduled   -- the follow poll (the stub keeps only the task scheduled last)
+    local a = plugin.autoscroll
+    check(a and a.synced and a.duration == 200 and a.start == 4950, "autoscroll starts with the host's length and start")
+    plugin:autoscrollStep()
+    check(pos == 600 and plugin:isAutoscrolling(), "the view catches up with the host in one move: " .. pos)
+    decoded.S5 = { uid = "repo/song-a", rev = "3", transpose = 0, scroll = { progress = 0.255, duration = 200 } }
+    responses[state_url] = "S5"
+    poll()
+    check(a.start == 4950, "a small difference doesn't move the timing")
+    decoded.S6 = { uid = "repo/song-a", rev = "3", transpose = 0, scroll = { progress = 0.5, duration = 180 } }
+    responses[state_url] = "S6"
+    poll()
+    check(plugin.autoscroll == a and a.start == 4910 and a.duration == 180, "the host's move and new length are taken over: " .. tostring(plugin.autoscroll == a) .. " " .. tostring(a.start) .. " " .. tostring(a.duration))
+    -- scrolling by hand pauses it for this song, Start autoscroll resumes
+    pos = 1000
+    plugin:onPosUpdate(pos)
+    check(not plugin:isAutoscrolling() and jam_state.follow.scroll_paused == "jam/repo_song-a"
+        and toasts[#toasts]:find("paused", 1, true), "a manual move pauses scrolling with the host")
+    poll()
+    check(not plugin:isAutoscrolling(), "paused: the next poll doesn't start it again")
+    plugin:onSongbookAutoscroll()
+    check(plugin:isAutoscrolling() and plugin.autoscroll.synced and jam_state.follow.scroll_paused == nil,
+        "Start autoscroll resumes scrolling with the host")
+    plugin:onSongbookAutoscroll()
+    poll()
+    check(not plugin:isAutoscrolling() and jam_state.follow.scroll_paused == "jam/repo_song-a",
+        "Stop autoscroll pauses it too")
+    -- the host stops: the pause is over, and a synced autoscroll stops with it
+    responses[state_url] = "S3"
+    poll()
+    check(jam_state.follow.scroll_paused == nil and jam_state.follow.scroll == nil, "host stopped: no pause left")
+    responses[state_url] = "S6"
+    poll()
+    check(plugin:isAutoscrolling(), "the host scrolls again: so do we")
+    settings_store.jam_follow_scroll = false
+    plugin:stopAutoscroll()
+    poll()
+    check(not plugin:isAutoscrolling(), "setting off: the host's autoscroll is not followed")
+    settings_store.jam_follow_scroll = nil
+    poll()
+    responses[state_url] = "S3"
+    poll()
+    check(not plugin:isAutoscrolling(), "a synced autoscroll stops with the host's")
+    pos = 0
+    plugin.ui.document.file = file_before
+    poll()   -- scheduled again as the tests below expect
+end
 local jam_song
 for _, song in ipairs(plugin:listLocal()) do if song.uid == "jam/repo_song-a" then jam_song = song end end
 check(jam_song == nil, "followed song not in my songs")

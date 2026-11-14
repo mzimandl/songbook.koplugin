@@ -4,6 +4,12 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.10 – 2026-11-14
+
+- Jam session: a reader that follows another one scrolls along with its
+  autoscroll (*Scroll with the followed songbook*, on by default). Scrolling by
+  hand or *Stop autoscroll* pauses it for that song; *Start autoscroll* resumes.
+
 ## 1.3.0-beta.9 – 2026-11-14
 
 - A song stays where it was scrolled to when it is transposed or its options
