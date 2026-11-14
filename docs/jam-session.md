@@ -14,7 +14,8 @@ chords and change the font size for themselves, and request songs, which join
 your *Up next*.
 
 While the song autoscrolls on your reader, the guests' pages scroll along with
-it, smoothly, keeping the line being played a quarter down the screen. A guest
+it, smoothly, keeping the line being played a quarter down the screen. At the end the page
+runs on to the last line, which stays above the bottom edge. A guest
 who scrolls by hand pauses this; the ⇣ button resumes it (or turns it off for
 good on that phone). Your manual page turns are not followed, so guests can read
 ahead.

@@ -285,6 +285,7 @@ button.on { background: #8883; }
 #t { min-width: 2em; text-align: center; }
 #status { margin-left: auto; font-size: 0.85em; opacity: 0.7; }
 #song, #list { margin: 0.8em; }
+#end { height: 35vh; }
 #song .l, #song .ly, #song pre { font-size: var(--fs, 16px); }
 #list h2 { font-size: 1.1em; margin: 1em 0 0.3em 0; }
 #list ul { list-style: none; padding: 0; margin: 0; }
@@ -304,6 +305,7 @@ button.on { background: #8883; }
 <span id="status"></span>
 </div>
 <div id="song"><p>%s</p></div>
+<div id="end"></div>
 <div id="list" hidden>
 <h2 id="h_now"></h2><ul id="now"></ul>
 <h2 id="h_queue"></h2><ul id="queue"></ul>
@@ -319,7 +321,7 @@ try { var saved = JSON.parse(localStorage.getItem("songbook-jam")); for (var k i
 var rev = null, uid = null, host_notation = "cz", view = "song", songs = null;
 // numbers of the latest song and playlist requests: older answers that arrive late are dropped
 var song_seq = 0, playlist_seq = 0, scroll_up = false;
-// the host's autoscroll ({ progress, duration, at }) and whether the guest paused following it
+// the host's autoscroll (see setScroll()) and whether the guest paused following it
 var scroll = null, paused = false;
 function $(id) { return document.getElementById(id); }
 function save() { try { localStorage.setItem("songbook-jam", JSON.stringify(P)); } catch (e) {} }
@@ -338,41 +340,66 @@ function bar() {
   $("tab").textContent = view == "song" ? L.playlist : L.song;
   $("songbar").hidden = view != "song";
   $("song").hidden = view != "song";
+  $("end").hidden = view != "song";
   $("list").hidden = view == "song";
   $("follow").hidden = !scroll;
   $("follow").className = P.follow && !paused ? "on" : "";
 }
-// The host's progress now: from the last /state.json, moved on by the time
-// since then, plus the part of the correction made so far.
-function progress(t) {
-  var d = t - scroll.at;
-  return scroll.progress + d / 1000 / scroll.duration + scroll.corr * Math.min(1, d / SMOOTH);
-}
-// Each /state.json arrives a little late (the network, a busy reader), so a
-// small difference from our own estimate is spread over the next seconds
-// instead of jumping; a large one (the host moved) is taken at once.
-var SMOOTH = 3000, JUMP = 2;   // ms, seconds of the song
-function setScroll(s) {
-  var t = performance.now();
-  if (!s) { scroll = null; return; }
-  if (scroll && scroll.duration == s.duration) {
-    var p = progress(t);
-    var corr = s.progress - p;
-    if (Math.abs(corr) * s.duration < JUMP) {
-      scroll = { progress: p, duration: s.duration, at: t, corr: corr };
+// Following the host's autoscroll. Its progress runs evenly, so one number
+// describes it: T0, our clock's time (ms) at which its progress was 0. Every
+// /state.json was made between our request and its answer, which bounds T0
+// from both sides; the bounds of all answers together pin it down, however
+// late single answers are (a busy reader, sleepy Wi-Fi). Answers that don't
+// fit the bounds mean the host moved: then they start again.
+// scroll = { lo, hi (bounds of T0), T0 (best guess), S0 (the T0 shown: it
+// follows T0 slowly, so a correction is never a jump), duration (s), frame,
+// ending (the host finished: run on to the end) }
+var EASE = 0.2, SNAP = 3000;   // share of the speed a correction may take; ms taken at once
+var snaps = 0, debug = /[?&]debug/.test(location.search);
+function progress(t) { return (t - scroll.S0) / 1000 / scroll.duration; }
+function setScroll(s, sent, got) {
+  if (!s) {
+    if (!scroll) return;
+    // the host stopped at the end of the song: go on to the last line by ourselves
+    if (progress(got) >= 1 - 8 / scroll.duration) scroll.ending = true; else scroll = null;
+    return;
+  }
+  var off = s.progress * s.duration * 1000;
+  var tol = 0.00006 * s.duration * 1000 + 5;   // the progress is rounded to 4 places
+  var lo = sent - off - tol, hi = got - off + tol;
+  if (scroll && !scroll.ending && scroll.duration == s.duration) {
+    var nlo = Math.max(scroll.lo, lo), nhi = Math.min(scroll.hi, hi);
+    if (nlo <= nhi) {
+      scroll.lo = nlo; scroll.hi = nhi;
+      scroll.T0 = Math.min(nhi, Math.max(nlo, scroll.T0));
       return;
     }
+    snaps++;
   }
-  scroll = { progress: s.progress, duration: s.duration, at: t, corr: 0 };
+  // answers are mostly late on their way to the reader, so T0 is near the upper bound
+  var T0 = hi - tol - Math.min((got - sent) / 2, 150);
+  // what is shown stays where it is (also with a new length) and moves over to T0
+  var S0 = scroll ? got - progress(got) * s.duration * 1000 : T0;
+  scroll = { lo: lo, hi: hi, T0: T0, S0: S0, duration: s.duration, frame: got };
 }
 // Keep the line the host is playing a quarter down the screen.
+var last_y = -1;
 function follow() {
   requestAnimationFrame(follow);
-  if (!scroll || !P.follow || paused || view != "song" || !uid) return;
-  var p = Math.min(1, progress(performance.now()));
+  if (!scroll) return;
+  var t = performance.now(), dt = Math.min(t - scroll.frame, 1000), diff = scroll.T0 - scroll.S0;
+  scroll.frame = t;
+  if (Math.abs(diff) > SNAP) scroll.S0 = scroll.T0;
+  else scroll.S0 += Math.max(-EASE * dt, Math.min(EASE * dt, diff));
+  var p = progress(t);
+  if (scroll.ending && p >= 1) { scroll = null; bar(); p = 1; }
+  if (debug) $("status").textContent = Math.round(diff) + " ms, " + snaps + "×";
+  if (!P.follow || paused || view != "song" || !uid) return;
   var song = $("song");
-  var y = Math.max(0, Math.round(song.offsetTop + p * song.offsetHeight - window.innerHeight / 4));
-  if (Math.abs(y - window.scrollY) >= 1) window.scrollTo(0, y);
+  // not rounded: fine screens scroll by less than a CSS pixel
+  var y = Math.max(0, song.offsetTop + Math.min(1, p) * song.offsetHeight - window.innerHeight / 4);
+  if (p >= 1) y = document.documentElement.scrollHeight;
+  if (Math.abs(y - last_y) >= 0.2) { last_y = y; window.scrollTo(0, y); }
 }
 // Scrolling by hand pauses following until the button is tapped.
 function pause() { if (scroll && P.follow && !paused) { paused = true; bar(); } }
@@ -442,8 +469,9 @@ function request(s) {
     });
 }
 function poll() {
+  var sent = performance.now();
   fetch("/state.json", { cache: "no-store" }).then(json).then(function (s) {
-    $("status").textContent = "";
+    if (!debug) $("status").textContent = "";
     host_notation = s.notation || "cz";
     if (!s.uid) {
       if (uid !== null || rev === null) $("song").innerHTML = "<p>" + L.waiting + "</p>";
@@ -454,7 +482,7 @@ function poll() {
       uid = s.uid; rev = s.rev;
       load(changed);
     }
-    setScroll(s.uid && s.scroll && s.scroll.duration > 0 ? s.scroll : null);
+    setScroll(s.uid && s.scroll && s.scroll.duration > 0 ? s.scroll : null, sent, performance.now());
     bar();
     if (view == "list") loadPlaylist();
   }).catch(function () { $("status").textContent = L.offline; })
