@@ -167,10 +167,10 @@ function Songbook:settingsMenu()
                     callback = function(touchmenu_instance)
                         UIManager:show(SpinWidget:new{
                             title_text = _("Autoscroll step"),
-                            info_text = _("In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often."),
+                            info_text = _("In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often. The screen doesn't flash while autoscrolling."),
                             value = self:get("autoscroll_step"),
                             value_min = 2,
-                            value_max = 16,
+                            value_max = 32,
                             default_value = DEFAULTS.autoscroll_step,
                             callback = function(spin)
                                 self:set("autoscroll_step", spin.value)

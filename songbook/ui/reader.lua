@@ -113,8 +113,8 @@ Songbook.onSongbookShowKeyDialog = Songbook.showKeyDialog
 -- The song's length is spread evenly over the document height, which gives
 -- the line being played. Once it gets `trigger` screens below the top of the
 -- view, the view moves by `step` screens (1/`autoscroll_step` of the screen
--- in scroll mode, keeping AUTOSCROLL_PLAYED screens of played lines visible;
--- a whole page in page mode). A manual move re-anchors the timing at the new
+-- in scroll mode, keeping AUTOSCROLL_PLAYED screens of played lines visible,
+-- repainted without the e-ink flash; a whole page in page mode). A manual move re-anchors the timing at the new
 -- position. While a menu is open over the song the view waits and then
 -- catches up in one move.
 
@@ -197,10 +197,31 @@ function Songbook:autoscrollStep()
         -- after waiting under a menu, catch up in one move
         local steps = math.max(1, math.floor((played - pos - mode.trigger * h) / (mode.step * h)) + 1)
         a.moving = true
-        self.ui:handleEvent(Event:new("GotoViewRel", steps * mode.step))
+        if mode.page then
+            self.ui:handleEvent(Event:new("GotoViewRel", steps * mode.step))
+        else
+            self:withoutFlashing(function()
+                self.ui:handleEvent(Event:new("GotoViewRel", steps * mode.step))
+            end)
+        end
         a.moving = false
     end
     self:scheduleAutoscroll()
+end
+
+--- Run f() with the song's "partial" repaints made "ui" ones: they don't count
+-- towards the e-ink full refresh (the flash every few page turns), so small
+-- scroll steps don't make the screen blink.
+function Songbook:withoutFlashing(f)
+    local dialog = self.ui.view and self.ui.view.dialog
+    local setDirty = UIManager.setDirty
+    UIManager.setDirty = function(um, widget, mode, ...)
+        if mode == "partial" and widget ~= nil and widget == dialog then mode = "ui" end
+        return setDirty(um, widget, mode, ...)
+    end
+    local ok, err = pcall(f)
+    UIManager.setDirty = setDirty
+    if not ok then error(err, 0) end
 end
 
 --- Whether a widget (a menu, a dialog; not a toast) is shown over the song.

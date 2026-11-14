@@ -284,8 +284,8 @@ return {
         "Posouvat písně, které mají délku ({duration} v souboru, nebo nastavenou položkou Délka písně ve volbách písně), tak, aby skončily s písní. Gesty lze posouvání spustit, zastavit, zrychlit nebo zpomalit; změněná délka se u písně uloží.",
     ["Autoscroll step: 1/%1 screen"] = "Krok posouvání: 1/%1 obrazovky",
     ["Autoscroll step"] = "Krok posouvání",
-    ["In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often."] =
-        "V plynulém režimu se obsah posune vždy o tuto část obrazovky. Menší kroky jsou plynulejší, ale obrazovka se častěji překresluje.",
+    ["In continuous scroll mode, autoscroll moves this part of the screen at a time. Smaller steps scroll more smoothly but refresh the screen more often. The screen doesn't flash while autoscrolling."] =
+        "V plynulém režimu se obsah posune vždy o tuto část obrazovky. Menší kroky jsou plynulejší, ale obrazovka se častěji překresluje. Při automatickém posunu obrazovka nebliká.",
     ["Songs folder"] = "Složka s písněmi",
     ["Downloaded songs are stored in:\n%1\n\nYou can also copy your own .cho files there."] =
         "Stažené písně jsou uložené v:\n%1\n\nMůžete tam zkopírovat i vlastní soubory .cho.",

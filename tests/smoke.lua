@@ -41,6 +41,7 @@ stub("ui/widget/menu", class({ switchItemTable = function(self, t, items, itemnu
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, runWhenConnected = function(_, cb) cb() end })
 local zmqs, standby, scheduled, scheduled_in, ticks = {}, 0, nil, nil, {}
 local window_stack = {}   -- for UIManager:topdown_widgets_iter()
+local dirty_mode   -- the last UIManager:setDirty() mode
 stub("ui/uimanager", {
     show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
     insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
@@ -55,7 +56,7 @@ stub("ui/uimanager", {
         local i = #window_stack + 1
         return function() i = i - 1; return window_stack[i] end
     end,
-    setDirty = function() end,
+    setDirty = function(_, w, mode) dirty_mode = mode end,
 })
 local sent
 stub("ui/message/simpletcpserver", class({
@@ -352,18 +353,20 @@ plugin:onSongbookTranspose(0)
 settings_store.scroll_mode = nil
 
 -- autoscroll: 3200 px song on an 800 px screen in scroll mode
+local orig_setDirty = require("ui/uimanager").setDirty
 local doc = plugin.ui.document
 local pos = 0
 doc.info = { doc_height = 3200 }
 doc.getCurrentPos = function() return pos end
 doc.hasHiddenFlows = function() return false end
-plugin.ui.view = { view_mode = "scroll", footer = { getBookProgress = function() return 0.5 end },
+plugin.ui.view = { view_mode = "scroll", dialog = {}, footer = { getBookProgress = function() return 0.5 end },
     registerViewModule = function() end }
 settings_store.autoscroll_step = 4
 plugin.ui.dimen = { h = 800 }
 plugin.ui.handleEvent = function(_, ev)
     if ev.name == "GotoViewRel" then
         pos = math.min(pos + ev.arg * 800, 2400)
+        require("ui/uimanager"):setDirty(plugin.ui.view.dialog, "partial")
         plugin:onPosUpdate(pos)
     end
 end
@@ -385,6 +388,8 @@ check(plugin:isAutoscrolling() and standby == 1 and toasts[#toasts] == "Autoscro
 clock = 122.5
 scheduled()
 check(pos == 200 and scheduled_in == 11.25, "autoscroll moves a quarter screen: " .. pos .. " " .. tostring(scheduled_in))
+check(dirty_mode == "ui" and require("ui/uimanager").setDirty == orig_setDirty,
+    "autoscroll repaints without counting towards the flash, then restores setDirty: " .. tostring(dirty_mode))
 clock = 125
 pos = 1000
 plugin:onPosUpdate(pos)

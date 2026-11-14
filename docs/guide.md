@@ -70,7 +70,8 @@ list (sorted in the order played); *Clear playlist* starts over.
   songs are converted to it), show chords, repeat
   the chorus text where the song says `{chorus}`.
 - **Scrolling**: continuous scroll mode, autoscroll when a song starts playing,
-  autoscroll step.
+  autoscroll step (1/2 to 1/32 of the screen; in continuous mode autoscroll
+  moves without the e-ink flash).
 - **Quick menu**: the ☰ button of an open song.
 - **Opening a song plays it**.
 

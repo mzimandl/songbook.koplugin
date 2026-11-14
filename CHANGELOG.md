@@ -4,6 +4,12 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.7 – 2026-11-14
+
+- Autoscroll step can be as small as 1/32 of the screen (was 1/16).
+- In continuous scroll mode autoscroll moves without the e-ink flash: its
+  repaints don't count towards the full refresh.
+
 ## 1.3.0-beta.6 – 2026-11-14
 
 - Jam session: the guests' pages follow the autoscroll smoothly, without the
