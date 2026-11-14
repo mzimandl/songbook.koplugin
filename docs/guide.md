@@ -16,7 +16,7 @@ collections, playlist, *Play now*, download again or delete.
   combined list. Tap a song to download it (when it is new or changed) and open
   it. ☰ → *Download all* gets the new and changed songs for offline use.
 - **My songs**: the songs on the device, each with its repository, and `.cho`
-  files you copy to `koreader/songbook/songs/`.
+  (or `.chopro`) files you copy to `koreader/songbook/songs/`.
 - **Favorites** (★): adding an online song downloads it.
 - **Collections**: your own song lists (*Campfire*, *Christmas*…), with songs from
   any repository. *New collection…*; in a collection *Add songs…* (tap to add or

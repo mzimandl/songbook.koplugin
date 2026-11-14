@@ -4,6 +4,15 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.8 – 2026-11-14
+
+- The reader no longer suspends by itself after some idle minutes while it
+  shares, follows or autoscrolls.
+- Jam session: the guest page doesn't load the song again when the browser
+  window changes its size (the address bar hiding while scrolling).
+- Copied `.chopro` files open (they were listed but not found).
+- With chords hidden, lines of chords alone (interludes) leave no empty lines.
+
 ## 1.3.0-beta.7 – 2026-11-14
 
 - Autoscroll step can be as small as 1/32 of the screen (was 1/16).

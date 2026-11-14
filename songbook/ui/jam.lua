@@ -300,7 +300,7 @@ function Songbook:startJam()
     else
         logger.warn("Songbook: no discovery answers", rerr)
     end
-    UIManager:preventStandby()
+    C.keep_awake(true)
     return true
 end
 
@@ -313,7 +313,7 @@ function Songbook:stopJam()
         jam.responder:close()
     end
     kindle_firewall("-D", jam.rules)
-    UIManager:allowStandby()
+    C.keep_awake(false)
     jam.server, jam.queue, jam.context, jam.rules, jam.peers = nil, nil, nil, nil, nil
     jam.responder, jam.responder_zmq = nil, nil
 end
@@ -449,7 +449,7 @@ function Songbook:startFollowing(url)
     end
     self:savePlaylist({})
     jam.follow = { url = url, failures = 0 }
-    UIManager:preventStandby()
+    C.keep_awake(true)
     self:startLibrary()
     follow_poll()
 end
@@ -457,7 +457,7 @@ end
 function Songbook:stopFollowing()
     if not jam.follow then return end
     UIManager:unschedule(follow_poll)
-    UIManager:allowStandby()
+    C.keep_awake(false)
     self:stopLibrary()
     jam.follow = nil
     self:restorePlaylist()

@@ -482,8 +482,6 @@ $("h_now").textContent = L.now_playing;
 $("h_queue").textContent = L.up_next;
 $("h_request").textContent = L.request;
 $("h_history").textContent = L.played;
-var resize_timer;
-window.onresize = function () { clearTimeout(resize_timer); resize_timer = setTimeout(function () { load(false); }, 300); };
 $("follow").title = L.follow;
 bar(); poll(); follow();
 </script></body></html>

@@ -175,12 +175,27 @@ local function line_html(segments)
     return table.concat(parts, " ")
 end
 
+-- Lyrics-only mode: does the block hold chords without words and no words
+-- at all (an interlude, "[Am] [G]")? Then nothing of it is shown.
+local function chords_only(block)
+    local chords = false
+    for _, line in ipairs(block.lines or {}) do
+        if line.type == "lyrics" then
+            if lyrics_text(line.segments) ~= "" then return false end
+            chords = true
+        end
+    end
+    return chords
+end
+
 local function render_block_lines(block, opts, flats, out)
     if not opts.show_chords then
         out[#out + 1] = '<div class="lyblock">'
         for _, line in ipairs(block.lines) do
             if line.type == "lyrics" then
-                out[#out + 1] = '<p class="ly">' .. escape(lyrics_text(line.segments)) .. "</p>"
+                -- a line of chords alone leaves no empty line
+                local text = lyrics_text(line.segments)
+                if text ~= "" then out[#out + 1] = '<p class="ly">' .. escape(text) .. "</p>" end
             elseif line.type == "comment" then
                 out[#out + 1] = '<p class="ly cm">' .. escape(line.text) .. "</p>"
             elseif line.type == "empty" then
@@ -208,6 +223,7 @@ local function render_block_lines(block, opts, flats, out)
 end
 
 local function render_block(block, opts, flats, out)
+    if not opts.show_chords and chords_only(block) then return end
     local is_chorus = block.type == "chorus"
     if is_chorus then out[#out + 1] = '<div class="chorus">' end
     local label = block.label

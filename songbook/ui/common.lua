@@ -246,6 +246,26 @@ local function follow_name()
     return (jam.follow.url:gsub("^%a+://", ""):gsub("/$", ""))
 end
 
+-- Sharing, following and autoscroll must keep the reader awake with nobody
+-- touching it: UIManager:preventStandby() only stops the short standby, the
+-- auto-suspend after some idle minutes is paused with PluginShare (as the
+-- autoturn plugin does). Counted, as they can run together; the flag another
+-- plugin set before is put back.
+local awake = { count = 0 }
+local function keep_awake(on)
+    local PluginShare = require("pluginshare")
+    if on then
+        UIManager:preventStandby()
+        if awake.count == 0 then awake.before = PluginShare.pause_auto_suspend end
+        awake.count = awake.count + 1
+        PluginShare.pause_auto_suspend = true
+    elseif awake.count > 0 then
+        UIManager:allowStandby()
+        awake.count = awake.count - 1
+        if awake.count == 0 then PluginShare.pause_auto_suspend = awake.before end
+    end
+end
+
 local function count_keys(t)
     local n = 0
     for _k in pairs(t) do n = n + 1 end
@@ -281,4 +301,5 @@ return {
     list_menu = list_menu,
     follow_name = follow_name,
     count_keys = count_keys,
+    keep_awake = keep_awake,
 }

@@ -246,7 +246,7 @@ function Songbook:startAutoscroll(quiet)
     self.autoscroll.task = function() self:autoscrollStep() end
     jam.autoscroll = self.autoscroll   -- for the jam session's guests
     self:anchorAutoscroll()
-    UIManager:preventStandby()
+    C.keep_awake(true)
     self:scheduleAutoscroll()
     Notification:notify(T(_("Autoscroll: %1"), ChordPro.format_duration(duration)))
 end
@@ -257,7 +257,7 @@ function Songbook:stopAutoscroll()
     self.autoscroll = nil
     if jam.autoscroll == a then jam.autoscroll = nil end
     UIManager:unschedule(a.task)
-    UIManager:allowStandby()
+    C.keep_awake(false)
 end
 
 function Songbook:onSongbookAutoscroll()

@@ -172,8 +172,15 @@ end
 -- files copied straight into songs/. Server keys and ids only contain
 -- [%w-_.], so "/" and "~" are safe separators (split_uid(), make_uid()).
 
+--- File of song `uid`: "<uid>.cho", or a copied "<uid>.chopro" when there is
+-- no .cho (new files are always .cho).
 function Songbook:songPath(uid)
-    return self.songs_dir .. "/" .. uid .. ".cho"
+    local base = self.songs_dir .. "/" .. uid
+    if lfs.attributes(base .. ".cho", "mode") ~= "file"
+            and lfs.attributes(base .. ".chopro", "mode") == "file" then
+        return base .. ".chopro"
+    end
+    return base .. ".cho"
 end
 
 function Songbook:getServers()
@@ -464,6 +471,8 @@ function Songbook:listLocal()
     local function add(key, dir, name)
         local id = song_file_id(name)
         if not id then return end
+        -- "x.chopro" beside "x.cho" is the same song: the .cho is listed
+        if name:match("%.chopro$") and lfs.attributes(dir .. "/" .. id .. ".cho", "mode") == "file" then return end
         local meta = song_meta(dir .. "/" .. name)
         local uid = make_uid(key, id)
         table.insert(songs, { uid = uid, id = id, title = meta.title or id, artist = meta.artist,

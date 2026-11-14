@@ -107,6 +107,8 @@ stub("luasettings", { open = function()
     }
 end })
 local doc_store = {}   -- path -> doc settings
+local plugin_share = { pause_auto_suspend = "other" }   -- as another plugin left it
+stub("pluginshare", plugin_share)
 stub("docsettings", { open = function(_, path)
     doc_store[path] = doc_store[path] or {}
     local data = doc_store[path]
@@ -252,6 +254,18 @@ f = io.open(root .. "/songbook/songs/test.cho", "w")
 f:write("{title: Žluťoučký kůň}\n{artist: Lidová}\n{key: C}\n[C]Jede [G]kůň\n")
 f:close()
 check(plugin:listLocal()[1].title == "Žluťoučký kůň", "song file read again after restoring")
+do  -- a copied .chopro file opens; beside a .cho of the same name it is not listed twice
+    local cp = io.open(root .. "/songbook/songs/pro.chopro", "w"); cp:write("{title: Pro}\n[C]La\n"); cp:close()
+    local found
+    for _i, song in ipairs(plugin:listLocal()) do if song.uid == "pro" then found = song end end
+    check(found and found.title == "Pro" and plugin:songPath("pro"):match("%.chopro$")
+        and plugin:songHtml("pro") ~= nil, ".chopro song listed and rendered")
+    cp = io.open(root .. "/songbook/songs/test.chopro", "w"); cp:write("{title: Dvojník}\n"); cp:close()
+    local n = 0
+    for _i, song in ipairs(plugin:listLocal()) do if song.uid == "test" then n = n + 1 end end
+    check(n == 1 and plugin:songPath("test"):match("%.cho$"), ".cho wins over a .chopro of the same name")
+    os.remove(root .. "/songbook/songs/pro.chopro"); os.remove(root .. "/songbook/songs/test.chopro")
+end
 
 plugin:openSong("test")
 check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
@@ -579,6 +593,7 @@ find_button(last_shown(), "Save").callback()
 check(settings_store.device_name == nil and plugin:deviceName() == "Songbook", "empty name: the model again")
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 2 and zmqs[1].port == 8765 and standby == 1, "jam server started")
+check(plugin_share.pause_auto_suspend == true, "sharing pauses the auto-suspend")
 -- searches are answered with our port and the device name
 local answers = udp_on(8766)
 check(answers ~= nil, "discovery socket bound")
@@ -824,6 +839,7 @@ plugin:savePlaylist({})
 
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func() and answers.closed, "jam server stopped")
+check(plugin_share.pause_auto_suspend == "other", "auto-suspend as before once sharing stops")
 check(hold_dialog("test").buttons[2][1].text == "Add to playlist", "playlist button outside a jam session")
 
 -- following another songbook
