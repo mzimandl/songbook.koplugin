@@ -17,6 +17,7 @@ local Screen = Device.screen
 local UIManager = require("ui/uimanager")
 
 local Songbook = C.Songbook
+local jam = C.jam
 local _, T = C._, C.T
 local read_file = C.read_file
 local song_meta = C.song_meta
@@ -194,6 +195,7 @@ function Songbook:startAutoscroll(quiet)
     end
     self.autoscroll = { uid = uid, duration = duration }
     self.autoscroll.task = function() self:autoscrollStep() end
+    jam.autoscroll = self.autoscroll   -- for the jam session's guests
     self:anchorAutoscroll()
     UIManager:preventStandby()
     self:scheduleAutoscroll()
@@ -204,6 +206,7 @@ function Songbook:stopAutoscroll()
     local a = self.autoscroll
     if not a then return end
     self.autoscroll = nil
+    if jam.autoscroll == a then jam.autoscroll = nil end
     UIManager:unschedule(a.task)
     UIManager:allowStandby()
 end

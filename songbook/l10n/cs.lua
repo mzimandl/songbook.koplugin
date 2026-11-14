@@ -169,6 +169,7 @@ return {
     ["Song request: %1"] = "Přání: %1",
     ["This song is already requested."] = "Tato píseň už je v přáních.",
     ["Too many requests, try again later."] = "Příliš mnoho přání, zkuste to později.",
+    ["Scroll with the host"] = "Posouvat s hostitelem",
     ["This song is not available."] = "Tato píseň není k dispozici.",
     ["While following, the other songbook chooses the songs."] = "Při sledování vybírá písně druhý zpěvník.",
     ["There is no next song in the playlist."] = "V playlistu není další píseň.",

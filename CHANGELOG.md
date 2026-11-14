@@ -4,6 +4,12 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.4 – 2026-11-14
+
+- Jam session: while the song autoscrolls on the host's reader, the guests'
+  pages scroll along with it. Scrolling by hand pauses it on that phone; the ⇣
+  button resumes it or turns it off.
+
 ## 1.3.0-beta.3 – 2026-11-09
 
 - Lists stay on their page when they change: adding songs to a collection

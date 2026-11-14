@@ -23,10 +23,12 @@ ctx = {
 Endpoints (GET only; KOReader's SimpleTCPServer reads just the headers):
   /             guest page, polls /state.json and loads /song.html on change
   /state.json   the song now playing; "rev" changes with the song or the host's options;
-                "api" = API_VERSION (missing before 1.0: version 1)
+                "api" = API_VERSION (missing before 1.0: version 1); "scroll" =
+                { progress = 0..1, duration = seconds } while the host autoscrolls it
+                (optional, since 1.3: the guest page scrolls along)
                 ?name=&share=<port>: a following songbook that shares its own songs on
                 that port (same endpoints, `library`); polling keeps it among the peers
-  /song.html    song now playing; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords), ?w= columns
+  /song.html    song now playing; ?t= semitones on top of the host's key, ?n=cz|en, ?c=0 (no chords)
   /song.cho     source of the song now playing
   /index.json   all songs in the song repository format, so the host can be added as a repository
   /songs/<file> one song of the index ("~" stands for "/" in the uid)
@@ -291,7 +293,8 @@ button.on { background: #8883; }
 <button id="tab"></button>
 <span id="songbar"><button id="down">♭</button> <span id="t">0</span> <button id="up">♯</button>
 <button id="nota">H</button> <button id="chords" class="on">%s</button>
-<button id="smaller">A−</button> <button id="bigger">A+</button></span>
+<button id="smaller">A−</button> <button id="bigger">A+</button>
+<button id="follow" hidden>⇣</button></span>
 <span id="status"></span>
 </div>
 <div id="song"><p>%s</p></div>
@@ -305,11 +308,13 @@ button.on { background: #8883; }
 </div>
 <script>
 var L = %s;
-var P = { t: 0, n: "", c: 1, fs: 16, by: "" };
+var P = { t: 0, n: "", c: 1, fs: 16, by: "", follow: 1 };
 try { var saved = JSON.parse(localStorage.getItem("songbook-jam")); for (var k in saved) P[k] = saved[k]; } catch (e) {}
 var rev = null, uid = null, host_notation = "cz", view = "song", songs = null;
 // numbers of the latest song and playlist requests: older answers that arrive late are dropped
 var song_seq = 0, playlist_seq = 0, scroll_up = false;
+// the host's autoscroll ({ progress, duration, at }) and whether the guest paused following it
+var scroll = null, paused = false;
 function $(id) { return document.getElementById(id); }
 function save() { try { localStorage.setItem("songbook-jam", JSON.stringify(P)); } catch (e) {} }
 function json(r) { return r.json(); }
@@ -328,7 +333,21 @@ function bar() {
   $("songbar").hidden = view != "song";
   $("song").hidden = view != "song";
   $("list").hidden = view == "song";
+  $("follow").hidden = !scroll;
+  $("follow").className = P.follow && !paused ? "on" : "";
 }
+// Keep the line the host is playing a quarter down the screen: the progress
+// from the last /state.json, moved on by the time since then.
+function follow() {
+  requestAnimationFrame(follow);
+  if (!scroll || !P.follow || paused || view != "song" || !uid) return;
+  var p = Math.min(1, scroll.progress + (performance.now() - scroll.at) / 1000 / scroll.duration);
+  var song = $("song");
+  var y = Math.max(0, Math.round(song.offsetTop + p * song.offsetHeight - window.innerHeight / 4));
+  if (Math.abs(y - window.scrollY) >= 1) window.scrollTo(0, y);
+}
+// Scrolling by hand pauses following until the button is tapped.
+function pause() { if (scroll && P.follow && !paused) { paused = true; bar(); } }
 function load(scroll) {
   if (!uid) return;
   var seq = ++song_seq;
@@ -403,9 +422,13 @@ function poll() {
       uid = null; rev = "";
     } else if (s.rev !== rev) {
       var changed = s.uid !== uid;
+      if (changed) paused = false;
       uid = s.uid; rev = s.rev;
-      bar(); load(changed);
+      load(changed);
     }
+    scroll = s.uid && s.scroll && s.scroll.duration > 0
+      ? { progress: s.scroll.progress, duration: s.scroll.duration, at: performance.now() } : null;
+    bar();
     if (view == "list") loadPlaylist();
   }).catch(function () { $("status").textContent = L.offline; })
     .then(function () { setTimeout(poll, 3000); });
@@ -417,6 +440,14 @@ $("nota").onclick = change(function () { P.n = (P.n || host_notation) == "cz" ? 
 $("chords").onclick = change(function () { P.c = P.c ? 0 : 1; });
 $("smaller").onclick = change(function () { P.fs = Math.max(8, P.fs - 2); });
 $("bigger").onclick = change(function () { P.fs = Math.min(40, P.fs + 2); });
+$("follow").onclick = function () {
+  if (!P.follow || paused) { P.follow = 1; paused = false; } else P.follow = 0;
+  save(); bar();
+};
+["wheel", "touchmove"].forEach(function (e) { window.addEventListener(e, pause, { passive: true }); });
+window.addEventListener("keydown", function (e) {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].indexOf(e.key) >= 0) pause();
+});
 $("tab").onclick = function () {
   view = view == "song" ? "list" : "song";
   bar(); window.scrollTo(0, 0);
@@ -432,7 +463,8 @@ $("h_request").textContent = L.request;
 $("h_history").textContent = L.played;
 var resize_timer;
 window.onresize = function () { clearTimeout(resize_timer); resize_timer = setTimeout(function () { load(false); }, 300); };
-bar(); poll();
+$("follow").title = L.follow;
+bar(); poll(); follow();
 </script></body></html>
 ]]
 
@@ -442,6 +474,7 @@ local DEFAULT_LABELS = {
     request = "Request a song", your_name = "Your name", search = "Search", nothing = "Nothing yet",
     requested = "Requested: %1", queued = "This song is already requested.",
     full = "Too many requests, try again later.", missing = "This song is not available.",
+    follow = "Scroll with the host",
 }
 
 --- Guest web page; labels are inserted as text.

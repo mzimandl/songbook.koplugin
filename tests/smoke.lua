@@ -418,7 +418,19 @@ check(scheduled_in == 18.75, "eighth-screen step waits for the played line at 3/
 clock = 318.75
 scheduled()
 check(pos == 100 and scheduled_in == 6.25, "autoscroll moves an eighth of the screen: " .. pos .. " " .. tostring(scheduled_in))
+do  -- jam guests get the host's autoscroll of the song now playing
+    local a = plugin.autoscroll
+    local st = plugin:jamState()
+    local expected = math.floor((clock - a.start) / a.duration * 10000 + 0.5) / 10000
+    check(plugin:nowPlayingUid() == "test" and st.scroll and st.scroll.duration == a.duration
+        and st.scroll.progress == expected and expected > 0 and expected < 1,
+        "jam state has the autoscroll progress: " .. tostring(st.scroll and st.scroll.progress))
+    a.uid = "other"
+    check(plugin:jamState().scroll == nil, "no scroll for another song than the one shared")
+    a.uid = "test"
+end
 plugin:stopAutoscroll()
+check(plugin:jamState().scroll == nil, "no scroll once autoscroll stops")
 
 local InputDialog = require("ui/widget/inputdialog")
 InputDialog.onShowKeyboard = function() end

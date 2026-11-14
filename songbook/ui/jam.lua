@@ -187,6 +187,12 @@ function Songbook:jamState(peer_url)
         state.title = meta.title or id
         state.artist = meta.artist
         state.transpose = self:getMap("transpose")[uid] or 0
+        -- the host's autoscroll of this song, for the guests' pages to follow
+        local a = jam.autoscroll
+        if a and a.uid == uid and a.start then
+            local progress = math.min(math.max((now() - a.start) / a.duration, 0), 1)
+            state.scroll = { progress = math.floor(progress * 10000 + 0.5) / 10000, duration = a.duration }
+        end
     end
     return state
 end
@@ -281,7 +287,7 @@ function Songbook:startJam()
             request = _("Request a song"), your_name = _("Your name"), search = _("Search"),
             nothing = _("Nothing yet"), requested = _("Requested: %1"),
             queued = _("This song is already requested."), full = _("Too many requests, try again later."),
-            missing = _("This song is not available."),
+            missing = _("This song is not available."), follow = _("Scroll with the host"),
         },
         css = Render.css(nil, true),
     }

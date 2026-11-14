@@ -13,6 +13,12 @@ now playing, in your key. Each guest can transpose it, switch chord names, hide
 chords and change the font size for themselves, and request songs, which join
 your *Up next*.
 
+While the song autoscrolls on your reader, the guests' pages scroll along with
+it, smoothly, keeping the line being played a quarter down the screen. A guest
+who scrolls by hand pauses this; the ⇣ button resumes it (or turns it off for
+good on that phone). Your manual page turns are not followed, so guests can read
+ahead.
+
 The page shows the song now playing (*Play now* in the song's options), not the
 one you only look at. The reader doesn't go to standby while sharing.
 
