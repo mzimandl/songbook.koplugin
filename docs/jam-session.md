@@ -21,7 +21,7 @@ good on that phone). Your manual page turns are not followed, so guests can read
 ahead.
 
 The page shows the song now playing (*Play now* in the song's options), not the
-one you only look at. The reader doesn't go to standby or suspend by itself while sharing or following.
+one you only look at. The reader doesn't go to standby or suspend by itself while sharing or following (on a Kindle its own sleep after idle minutes is blocked too).
 
 There is no password: share only on networks you trust.
 

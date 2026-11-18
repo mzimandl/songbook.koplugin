@@ -932,6 +932,27 @@ plugin:savePlaylist({})
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 0 and standby == 0 and not jam_menu.sub_item_table[1].checked_func() and answers.closed, "jam server stopped")
 check(plugin_share.pause_auto_suspend == "other", "auto-suspend as before once sharing stops")
+do  -- on a Kindle its own sleep is blocked too, once however many keep it awake
+    local C = require("songbook/ui/common")
+    local Device = require("device")
+    local is_kindle, execute = Device.isKindle, os.execute
+    local commands = {}
+    Device.isKindle = function() return true end
+    os.execute = function(cmd) table.insert(commands, cmd) end
+    C.keep_awake(true)
+    C.keep_awake(true)
+    C.keep_awake(false)
+    check(#commands == 1 and commands[1]:find("preventScreenSaver 1", 1, true), "Kindle sleep blocked once")
+    C.keep_awake(false)
+    check(#commands == 2 and commands[2]:find("preventScreenSaver 0", 1, true), "and allowed when nothing keeps it awake")
+    plugin_share.keepalive = true
+    C.keep_awake(true)
+    C.keep_awake(false)
+    check(#commands == 3 and commands[3]:find("preventScreenSaver 1", 1, true), "with Keep alive on it stays blocked")
+    plugin_share.keepalive = nil
+    Device.isKindle, os.execute = is_kindle, execute
+    check(standby == 0 and plugin_share.pause_auto_suspend == "other", "balanced")
+end
 check(hold_dialog("test").buttons[2][1].text == "Add to playlist", "playlist button outside a jam session")
 
 -- following another songbook

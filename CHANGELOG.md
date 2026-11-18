@@ -4,6 +4,13 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.13 – 2026-11-18
+
+- On a Kindle, sharing, following and autoscroll also keep the Kindle itself
+  from sleeping after idle minutes (with its framework running), as Keep alive
+  does.
+- Jam session: the space under the song on the guest page is half as tall.
+
 ## 1.3.0-beta.12 – 2026-11-14
 
 - Jam session: the guest page scrolls evenly with the host's autoscroll (late

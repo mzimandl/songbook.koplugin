@@ -285,7 +285,7 @@ button.on { background: #8883; }
 #t { min-width: 2em; text-align: center; }
 #status { margin-left: auto; font-size: 0.85em; opacity: 0.7; }
 #song, #list { margin: 0.8em; }
-#end { height: 35vh; }
+#end { height: 17vh; }
 #song .l, #song .ly, #song pre { font-size: var(--fs, 16px); }
 #list h2 { font-size: 1.1em; margin: 1em 0 0.3em 0; }
 #list ul { list-style: none; padding: 0; margin: 0; }
