@@ -686,6 +686,11 @@ check(settings_store.device_name == nil and plugin:deviceName() == "Songbook", "
 jam_menu.sub_item_table[1].callback(tmi)
 check(#zmqs == 2 and zmqs[1].port == 8765 and standby == 1, "jam server started")
 check(plugin_share.pause_auto_suspend == true, "sharing pauses the auto-suspend")
+do  -- UIManager:quit() calls stop() on every ZMQ
+    local all = true
+    for _i, z in ipairs(zmqs) do if type(z.stop) ~= "function" then all = false end end
+    check(all, "every ZMQ of the jam session can be stopped")
+end
 -- searches are answered with our port and the device name
 local answers = udp_on(8766)
 check(answers ~= nil, "discovery socket bound")
@@ -972,6 +977,7 @@ local finder_menu = last_shown()
 local search = udp_on(8767)
 check(finder_menu.title == "Follow another songbook" and #zmqs == 1 and search and search.broadcast,
     "searching for songbooks")
+check(type(zmqs[1].stop) == "function", "the search can be stopped by UIManager:quit()")
 check(finder_menu.item_table[1].text == "Searching for shared songbooks…" and finder_menu.item_table[2].text == "Enter address…",
     "nothing found yet")
 clock = clock + 1
@@ -1140,6 +1146,7 @@ do  -- polls don't block: a songbook that doesn't answer is waited for in the ba
     poll()
     check(#tcps == n_tcp + 1 and f.request ~= nil and #zmqs == n_zmq + 1 and #requested == n_req,
         "a poll without an answer at once returns and waits in the background")
+    check(type(zmqs[#zmqs].stop) == "function", "the background poller can be stopped")
     poll()
     check(#tcps == n_tcp + 1, "no second request while one is running")
     zmqs[#zmqs].waitEvent()

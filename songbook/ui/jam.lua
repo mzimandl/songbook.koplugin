@@ -115,13 +115,18 @@ local function kindle_firewall(op, rules)
 end
 
 -- UIManager calls a ZMQ's waitEvent() about every 50 ms; it must return nil
--- (anything else is treated as an input event).
+-- (anything else is treated as an input event). UIManager:quit() calls every
+-- ZMQ's stop() (KOReader exiting or restarting, e.g. after an update, without
+-- onExit() first): without one quitting crashed while sharing.
 local function poller(fn, name)
-    return UIManager:insertZMQ({ waitEvent = function()
-        local ok, err = pcall(fn)
-        if not ok then logger.warn("Songbook:", name, err) end
-        return nil
-    end })
+    return UIManager:insertZMQ({
+        waitEvent = function()
+            local ok, err = pcall(fn)
+            if not ok then logger.warn("Songbook:", name, err) end
+            return nil
+        end,
+        stop = function() end,
+    })
 end
 
 -- SimpleTCPServer on `port` answering with Jam.handle() and get_context().

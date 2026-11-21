@@ -4,6 +4,11 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.1 – 2026-11-21
+
+- KOReader no longer crashes when it quits or restarts (an update through
+  ZenPM, for example) while the jam session shares, follows or searches.
+
 ## 1.3.0 – 2026-11-21
 
 Songs
