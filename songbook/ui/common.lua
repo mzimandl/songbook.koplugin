@@ -259,7 +259,7 @@ end
 -- freeze it shows what happened last. Module-level: it outlives plugin
 -- instances. diag() / diag_count() do nothing while it is off.
 local DIAG_MAX = 1024 * 1024   -- bytes; then diag.log becomes diag.log.old
-local DIAG_BEAT = 60           -- seconds between status lines
+local DIAG_BEAT = 15           -- seconds between status lines
 local diag_state = { counts = {} }
 
 local function diag(...)
@@ -297,6 +297,14 @@ local function meminfo()
     return avail and (math.floor(tonumber(avail) / 1024) .. " MB") or "?"
 end
 
+local function proc_first(path, pattern)
+    local f = io.open(path)
+    if not f then return "?" end
+    local line = f:read("*l") or ""
+    f:close()
+    return line:match(pattern) or "?"
+end
+
 local diag_status   -- function returning the plugin's state for the status line (set by ui/jam.lua)
 
 local function diag_beat()
@@ -306,9 +314,34 @@ local function diag_beat()
     table.sort(counts)
     diag_state.counts = {}
     local ok, status = pcall(function() return diag_status and diag_status() or "" end)
-    diag("status: lua", math.floor(collectgarbage("count")) .. " KB, free", meminfo(),
+    -- uptime goes on in sleep on Kindles only when awake: a gap shows the device slept
+    diag("status: up", proc_first("/proc/uptime", "^(%S+)"), "load", proc_first("/proc/loadavg", "^(%S+)"),
+        "lua", math.floor(collectgarbage("count")) .. " KB, free", meminfo(),
         ok and status or ("status failed: " .. tostring(status)), table.concat(counts, " "))
     UIManager:scheduleIn(DIAG_BEAT, diag_beat)
+end
+
+-- KOReader's handlers of power events (Kindle: IntoSS, OutOfSS,
+-- ReadyToSuspend, WakeupFromSuspend …) are logged on entry and exit, so a
+-- freeze around sleep shows where it stopped. Wrapped once.
+local function diag_wrap_power()
+    if UIManager.songbook_diag_wrapped or type(UIManager.event_handlers) ~= "table" then return end
+    UIManager.songbook_diag_wrapped = true
+    local names = {}
+    for name, f in pairs(UIManager.event_handlers) do
+        if type(f) == "function" and name ~= "__default__" then names[#names + 1] = name end
+    end
+    for _i, name in ipairs(names) do
+        local f = UIManager.event_handlers[name]
+        UIManager.event_handlers[name] = function(...)
+            if not diag_state.path then return f(...) end
+            local t0 = time.now()
+            diag("event", name)
+            local r = { f(...) }
+            diag("event done", name, string.format("%.2f s", time.to_s(time.now() - t0)))
+            return unpack(r)
+        end
+    end
 end
 
 --- Turn the diagnostic log on (with the file's path) or off (nil).
@@ -322,6 +355,7 @@ local function diag_set(path)
     if d.file then d.file:close() end
     d.file, d.path, d.counts = nil, path, {}
     if path then
+        diag_wrap_power()
         diag("diagnostic log on")
         UIManager:scheduleIn(DIAG_BEAT, diag_beat)
     end

@@ -464,10 +464,12 @@ end
 function Songbook:onSuspend()
     C.diag("suspend", self:currentSongId() or "(not a song)")
     self:stopAutoscroll()
+    self:jamSleep()
 end
 
 function Songbook:onResume()
     C.diag("resume", self:currentSongId() or "(not a song)")
+    self:jamWake()
 end
 
 -- Song options ----------------------------------------------------------------

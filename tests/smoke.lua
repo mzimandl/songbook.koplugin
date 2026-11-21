@@ -43,6 +43,7 @@ local zmqs, standby, scheduled, scheduled_in, ticks = {}, 0, nil, nil, {}
 local window_stack = {}   -- for UIManager:topdown_widgets_iter()
 local dirty_mode   -- the last UIManager:setDirty() mode
 stub("ui/uimanager", {
+    event_handlers = { IntoSS = function() end, OutOfSS = function() end },
     show = function(_, w) table.insert(shown, w) end, close = function() end, forceRePaint = function() end,
     insertZMQ = function(_, z) table.insert(zmqs, z); return z end,
     removeZMQ = function(_, z) for i = #zmqs, 1, -1 do if zmqs[i] == z then table.remove(zmqs, i) end end end,
@@ -684,8 +685,28 @@ name_item.callback(tmi)
 find_button(last_shown(), "Save").callback()
 check(settings_store.device_name == nil and plugin:deviceName() == "Songbook", "empty name: the model again")
 jam_menu.sub_item_table[1].callback(tmi)
-check(#zmqs == 2 and zmqs[1].port == 8765 and standby == 1, "jam server started")
-check(plugin_share.pause_auto_suspend == true, "sharing pauses the auto-suspend")
+check(#zmqs == 2 and zmqs[1].port == 8765, "jam server started")
+check(standby == 0 and plugin_share.pause_auto_suspend == "other", "sharing doesn't keep the reader awake")
+do  -- sleep pauses sharing, waking starts it again
+    local jam_state = require("songbook/ui/common").jam
+    plugin:onSuspend()
+    check(#zmqs == 0 and not jam_state.server and jam_state.asleep and jam_state.asleep.share, "sleep: sharing stopped, sockets closed")
+    check(udp_on(8766) == nil, "and the search answers too")
+    local wake = scheduled
+    plugin:onResume()
+    check(scheduled_in == 3 and not jam_state.server, "wake: sharing waits for the Wi-Fi")
+    scheduled()
+    check(jam_state.server and #zmqs == 2 and jam_state.asleep == nil and udp_on(8766) ~= nil, "and starts again")
+    plugin:onSuspend()
+    plugin:onSuspend()
+    plugin:onResume()
+    plugin:onResume()
+    scheduled()
+    check(jam_state.server and #zmqs == 2, "two suspends and resumes start it once")
+    plugin:onResume()
+    check(#zmqs == 2, "a resume without a sleep does nothing")
+    local _w = wake
+end
 do  -- UIManager:quit() calls stop() on every ZMQ
     local all = true
     for _i, z in ipairs(zmqs) do if type(z.stop) ~= "function" then all = false end end
@@ -1000,7 +1021,7 @@ check(jam_menu.sub_item_table[1].enabled_func() == true, "sharing possible befor
 find_button(last_shown(), "Follow").callback()
 check(#plugin:getPlaylist().queue == 0 and #plugin:getPlaylist().history == 0, "following clears our playlist")
 check(follow_item.checked_func() and follow_item.text_func() == "Following 10.0.0.2:8765", "following: " .. follow_item.text_func())
-check(settings_store.jam_follow_url == host and standby == 1 and scheduled ~= nil, "follow polling scheduled")
+check(settings_store.jam_follow_url == host and standby == 0 and scheduled ~= nil, "follow polling scheduled")
 check(jam_menu.text_func() == "Jam session (following)", "jam menu label while following")
 check(jam_menu.sub_item_table[1].enabled_func() == false and follow_item.enabled_func() == true,
     "no sharing while following, following can be stopped")
@@ -1008,6 +1029,17 @@ check(requested[#requested] == host .. "songs/repo~song-a.cho"
     and io.open(root .. "/songbook/songs/jam/repo_song-a.cho"):read("*a"):find("Hostova", 1, true), "followed song saved")
 check(#opened == n_opened + 1 and opened[#opened]:find("/jam~repo_song%-a@t%+2"), "followed song opened in host key: " .. opened[#opened])
 plugin.ui.document.file = opened[#opened]
+do  -- sleep pauses following, waking polls again
+    local jam_state = require("songbook/ui/common").jam
+    local n_req = #requested
+    plugin:onSuspend()
+    check(jam_state.follow and jam_state.follow.sleeping and scheduled == nil and not jam_state.library, "sleep: polls stop, own songs not shared")
+    plugin:onResume()
+    check(scheduled_in == 3, "wake: following goes on shortly")
+    scheduled()
+    check(not jam_state.follow.sleeping and #requested > n_req and jam_state.library and scheduled_in == 4,
+        "polling and sharing our songs again")
+end
 -- the followed songbook is a repository to browse only while following
 local jam_server = plugin:onlineServers()[#plugin:onlineServers()]
 check(jam_server and jam_server.jam and jam_server.name == "Jam session" and jam_server.url == host
@@ -1723,7 +1755,7 @@ do  -- the diagnostic log: off by default, events and a status line when on
     check(item and not item.checked_func() and item.help_text_func():find("diag.log", 1, true), "diagnostic log setting")
     item.callback()
     local beat = scheduled
-    check(item.checked_func() and scheduled_in == 60, "on: a status line every minute")
+    check(item.checked_func() and scheduled_in == 15, "on: a status line every 15 s")
     plugin:openSong("test")
     plugin:onSuspend()
     plugin:onResume()
@@ -1733,9 +1765,14 @@ do  -- the diagnostic log: off by default, events and a status line when on
     local text = read_log()
     check(text:find("diagnostic log on", 1, true) and text:find("openSong test", 1, true)
         and text:find("suspend test", 1, true) and text:find("resume test", 1, true), "events logged:\n" .. text)
-    check(text:find("status: lua %d+ KB, free [^,]*") and text:find("http /state.json=2", 1, true) and text:find("awake 0", 1, true),
+    check(text:find("status: up %S+ load %S+ lua %d+ KB, free [^,]*") and text:find("http /state.json=2", 1, true) and text:find("awake 0", 1, true),
         "status line with memory, counts and state")
     check(scheduled == beat, "the next status line is scheduled")
+    -- power events are logged around KOReader's own handlers
+    local UIManager = require("ui/uimanager")
+    check(UIManager.songbook_diag_wrapped and type(UIManager.event_handlers.IntoSS) == "function", "power events wrapped")
+    UIManager.event_handlers.IntoSS()
+    check(read_log():find("event IntoSS", 1, true) and read_log():find("event done IntoSS", 1, true), "power event logged")
     item.callback()
     check(not item.checked_func() and settings_store.diag_log == nil and scheduled == nil and read_log():find("diagnostic log off", 1, true),
         "off again")

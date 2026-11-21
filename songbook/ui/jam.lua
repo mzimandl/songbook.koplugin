@@ -121,8 +121,14 @@ end
 local function poller(fn, name)
     return UIManager:insertZMQ({
         waitEvent = function()
+            local t0 = now()
             local ok, err = pcall(fn)
-            if not ok then logger.warn("Songbook:", name, err) end
+            if not ok then
+                logger.warn("Songbook:", name, err)
+                C.diag("poller error", name, err)
+            end
+            local took = now() - t0
+            if took > 0.5 then C.diag("slow poller", name, string.format("%.2f s", took)) end
             return nil
         end,
         stop = function() end,
@@ -146,9 +152,13 @@ local function jam_http_server(port, get_context)
             end)
             if not ok then
                 logger.warn("Songbook: jam request failed", resp)
+                C.diag("jam request failed", resp)
                 resp = Jam.response(500, "text/plain", "Internal error")
             end
+            local t0 = now()
             server:send(resp, client)
+            local took = now() - t0
+            if took > 0.5 then C.diag("slow answer", string.format("%.2f s", took)) end
         end,
     }
     return server
@@ -309,7 +319,6 @@ function Songbook:startJam()
     else
         logger.warn("Songbook: no discovery answers", rerr)
     end
-    C.keep_awake(true)
     return true
 end
 
@@ -323,7 +332,6 @@ function Songbook:stopJam()
         jam.responder:close()
     end
     kindle_firewall("-D", jam.rules)
-    C.keep_awake(false)
     jam.server, jam.queue, jam.context, jam.rules, jam.peers = nil, nil, nil, nil, nil
     jam.responder, jam.responder_zmq = nil, nil
 end
@@ -527,7 +535,7 @@ function Songbook:followScroll()
 end
 
 follow_poll = function()
-    if not jam.follow then return end
+    if not jam.follow or jam.follow.sleeping then return end
     follow_run("followStep")
     if jam.follow then UIManager:scheduleIn(FOLLOW_INTERVAL, follow_poll) end
 end
@@ -555,7 +563,6 @@ function Songbook:startFollowing(url)
     self:savePlaylist({})
     jam.follow = { url = url, failures = 0 }
     C.diag("following start", url)
-    C.keep_awake(true)
     self:startLibrary()
     follow_poll()
 end
@@ -565,10 +572,67 @@ function Songbook:stopFollowing()
     C.diag("following stop")
     UIManager:unschedule(follow_poll)
     follow_cancel(jam.follow)
-    C.keep_awake(false)
     self:stopLibrary()
     jam.follow = nil
     self:restorePlaylist()
+end
+
+-- Sleep ----------------------------------------------------------------------
+--
+-- Sharing and following don't keep the reader awake. When it goes to sleep
+-- they pause: the server and its sockets are closed and polls stop (a Kindle
+-- froze sleeping or idling with them open), and they start again when it
+-- wakes, once the Wi-Fi is back (WAKE_DELAY). Guests' pages and followers
+-- reconnect by themselves.
+local WAKE_DELAY = 3   -- seconds
+
+local function wake_jam()
+    local owner = jam.owner
+    local asleep = jam.asleep
+    jam.asleep = nil
+    if not asleep or not owner then return end
+    if asleep.share and not jam.server and not jam.follow then
+        C.diag("wake: sharing again")
+        if not owner:startJam() then C.diag("wake: sharing failed") end
+    end
+    local f = jam.follow
+    if asleep.follow and f and f.sleeping then
+        C.diag("wake: following again")
+        f.sleeping, f.failures = nil, 0
+        if asleep.library then owner:startLibrary() end
+        follow_poll()
+    end
+end
+
+--- The reader goes to sleep (Suspend): pause sharing and following.
+function Songbook:jamSleep()
+    UIManager:unschedule(wake_jam)
+    if jam.asleep then return end
+    local asleep = {}
+    if jam.server then
+        asleep.share = true
+        self:stopJam()
+    end
+    local f = jam.follow
+    if f then
+        asleep.follow = true
+        asleep.library = jam.library ~= nil
+        f.sleeping = true
+        UIManager:unschedule(follow_poll)
+        follow_cancel(f)
+        self:stopLibrary()
+    end
+    if next(asleep) then
+        jam.asleep = asleep
+        C.diag("sleep: jam paused", asleep.share and "sharing" or "", asleep.follow and "following" or "")
+    end
+end
+
+--- The reader woke up (Resume): sharing and following go on shortly.
+function Songbook:jamWake()
+    if not jam.asleep then return end
+    UIManager:unschedule(wake_jam)
+    UIManager:scheduleIn(WAKE_DELAY, wake_jam)
 end
 
 --- Bring back our playlist put aside while following (startFollowing()).
@@ -683,6 +747,7 @@ C.set_diag_status(function()
     end
     if jam.server then parts[#parts + 1] = "sharing, guests " .. C.count_keys(jam.peers or {}) end
     if jam.follow then parts[#parts + 1] = "following, failures " .. jam.follow.failures end
+    if jam.asleep then parts[#parts + 1] = "jam paused for sleep" end
     parts[#parts + 1] = "awake " .. C.awake.count
     parts[#parts + 1] = "zmqs " .. #(UIManager._zeromqs or {})
     local ReaderUI = package.loaded["apps/reader/readerui"]

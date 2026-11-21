@@ -21,7 +21,7 @@ good on that phone). Your manual page turns are not followed, so guests can read
 ahead.
 
 The page shows the song now playing (*Play now* in the song's options), not the
-one you only look at. The reader doesn't go to standby or suspend by itself while sharing or following (on a Kindle its own sleep after idle minutes is blocked too).
+one you only look at. When the reader goes to sleep (by itself or with the power button), sharing and following pause and start again a few seconds after it wakes; guests' pages and followers reconnect by themselves. While a song autoscrolls the reader stays awake.
 
 There is no password: share only on networks you trust.
 

@@ -4,6 +4,14 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.2-beta.2 – 2026-11-21
+
+- Jam session: sharing and following no longer keep the reader awake. When it
+  goes to sleep they pause (a Kindle could freeze when it was due to sleep
+  while sharing) and start again a few seconds after it wakes.
+- The diagnostic log also writes the reader's sleep and wake-up events, slow
+  steps of the jam session, and its state every 15 seconds.
+
 ## 1.3.2-beta.1 – 2026-11-21
 
 - *Settings → Diagnostic log*: for finding problems (a reader that froze),

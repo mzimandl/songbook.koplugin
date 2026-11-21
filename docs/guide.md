@@ -75,7 +75,8 @@ list (sorted in the order played); *Clear playlist* starts over.
 - **Quick menu**: the ☰ button of an open song.
 - **Opening a song plays it**.
 - **Diagnostic log**: for finding problems, writes what the songbook does and
-  every minute its state (memory, autoscroll, sharing, requests) to
+  every 15 seconds its state (memory, autoscroll, sharing, requests), and the
+  reader's sleep and wake-up events, to
   `koreader/songbook/diag.log`; keeps about 1 MB (the older part in
   `diag.log.old`).
 
