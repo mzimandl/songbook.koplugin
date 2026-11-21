@@ -24,7 +24,7 @@ or into a [song repository](repositories.md).
 | | |
 |---|---|
 | Meta | `{title}` `{t}` `{subtitle}` `{st}` `{artist}` `{key}` `{capo}` `{tempo}` `{duration}` `{meta: name value}` … |
-| Sections | `{start_of_chorus}`/`{soc}`, verse, bridge, tab, grid; labels as `{soc: Ref.}` or `label="…"` |
+| Sections | `{start_of_chorus}`/`{soc}`, verse, bridge, tab, grid (see below); labels as `{soc: Ref.}` or `label="…"` |
 | Repeat | `{chorus}` |
 | Comments | `{c:}` `{ci:}` `{cb:}`; lines starting with `#` are ignored |
 | Chords | `[Am]` inline, slash chords `[C/H]`, annotations `[*N.C.]` (never transposed) |
@@ -33,6 +33,28 @@ or into a [song repository](repositories.md).
 
 `{duration: 3:45}` sets the song's length for autoscroll; `{key}` is shown and
 transposed with the song.
+
+## Rhythm: chords without words
+
+For an instrumental part, write a chord grid. Each cell is one beat, `.` means
+the chord goes on, `|` is a bar line and `~` puts two chords on one beat
+(`G~Am`); `||`, `|:`, `:|`, `%` (repeat the bar) work too. The plugin shows it
+as a table, so the beats line up from row to row in any font; its chords are
+transposed like the others.
+
+```
+{start_of_grid: label="Instrumental"}
+| Am . . G  | Am C  . G  |
+| F  . Em . | Am .  G  . |
+{end_of_grid}
+```
+
+Text before the first bar line (`x2 | …`) and after the last one is shown
+beside the grid. With chords hidden the grid isn't shown.
+
+Between chords in a line, more spaces than one keep their width:
+`Kitty alone [C]    [G]` leaves a gap before G, so a pause or the chords
+after the words can be spaced without a grid.
 
 ## Chord notation
 

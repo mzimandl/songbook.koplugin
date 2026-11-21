@@ -54,7 +54,7 @@
 - Key dialog: steps only re-show the dialog; Apply saves the transposition and re-opens the song.
 
 ## Rendering
-- Render.html(): each lyrics line is a `<p class="l">`; Render.words() splits it into words, and a word with chords becomes inline blocks (`.w` > `.s` = chord `.c` over text `.t`), so the reader's own font and line breaking keep chords aligned (no monospace column counting: KOReader's synthetic bold of Droid Sans Mono made it drift). Words without chords stay plain text on the same baseline. Tab/grid lines stay `<pre>`. The same HTML serves the jam guest page (`web`).
+- Render.html(): each lyrics line is a `<p class="l">`; Render.words() splits it into words, and a word with chords becomes inline blocks (`.w` > `.s` = chord `.c` over text `.t`), so the reader's own font and line breaking keep chords aligned (no monospace column counting: KOReader's synthetic bold of Droid Sans Mono made it drift). Words without chords stay plain text on the same baseline. Tab lines stay `<pre>`. Grids ({start_of_grid}) are a `<table class="grid">` (render_grid(): ChordPro cells, `.` beat, bar lines, `~` chords on one beat, margin text before the first bar, comment after the last), so beats line up in any font; hidden with chords. Words keep `gap` (spaces before them): spaces beyond one render as en spaces (&#8194;), so chords without words can be spaced. The same HTML serves the jam guest page (`web`).
 
 ## Gotchas
 - A song opened again while it is open (transposition, options, the followed songbook's key) is a new document and plugin instance: openSong() → rememberPosition() fills `C.reopen` (uid, percent, autoscroll), onReaderReady() goes back with the GotoPercent event and restarts autoscroll.

@@ -178,6 +178,32 @@ eq(words("[C][G][Ami]"), "[C]|[G]|[Ami]", "stacked chords on one spot")
 eq(words("slovo[G] [D] slovo"), "slovo [G] [D] slovo", "chords between words are words")
 eq(words("  [C]jedna  dva "), "[C]jedna dva", "spaces collapse")
 eq(words("bez akordů"), "bez akordů", "plain words")
+do  -- extra spaces keep their width: rhythm of chords without words
+    local ws = Render.words(ChordPro.parse_lyrics("[Am]    [G][Am] [C]  [G]"))
+    local gaps = {}
+    for _i, w in ipairs(ws) do gaps[#gaps + 1] = w.gap end
+    eq(table.concat(gaps, ","), "0,4,0,1,2", "gaps between chord words")
+    local h = Render.html(ChordPro.parse("[Am]    [G] [C]"), {})
+    eq(h:find('</span>' .. ' ' .. string.rep("&#8194;", 3) .. '<span class="w">', 1, true) ~= nil
+        or h:find(' ' .. string.rep("&#8194;", 3) .. '<span class="s">', 1, true) ~= nil, true, "three extra spaces before G")
+    eq(Render.html(ChordPro.parse("jedna dva [C]tři"), {}):find("&#8194;", 1, true), nil, "single spaces stay plain")
+    eq(Render.words(ChordPro.parse_lyrics("Kitty alone [C]   [G]"))[4].gap, 3, "spaces after a chord over nothing")
+end
+do  -- chord grids
+    local g = ChordPro.parse("{start_of_grid: label=\"Instrumental\"}\n| Am . . G | Am~C . G% |\nx2 || F . | %  :| ok\n{end_of_grid}\n{sog 4x4}\n| C |\n{eog}\n")
+    eq(g.blocks[1].type == "grid" and g.blocks[1].label, "Instrumental", "grid label")
+    eq(g.blocks[2].label, nil, "a grid's shape is no label")
+    local h = Render.html(g, { notation = "cz", transpose = 2 })
+    eq(h:find('<table class="grid">', 1, true) ~= nil, true, "a grid is a table")
+    eq(h:find('<td class="gc"><span class="c">Hmi</span></td><td class="gc">·</td><td class="gc">·</td><td class="gc"><span class="c">A</span></td><td class="gb">|</td>', 1, true) ~= nil,
+        true, "grid cells: chords transposed and in our notation, beats, bars")
+    eq(h:find('<span class="c">Hmi D</span>', 1, true) ~= nil, true, "two chords on one beat")
+    eq(h:find('<td class="gt cm">x2</td><td class="gb">||</td>', 1, true) ~= nil, true, "margin before the first bar")
+    eq(h:find('<td class="gc">%</td>', 1, true) ~= nil and h:find('<td class="gb">:|</td><td class="gt cm">ok</td>', 1, true) ~= nil,
+        true, "repeat mark, repeat bar and a comment after the last bar")
+    eq(Render.html(g, { show_chords = false }):find("<table", 1, true), nil, "no grid with chords hidden")
+    eq(Render.html(g, { show_chords = false }):find("Instrumental", 1, true), nil, "nor its label")
+end
 local line = Render.html(ChordPro.parse("Žlu[Ami]ťou[D]čký kůň [G]běží"), {})
 eq(line:find('<p class="l">Žlu', 1, true) == nil, true, "a word with chords is one block")
 eq(line:find('<span class="w"><span class="s"><span class="c">&#160;</span><span class="t">Žlu</span></span>'

@@ -153,7 +153,13 @@ function M.parse(text)
                 add_line({ type = "comment", text = value, style = COMMENT_STYLES[name] })
             elseif start_type then
                 close_block()
-                new_block(start_type, parse_label(value), true)
+                local label = parse_label(value)
+                -- {start_of_grid: 4x4} / shape="1+4x4+1": the grid's shape, not a label
+                if start_type == "grid" and label and not value:match('label%s*=')
+                        and (label:match("^[%d%s+x]+$") or label:match("^%s*shape%s*=")) then
+                    label = nil
+                end
+                new_block(start_type, label, true)
             elseif end_type then
                 close_block()
             elseif name == "chorus" then

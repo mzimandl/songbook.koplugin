@@ -4,6 +4,15 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.0-beta.14 – 2026-11-21
+
+- Chord grids (`{start_of_grid}`, ChordPro's way to write the rhythm of an
+  instrumental part) are shown as a table: one cell per beat, `.` for a beat
+  the chord goes on, bar lines, `~` for two chords on one beat. The chords are
+  transposed and shown in the chosen notation.
+- More than one space between chords keeps its width, so chords without words
+  (`[Am]    [G]`) can be spaced.
+
 ## 1.3.0-beta.13 – 2026-11-18
 
 - On a Kindle, sharing, following and autoscroll also keep the Kindle itself

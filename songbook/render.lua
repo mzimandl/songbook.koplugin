@@ -58,13 +58,19 @@ local function escape(s)
 end
 
 --- Split one lyrics line (already-transposed segments) into words.
--- Returns a list of words { chord = true|nil, cells = { { chord =, text = }, ... } }:
--- a cell is a chord with the text under it, up to the next chord or space. A
--- chord standing on a space (or alone, "[G] [D]") gets a word of its own.
+-- Returns a list of words { chord = true|nil, gap = spaces before it, cells =
+-- { { chord =, text = }, ... } }: a cell is a chord with the text under it, up
+-- to the next chord or space. A chord standing on a space (or alone, "[G] [D]")
+-- gets a word of its own. `gap` keeps how many spaces the song has there, so
+-- "[Am]    [G]" can space chords (rhythm without words).
 function M.words(segments)
-    local words, cur = {}, nil
+    local words, cur, gap = {}, nil, 0
     local function add(chord, text)
-        if not cur then cur = { cells = {} }; words[#words + 1] = cur end
+        if not cur then
+            cur = { cells = {}, gap = gap }
+            words[#words + 1] = cur
+            gap = 0
+        end
         cur.cells[#cur.cells + 1] = { chord = chord, text = text }
         if chord then cur.chord = true end
     end
@@ -79,7 +85,10 @@ function M.words(segments)
                 chord = nil
             end
             for space, word in text:gmatch("(%s*)(%S*)") do
-                if space ~= "" then cur = nil end
+                if space ~= "" then
+                    cur = nil
+                    gap = gap + #space
+                end
                 if word ~= "" then
                     add(chord, word)
                     chord = nil
@@ -128,6 +137,12 @@ pre { font-family: "Droid Sans Mono", "DejaVu Sans Mono", "Noto Sans Mono", mono
 .label { font-weight: bold; margin: 0 0 0.2em 0; text-indent: 0; }
 .ly { margin: 0; text-indent: 0; }
 .lyblock { margin: 0 0 0.9em 0; page-break-inside: avoid; }
+.grid { border-collapse: collapse; margin: 0; }
+.grid td { padding: 0 0.45em 0 0; text-align: left; vertical-align: baseline; line-height: 1.3; }
+.grid td.gc { width: 1.6em; }
+.grid td.gb { padding: 0 0.25em; text-align: center; }
+.grid td.gt { padding-left: 0.4em; }
+.grid .c { padding-right: 0; }
 ]]
 
 -- Added after CSS for browsers: readable on a phone, follows the dark mode.
@@ -158,17 +173,20 @@ end
 -- every chord stays over its syllable in any font and the line wraps between words.
 local function line_html(segments)
     local parts = {}
-    for _, word in ipairs(M.words(segments)) do
+    for i, word in ipairs(M.words(segments)) do
+        -- spaces beyond the one between words keep their width (en spaces)
+        local extra = word.gap - (i > 1 and 1 or 0)
+        local pad = extra > 0 and string.rep("&#8194;", extra) or ""
         if not word.chord then
             local t = {}
             for _i, cell in ipairs(word.cells) do t[#t + 1] = escape(cell.text) end
-            parts[#parts + 1] = table.concat(t)
+            parts[#parts + 1] = pad .. table.concat(t)
         elseif #word.cells == 1 then
-            parts[#parts + 1] = cell_html(word.cells[1])
+            parts[#parts + 1] = pad .. cell_html(word.cells[1])
         else
             local t = {}
             for _i, cell in ipairs(word.cells) do t[#t + 1] = cell_html(cell) end
-            parts[#parts + 1] = '<span class="w">' .. table.concat(t) .. "</span>"
+            parts[#parts + 1] = pad .. '<span class="w">' .. table.concat(t) .. "</span>"
         end
     end
     if #parts == 0 then return "&#160;" end
@@ -186,6 +204,79 @@ local function chords_only(block)
         end
     end
     return chords
+end
+
+-- Chord grids ({start_of_grid}): a line is cells separated by spaces, as in
+-- ChordPro: bar lines ("|", "||", "|.", "|:", ":|", ":|:", "|2"), "." for a
+-- beat on which the chord goes on, "%" / "%%" repeating the bar(s) before, and
+-- chords, "~" joining chords played on one beat ("G~Am"). Text before the
+-- first bar line is the margin, after the last one a comment. A grid is a
+-- table, so beats line up from row to row and have the same width in any font.
+local function grid_bar(tok)
+    return tok:find("|", 1, true) ~= nil and tok:match("^[|:%.%d>]+$") ~= nil
+end
+
+local function grid_cells(text)
+    local toks = {}
+    for tok in text:gmatch("%S+") do toks[#toks + 1] = tok end
+    local first, last
+    for i, tok in ipairs(toks) do
+        if grid_bar(tok) then
+            first = first or i
+            last = i
+        end
+    end
+    local cells = {}
+    if first and first > 1 then
+        cells[1] = { kind = "margin", text = table.concat(toks, " ", 1, first - 1) }
+    end
+    for i = first or 1, last or #toks do
+        local tok = toks[i]
+        if grid_bar(tok) then
+            cells[#cells + 1] = { kind = "bar", text = tok }
+        elseif tok == "." then
+            cells[#cells + 1] = { kind = "beat" }
+        elseif tok == "%" or tok == "%%" or tok == "/" then
+            cells[#cells + 1] = { kind = "mark", text = tok }
+        else
+            cells[#cells + 1] = { kind = "chord", text = tok }
+        end
+    end
+    if last and last < #toks then
+        cells[#cells + 1] = { kind = "comment", text = table.concat(toks, " ", last + 1) }
+    end
+    return cells
+end
+
+local function render_grid(block, opts, flats, out)
+    out[#out + 1] = '<table class="grid">'
+    for _, line in ipairs(block.lines) do
+        if line.type == "raw" and line.text:match("%S") then
+            local tds = {}
+            for _i, cell in ipairs(grid_cells(line.text)) do
+                if cell.kind == "chord" then
+                    local chords = {}
+                    for chord in cell.text:gmatch("[^~]+") do
+                        chords[#chords + 1] = escape(Transpose.chord(chord, opts.transpose,
+                            { notation = opts.notation, from = opts.from, flats = flats }))
+                    end
+                    tds[#tds + 1] = '<td class="gc"><span class="c">' .. table.concat(chords, " ") .. "</span></td>"
+                elseif cell.kind == "beat" then
+                    tds[#tds + 1] = '<td class="gc">·</td>'
+                elseif cell.kind == "bar" then
+                    tds[#tds + 1] = '<td class="gb">' .. escape(cell.text) .. "</td>"
+                elseif cell.kind == "mark" then
+                    tds[#tds + 1] = '<td class="gc">' .. escape(cell.text) .. "</td>"
+                else
+                    tds[#tds + 1] = '<td class="gt cm">' .. escape(cell.text) .. "</td>"
+                end
+            end
+            out[#out + 1] = "<tr>" .. table.concat(tds) .. "</tr>"
+        elseif line.type == "comment" then
+            out[#out + 1] = '<tr><td class="gt cm" colspan="40">' .. escape(line.text) .. "</td></tr>"
+        end
+    end
+    out[#out + 1] = "</table>"
 end
 
 local function render_block_lines(block, opts, flats, out)
@@ -208,6 +299,11 @@ local function render_block_lines(block, opts, flats, out)
     end
 
     out[#out + 1] = '<div class="blk">'
+    if block.type == "grid" then
+        render_grid(block, opts, flats, out)
+        out[#out + 1] = "</div>"
+        return
+    end
     for _, line in ipairs(block.lines) do
         if line.type == "lyrics" then
             out[#out + 1] = '<p class="l">' .. line_html(transpose_segments(line.segments, opts, flats)) .. "</p>"
@@ -223,7 +319,8 @@ local function render_block_lines(block, opts, flats, out)
 end
 
 local function render_block(block, opts, flats, out)
-    if not opts.show_chords and chords_only(block) then return end
+    -- lyrics only: nothing of a grid or of chords without words
+    if not opts.show_chords and (block.type == "grid" or chords_only(block)) then return end
     local is_chorus = block.type == "chorus"
     if is_chorus then out[#out + 1] = '<div class="chorus">' end
     local label = block.label
