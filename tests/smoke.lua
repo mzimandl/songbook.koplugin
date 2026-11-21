@@ -1405,7 +1405,7 @@ plugin:showOnlineSongs({ (plugin:findServer("example.com-songs")) })
 local repos_item = menu_item("settings").sub_item_table[1]
 local setting_names = {}
 for _i, item in ipairs(menu_item("settings").sub_item_table) do table.insert(setting_names, item.text or "") end
-check(table.concat(setting_names, ", ") == ", Songs folder, Formatting, Scrolling, Quick menu, Opening a song plays it",
+check(table.concat(setting_names, ", ") == ", Songs folder, Formatting, Scrolling, Quick menu, Opening a song plays it, Diagnostic log",
     "settings order: " .. table.concat(setting_names, ", "))
 check(repos_item.text_func() == "Song repositories (2)", "repositories item label")
 repos_item.callback()
@@ -1711,6 +1711,37 @@ coll_list.item_table[2].callback()
 check(closed[coll_list] and closed[coll_menu] and menu_closed, "opening a song closes lists and menu")
 UIManager.close = old_close
 plugin.ui.menu.onCloseReaderMenu = nil
+
+do  -- the diagnostic log: off by default, events and a status line when on
+    local C = require("songbook/ui/common")
+    local log = plugin.data_dir .. "/diag.log"
+    local function read_log() local lf = io.open(log); if not lf then return "" end; local t = lf:read("*a"); lf:close(); return t end
+    C.diag("nothing")
+    check(read_log() == "", "nothing written while off")
+    local item
+    for _i, it in ipairs(menu_item("settings").sub_item_table) do if it.text == "Diagnostic log" then item = it end end
+    check(item and not item.checked_func() and item.help_text_func():find("diag.log", 1, true), "diagnostic log setting")
+    item.callback()
+    local beat = scheduled
+    check(item.checked_func() and scheduled_in == 60, "on: a status line every minute")
+    plugin:openSong("test")
+    plugin:onSuspend()
+    plugin:onResume()
+    C.diag_count("http /state.json")
+    C.diag_count("http /state.json")
+    beat()
+    local text = read_log()
+    check(text:find("diagnostic log on", 1, true) and text:find("openSong test", 1, true)
+        and text:find("suspend test", 1, true) and text:find("resume test", 1, true), "events logged:\n" .. text)
+    check(text:find("status: lua %d+ KB, free [^,]*") and text:find("http /state.json=2", 1, true) and text:find("awake 0", 1, true),
+        "status line with memory, counts and state")
+    check(scheduled == beat, "the next status line is scheduled")
+    item.callback()
+    check(not item.checked_func() and settings_store.diag_log == nil and scheduled == nil and read_log():find("diagnostic log off", 1, true),
+        "off again")
+    C.diag("after")
+    check(not read_log():find("after", 1, true), "nothing written after turning it off")
+end
 
 os.execute("rm -rf '" .. root .. "'")
 print(("%d passed, %d failed"):format(passed, failed))

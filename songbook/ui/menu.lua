@@ -193,6 +193,19 @@ function Songbook:settingsMenu()
             help_text = _("A song you open becomes the song now playing: the jam session shares it and it goes to Played afterwards. Otherwise opening only shows the song, and Play now in the song's options plays it."),
             checked_func = function() return self:get("play_on_open") end,
             callback = function() self:set("play_on_open", not self:get("play_on_open")) end,
+            separator = true,
+        },
+        {
+            text = _("Diagnostic log"),
+            help_text_func = function()
+                return T(_("For finding problems: writes what the songbook does, and every minute its state, to %1. Turn it off when you don't need it."),
+                    self.data_dir .. "/diag.log")
+            end,
+            checked_func = function() return self:get("diag_log") end,
+            callback = function()
+                self:set("diag_log", not self:get("diag_log") or nil)
+                self:applyDiagLog()
+            end,
         },
     }
 end

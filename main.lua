@@ -94,6 +94,13 @@ function Songbook:init()
     end
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
+    self:applyDiagLog()
+    C.diag("plugin instance for", self.ui.document and "reader" or "file manager")
+end
+
+--- Start or stop the diagnostic log after setting `diag_log`.
+function Songbook:applyDiagLog()
+    C.diag_set(self:get("diag_log") and self.data_dir .. "/diag.log" or nil)
 end
 
 function Songbook:get(key)
@@ -437,6 +444,8 @@ function Songbook:render(uid)
 end
 
 function Songbook:openSong(uid)
+    -- who opened it: the callers, shortened
+    C.diag("openSong", uid, (debug.traceback("", 2):gsub("\n%s*", " < "):gsub("^%s*<?%s*stack traceback:", ""):sub(1, 300)))
     local path, err = self:render(uid)
     if not path then
         notify(err)

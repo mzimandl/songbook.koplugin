@@ -50,6 +50,7 @@ local DEFAULTS = {
     play_on_open = false,
     jam_share_songs = true,
     jam_follow_scroll = true,
+    diag_log = false,
 }
 
 -- The jam session's server and following work through the newest plugin
@@ -253,6 +254,79 @@ local function follow_name()
     return (jam.follow.url:gsub("^%a+://", ""):gsub("/$", ""))
 end
 
+-- Diagnostic log (setting `diag_log`): events and a status line every minute
+-- in koreader/songbook/diag.log, written and flushed line by line, so after a
+-- freeze it shows what happened last. Module-level: it outlives plugin
+-- instances. diag() / diag_count() do nothing while it is off.
+local DIAG_MAX = 1024 * 1024   -- bytes; then diag.log becomes diag.log.old
+local DIAG_BEAT = 60           -- seconds between status lines
+local diag_state = { counts = {} }
+
+local function diag(...)
+    local d = diag_state
+    if not d.path then return end
+    if not d.file then
+        local size = lfs.attributes(d.path, "size")
+        if size and size > DIAG_MAX then os.rename(d.path, d.path .. ".old") end
+        d.file = io.open(d.path, "a")
+        if not d.file then return end
+    end
+    local parts = {}
+    for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+    d.file:write(os.date("%m-%d %H:%M:%S "), table.concat(parts, " "), "\n")
+    d.file:flush()
+    d.lines = (d.lines or 0) + 1
+    if d.lines % 200 == 0 then   -- check the size now and then
+        d.file:close()
+        d.file = nil
+    end
+end
+
+--- Count an event for the next status line (jam requests, autoscroll moves).
+local function diag_count(key)
+    if not diag_state.path then return end
+    diag_state.counts[key] = (diag_state.counts[key] or 0) + 1
+end
+
+local function meminfo()
+    local f = io.open("/proc/meminfo")
+    if not f then return "?" end
+    local text = f:read("*a")
+    f:close()
+    local avail = text:match("MemAvailable:%s*(%d+)") or text:match("MemFree:%s*(%d+)")
+    return avail and (math.floor(tonumber(avail) / 1024) .. " MB") or "?"
+end
+
+local diag_status   -- function returning the plugin's state for the status line (set by ui/jam.lua)
+
+local function diag_beat()
+    if not diag_state.path then return end
+    local counts = {}
+    for k, v in pairs(diag_state.counts) do counts[#counts + 1] = k .. "=" .. v end
+    table.sort(counts)
+    diag_state.counts = {}
+    local ok, status = pcall(function() return diag_status and diag_status() or "" end)
+    diag("status: lua", math.floor(collectgarbage("count")) .. " KB, free", meminfo(),
+        ok and status or ("status failed: " .. tostring(status)), table.concat(counts, " "))
+    UIManager:scheduleIn(DIAG_BEAT, diag_beat)
+end
+
+--- Turn the diagnostic log on (with the file's path) or off (nil).
+local function diag_set(path)
+    local d = diag_state
+    if path == d.path then return end
+    if d.path then
+        diag("diagnostic log off")
+        UIManager:unschedule(diag_beat)
+    end
+    if d.file then d.file:close() end
+    d.file, d.path, d.counts = nil, path, {}
+    if path then
+        diag("diagnostic log on")
+        UIManager:scheduleIn(DIAG_BEAT, diag_beat)
+    end
+end
+
 -- Sharing, following and autoscroll must keep the reader awake with nobody
 -- touching it: UIManager:preventStandby() only stops the short standby, the
 -- auto-suspend after some idle minutes is paused with PluginShare (as the
@@ -266,11 +340,13 @@ local function kindle_screensaver(prevent)
     if not require("device"):isKindle() then return end
     if not prevent and require("pluginshare").keepalive then return end   -- Keep alive wants it off
     -- without the framework there is no lipc: the command just fails
-    os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver " .. (prevent and 1 or 0) .. " 2>/dev/null")
+    local result = os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver " .. (prevent and 1 or 0) .. " 2>/dev/null")
+    diag("kindle preventScreenSaver", prevent and 1 or 0, "result", result)
 end
 
 local function keep_awake(on)
     local PluginShare = require("pluginshare")
+    diag("keep awake", on and "on" or "off", "count", awake.count)
     if on then
         UIManager:preventStandby()
         if awake.count == 0 then
@@ -325,5 +401,11 @@ return {
     list_menu = list_menu,
     follow_name = follow_name,
     count_keys = count_keys,
+    diag = diag,
+    diag_count = diag_count,
+    diag_beat = diag_beat,
+    diag_set = diag_set,
+    set_diag_status = function(f) diag_status = f end,
+    awake = awake,
     keep_awake = keep_awake,
 }

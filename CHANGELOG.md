@@ -4,6 +4,12 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.2-beta.1 – 2026-11-21
+
+- *Settings → Diagnostic log*: for finding problems (a reader that froze),
+  writes what the songbook does and every minute its state to
+  `koreader/songbook/diag.log`. Off by default.
+
 ## 1.3.1 – 2026-11-21
 
 - KOReader no longer crashes when it quits or restarts (an update through

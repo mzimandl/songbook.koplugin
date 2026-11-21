@@ -189,6 +189,7 @@ function Songbook:autoscrollStep()
     local played = (now() - a.start) / a.duration * height
     if played >= pos + mode.trigger * h then
         if self:songCovered() then
+            C.diag_count("scroll_covered")
             -- a menu or dialog is open: moving would repaint the song under it
             UIManager:unschedule(a.task)
             UIManager:scheduleIn(AUTOSCROLL_COVERED_WAIT, a.task)
@@ -196,6 +197,7 @@ function Songbook:autoscrollStep()
         end
         -- after waiting under a menu, catch up in one move
         local steps = math.max(1, math.floor((played - pos - mode.trigger * h) / (mode.step * h)) + 1)
+        C.diag_count("scroll_moves")
         a.moving = true
         if mode.page then
             self.ui:handleEvent(Event:new("GotoViewRel", steps * mode.step))
@@ -254,12 +256,14 @@ function Songbook:startAutoscroll(quiet, sync)
     end
     C.keep_awake(true)
     self:scheduleAutoscroll()
+    C.diag("autoscroll start", uid, duration, sync and "synced" or "")
     Notification:notify(T(_("Autoscroll: %1"), ChordPro.format_duration(duration)))
 end
 
 function Songbook:stopAutoscroll()
     local a = self.autoscroll
     if not a then return end
+    C.diag("autoscroll stop", a.uid)
     self.autoscroll = nil
     if jam.autoscroll == a then jam.autoscroll = nil end
     UIManager:unschedule(a.task)
@@ -343,6 +347,7 @@ end
 
 function Songbook:onReaderReady()
     local uid = self:currentSongId()
+    C.diag("reader ready", uid or "(not a song)", self.ui.view and self.ui.view.view_mode)
     if not uid then return end
     if self:get("song_button") then self:addSongButton() end
     self:showScrollProgress()
@@ -452,9 +457,18 @@ end
 Songbook.onPageUpdate = Songbook.onPosUpdate
 
 function Songbook:onCloseDocument()
+    C.diag("close document", self:currentSongId() or "(not a song)")
     self:stopAutoscroll()
 end
-Songbook.onSuspend = Songbook.onCloseDocument
+
+function Songbook:onSuspend()
+    C.diag("suspend", self:currentSongId() or "(not a song)")
+    self:stopAutoscroll()
+end
+
+function Songbook:onResume()
+    C.diag("resume", self:currentSongId() or "(not a song)")
+end
 
 -- Song options ----------------------------------------------------------------
 

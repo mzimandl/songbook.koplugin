@@ -140,6 +140,7 @@ local function jam_http_server(port, get_context)
         receiveCallback = function(data, client)
             local ok, resp = pcall(function()
                 local req = Jam.parse_request(data)
+                C.diag_count("http " .. (req and req.path or "bad"):match("^/[^/]*"))
                 if req and client.getpeername then req.ip = client:getpeername() end
                 return Jam.handle(req, get_context())
             end)
@@ -299,6 +300,7 @@ function Songbook:startJam()
         css = Render.css(nil, true),
     }
     jam.queue = UIManager:insertZMQ(server)
+    C.diag("jam sharing start, port", port)
     -- optional: without it the songbook can still be followed by address
     local responder, rerr = Discovery.responder(require("socket"), port, function() return jam.owner:deviceName() end)
     if responder then
@@ -313,6 +315,7 @@ end
 
 function Songbook:stopJam()
     if not jam.server then return end
+    C.diag("jam sharing stop")
     UIManager:removeZMQ(jam.queue)
     jam.server:stop()
     if jam.responder then
@@ -373,6 +376,7 @@ end
 function Songbook:followFailed()
     local f = jam.follow
     f.failures = f.failures + 1
+    C.diag("follow poll failed", f.failures)
     if f.failures >= FOLLOW_MAX_FAILURES then
         self:stopFollowing()
         UIManager:show(InfoMessage:new{
@@ -550,6 +554,7 @@ function Songbook:startFollowing(url)
     end
     self:savePlaylist({})
     jam.follow = { url = url, failures = 0 }
+    C.diag("following start", url)
     C.keep_awake(true)
     self:startLibrary()
     follow_poll()
@@ -557,6 +562,7 @@ end
 
 function Songbook:stopFollowing()
     if not jam.follow then return end
+    C.diag("following stop")
     UIManager:unschedule(follow_poll)
     follow_cancel(jam.follow)
     C.keep_awake(false)
@@ -668,7 +674,25 @@ function Songbook:findSongbooks(on_url)
     UIManager:show(menu)
 end
 
+-- The status line of the diagnostic log.
+C.set_diag_status(function()
+    local parts = {}
+    local a = jam.autoscroll
+    if a then
+        parts[#parts + 1] = string.format("autoscroll %s %.0f%%", a.uid, a.start and (now() - a.start) / a.duration * 100 or -1)
+    end
+    if jam.server then parts[#parts + 1] = "sharing, guests " .. C.count_keys(jam.peers or {}) end
+    if jam.follow then parts[#parts + 1] = "following, failures " .. jam.follow.failures end
+    parts[#parts + 1] = "awake " .. C.awake.count
+    parts[#parts + 1] = "zmqs " .. #(UIManager._zeromqs or {})
+    local ReaderUI = package.loaded["apps/reader/readerui"]
+    local doc = ReaderUI and ReaderUI.instance and ReaderUI.instance.document
+    parts[#parts + 1] = "open " .. (doc and (doc.file or "?"):match("[^/]*$") or "-")
+    return table.concat(parts, ", ")
+end)
+
 function Songbook:onExit()
+    C.diag("exit")
     stop_finder()
     self:stopJam()
     self:stopFollowing()
