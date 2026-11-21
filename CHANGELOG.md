@@ -4,104 +4,51 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
-## 1.3.0-beta.14 – 2026-11-21
+## 1.3.0 – 2026-11-21
 
+Songs
+- Chords stay over their syllables in any font: each chord and its syllable
+  are one block instead of a monospace chord line, which drifted with
+  KOReader's synthetic bold. Songs use the reader's font and long lines wrap
+  between words, so the *Line width* setting is gone.
 - Chord grids (`{start_of_grid}`, ChordPro's way to write the rhythm of an
-  instrumental part) are shown as a table: one cell per beat, `.` for a beat
-  the chord goes on, bar lines, `~` for two chords on one beat. The chords are
-  transposed and shown in the chosen notation.
+  instrumental part) are a table: one cell per beat, `.` for a beat the chord
+  goes on, bar lines, `~` for two chords on one beat; transposed like the rest.
 - More than one space between chords keeps its width, so chords without words
   (`[Am]    [G]`) can be spaced.
-
-## 1.3.0-beta.13 – 2026-11-18
-
-- On a Kindle, sharing, following and autoscroll also keep the Kindle itself
-  from sleeping after idle minutes (with its framework running), as Keep alive
-  does.
-- Jam session: the space under the song on the guest page is half as tall.
-
-## 1.3.0-beta.12 – 2026-11-14
-
-- Jam session: the guest page scrolls evenly with the host's autoscroll (late
-  answers of the reader no longer make it jump) and in finer steps. At the end
-  of the song it runs on to the last line, which stays above the bottom edge.
-  Adding `?debug` to the page's address shows the pending correction.
-
-## 1.3.0-beta.11 – 2026-11-14
-
-- Jam session: following no longer freezes the reader when the other songbook
-  stops answering (it slept, left the Wi-Fi). The reader keeps working and
-  following ends after a few failed tries, as before.
-
-## 1.3.0-beta.10 – 2026-11-14
-
-- Jam session: a reader that follows another one scrolls along with its
-  autoscroll (*Scroll with the followed songbook*, on by default). Scrolling by
-  hand or *Stop autoscroll* pauses it for that song; *Start autoscroll* resumes.
-
-## 1.3.0-beta.9 – 2026-11-14
-
+- With chords hidden, lines of chords alone leave no empty lines.
 - A song stays where it was scrolled to when it is transposed or its options
-  change, and a running autoscroll goes on.
-- Removing a repository with its songs is much faster (the settings are
-  written once, not for every song).
-- A web page (a Wi-Fi login) is no longer saved as a song; the same repository
-  can't be added twice; a collection's count shows the songs on the device.
-- The tests run before every release.
+  change.
+- Copied `.chopro` files open.
 
-## 1.3.0-beta.8 – 2026-11-14
+Autoscroll
+- The step can be as small as 1/32 of the screen, and in continuous scroll
+  mode autoscroll moves without the e-ink flash.
+- It doesn't move the song under an open menu (the song flickered); it
+  catches up when the menu closes. A transposition doesn't stop it.
+- The reader doesn't suspend by itself while it autoscrolls, shares or
+  follows; on a Kindle with its framework the Kindle doesn't sleep either.
 
-- The reader no longer suspends by itself after some idle minutes while it
-  shares, follows or autoscrolls.
-- Jam session: the guest page doesn't load the song again when the browser
-  window changes its size (the address bar hiding while scrolling).
-- Copied `.chopro` files open (they were listed but not found).
-- With chords hidden, lines of chords alone (interludes) leave no empty lines.
+Jam session
+- The guests' pages scroll along with the host's autoscroll, evenly and to the
+  last line. Scrolling by hand pauses it on that phone; the ⇣ button resumes
+  it or turns it off.
+- A reader that follows another one scrolls along with its autoscroll
+  (*Scroll with the followed songbook*, on by default).
+- Following no longer freezes the reader when the other songbook stops
+  answering.
 
-## 1.3.0-beta.7 – 2026-11-14
-
-- Autoscroll step can be as small as 1/32 of the screen (was 1/16).
-- In continuous scroll mode autoscroll moves without the e-ink flash: its
-  repaints don't count towards the full refresh.
-
-## 1.3.0-beta.6 – 2026-11-14
-
-- Jam session: the guests' pages follow the autoscroll smoothly, without the
-  small jumps every few seconds.
-- Autoscroll doesn't move the song while a menu or dialog is open over it (the
-  song flickered under the menu); it catches up when the menu closes.
-
-## 1.3.0-beta.5 – 2026-11-14
-
-- Jam session: the guests' pages follow the autoscroll to the end of the song.
-  On its last screen the reader now keeps autoscrolling for the rest of the
-  song's length instead of stopping, so longer guest pages don't stop a screen
-  early.
-
-## 1.3.0-beta.4 – 2026-11-14
-
-- Jam session: while the song autoscrolls on the host's reader, the guests'
-  pages scroll along with it. Scrolling by hand pauses it on that phone; the ⇣
-  button resumes it or turns it off.
-
-## 1.3.0-beta.3 – 2026-11-09
-
-- Lists stay on their page when they change: adding songs to a collection
-  from a long list no longer jumps back to the first page.
-
-## 1.3.0-beta.2 – 2026-11-09
-
+Collections and lists
 - Collections can list their songs in the order they were added: ☰ → *Sort
-  by order added* (or back *by title*), kept per collection; *Add to
-  playlist* follows it. Played songs saved as a collection keep the order they
-  were played in. Songs added before this version sort first, by title.
+  by order added*; played songs saved as a collection keep the order they
+  were played in.
+- Lists stay on their page when they change.
+- Removing a repository with its songs is much faster; a web page (a Wi-Fi
+  login) is no longer saved as a song; the same repository can't be added
+  twice.
 
-## 1.3.0-beta.1 – 2026-11-09
-
-- Chords stay over their syllables in any font: each chord and its syllable
-  are set as one block instead of a monospace chord line, which drifted with
-  KOReader's synthetic bold. Songs use the reader's font, long lines wrap
-  between words by themselves, so the *Line width* setting is gone.
+Betas (1.3.0-beta.1 to beta.14) came before this release, for ZenPM's Beta
+updates.
 
 ## 1.2.0 – 2026-11-08
 
