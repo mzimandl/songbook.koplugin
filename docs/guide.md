@@ -96,7 +96,8 @@ In KOReader's *Taps and gestures*, all starting with *Songbook:*.
 - Songs use the reader's font. Every chord is placed over its syllable as a
   small block, so the chords stay aligned in any font and size, and long lines
   wrap between words (the rest of the line is indented). This needs the
-  document's styles: keep *Embedded style* on (in the bottom menu).
+  document's styles: the songbook turns *Embedded style* on for every song it
+  opens (also where it is off by default, as on Android).
 - `.cho` files can't be opened from KOReader's file browser; copy them to
   `koreader/songbook/songs/` and open them from *My songs*.
 - Songs you open stay out of KOReader's reading history, so it lists only books.

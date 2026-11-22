@@ -453,7 +453,7 @@ function Songbook:openSong(uid)
     end
     -- while following, the followed songbook's playlist is used
     if not jam.follow and self:get("play_on_open") then self:playlistPlay(uid) end
-    if self:get("scroll_mode") then self:preferScrollMode(path) end
+    self:prepareDocSettings(path)
     self:rememberPosition(uid)
     if self.ui.document then
         self.ui:switchDocument(path)
@@ -475,15 +475,23 @@ function Songbook:rememberPosition(uid)
     reopen.uid, reopen.percent, reopen.autoscroll = uid, percent, self:isAutoscrolling()
 end
 
---- Open the rendered song in continuous (scroll) mode, unless its view mode
--- was already chosen: ReaderConfig loads "copt_view_mode" from the
--- document's settings before rendering.
-function Songbook:preferScrollMode(path)
+--- Settings of the rendered song's document, read by ReaderConfig before
+-- rendering: the song's own CSS always applies ("copt_embedded_css"; KOReader
+-- on Android has Embedded style off by default, so songs came unstyled), and
+-- with `scroll_mode` it opens in continuous (scroll) mode unless its view mode
+-- was already chosen.
+function Songbook:prepareDocSettings(path)
     local doc_settings = require("docsettings"):open(path)
-    if doc_settings:readSetting("copt_view_mode") == nil then
-        doc_settings:saveSetting("copt_view_mode", 1)
-        doc_settings:flush()
+    local changed = false
+    if doc_settings:readSetting("copt_embedded_css") ~= 1 then
+        doc_settings:saveSetting("copt_embedded_css", 1)
+        changed = true
     end
+    if self:get("scroll_mode") and doc_settings:readSetting("copt_view_mode") == nil then
+        doc_settings:saveSetting("copt_view_mode", 1)
+        changed = true
+    end
+    if changed then doc_settings:flush() end
 end
 
 --- Re-render the currently open song after a settings change.

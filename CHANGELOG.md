@@ -4,6 +4,11 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.3-beta.1
+
+- Songs always open with their own style, also where KOReader has
+  *Embedded style* off by default (Android), so chords stay above the words.
+
 ## 1.3.2 – 2026-11-21
 
 - Jam session: a Kindle no longer freezes when it is due to sleep while

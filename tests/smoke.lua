@@ -313,6 +313,7 @@ end
 plugin:openSong("test")
 check(#opened == 1 and opened[1]:find("/rendered/test@t%+0%.cz%.c1%.r0%.html$"), "rendered path " .. tostring(opened[1]))
 check(doc_store[opened[1]].copt_view_mode == 1, "songs open in scroll mode")
+check(doc_store[opened[1]].copt_embedded_css == 1, "songs open with their own style")
 local html = io.open(opened[1]):read("*a")
 check(html:find('<span class="t">Jede</span>', 1, true) and html:find('<span class="t">kůň</span>', 1, true), "rendered lyrics")
 ReadHistory:addItem(opened[1])
@@ -404,8 +405,8 @@ plugin:openSong("test")
 check(doc_store[opened[#opened]].copt_view_mode == 0, "chosen view mode is kept")
 settings_store.scroll_mode = false
 plugin:onSongbookTranspose(1)
-check(doc_store[opened[#opened]] == nil or doc_store[opened[#opened]].copt_view_mode == nil,
-    "scroll mode not forced when turned off")
+check(doc_store[opened[#opened]].copt_view_mode == nil and doc_store[opened[#opened]].copt_embedded_css == 1,
+    "scroll mode not forced when turned off, style still is")
 plugin:onSongbookTranspose(0)
 settings_store.scroll_mode = nil
 
