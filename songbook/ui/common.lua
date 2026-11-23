@@ -254,7 +254,7 @@ local function follow_name()
     return (jam.follow.url:gsub("^%a+://", ""):gsub("/$", ""))
 end
 
--- Diagnostic log (setting `diag_log`): events and a status line every minute
+-- Diagnostic log (setting `diag_log`): events and a status line every DIAG_BEAT seconds
 -- in koreader/songbook/diag.log, written and flushed line by line, so after a
 -- freeze it shows what happened last. Module-level: it outlives plugin
 -- instances. diag() / diag_count() do nothing while it is off.
@@ -361,8 +361,8 @@ local function diag_set(path)
     end
 end
 
--- Sharing, following and autoscroll must keep the reader awake with nobody
--- touching it: UIManager:preventStandby() only stops the short standby, the
+-- Autoscroll must keep the reader awake with nobody touching it (sharing and
+-- following don't: they pause while it sleeps, see jamSleep() in ui/jam.lua): UIManager:preventStandby() only stops the short standby, the
 -- auto-suspend after some idle minutes is paused with PluginShare (as the
 -- autoturn plugin does). Counted, as they can run together; the flag another
 -- plugin set before is put back. A Kindle running its framework also sleeps

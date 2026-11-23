@@ -292,7 +292,7 @@ local function render_block_lines(block, opts, flats, out)
             elseif line.type == "empty" then
                 out[#out + 1] = '<p class="ly">&#160;</p>'
             end
-            -- raw (tab) lines are skipped in lyrics-only mode
+            -- raw lines (of a tab inside another block) are skipped in lyrics-only mode
         end
         out[#out + 1] = "</div>"
         return
@@ -319,8 +319,8 @@ local function render_block_lines(block, opts, flats, out)
 end
 
 local function render_block(block, opts, flats, out)
-    -- lyrics only: nothing of a grid or of chords without words
-    if not opts.show_chords and (block.type == "grid" or chords_only(block)) then return end
+    -- lyrics only: nothing of a grid, a tab or chords without words
+    if not opts.show_chords and (block.type == "grid" or block.type == "tab" or chords_only(block)) then return end
     local is_chorus = block.type == "chorus"
     if is_chorus then out[#out + 1] = '<div class="chorus">' end
     local label = block.label

@@ -4,6 +4,19 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
+## 1.3.3-beta.2
+
+- With chords hidden, tabs (`{start_of_tab}`) are hidden too, instead of
+  leaving their label.
+- Following: after the reader wakes up, polls that fail while the Wi-Fi comes
+  back no longer stop following.
+- While the reader scrolls with the followed songbook, the *autoscroll faster /
+  slower* gestures say that the other songbook sets the speed, instead of
+  changing it for a moment.
+- *Edit URL* of a repository refuses the address of another added repository.
+- Browsing a jam session's songbook no longer rewrites the settings each time.
+- The diagnostic log's description says it writes the state every 15 seconds.
+
 ## 1.3.3-beta.1 – 2026-11-22
 
 - Songs always open with their own style, also where KOReader has

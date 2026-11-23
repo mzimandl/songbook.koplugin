@@ -295,6 +295,11 @@ do  -- lyrics only: chord lines without words leave nothing behind
     eq(Render.html(s, {}):find("Interlude", 1, true) ~= nil, true, "with chords the interlude is shown")
 end
 local ly = Render.html(song, { show_chords = false })
+do  -- a tab is hidden with the chords, its label too
+    local h = Render.html(ChordPro.parse("{title: T}\n{start_of_tab: Riff}\ne|--0--|\n{end_of_tab}\nWords\n"), { show_chords = false })
+    eq(h:find("Riff", 1, true) == nil and h:find("e|--0--|", 1, true) == nil and h:find("Words", 1, true) ~= nil, true,
+        "lyrics only: no tab block")
+end
 eq(ly:find('class="c"', 1, true), nil, "lyrics-only has no chords")
 eq(ly:find("Ahoj světe, já", 1, true) ~= nil, true, "lyrics-only text joined")
 eq(Render.html(ChordPro.parse("{title: a<b & c}"), {}):find("a&lt;b &amp; c", 1, true) ~= nil,

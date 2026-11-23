@@ -1040,6 +1040,9 @@ do  -- sleep pauses following, waking polls again
     scheduled()
     check(not jam_state.follow.sleeping and #requested > n_req and jam_state.library and scheduled_in == 4,
         "polling and sharing our songs again")
+    for _i = 1, 6 do plugin:followFailed() end
+    check(jam_state.follow and jam_state.follow.failures == 0, "failed polls right after waking don't stop following")
+    jam_state.follow.wake_grace = nil
 end
 -- the followed songbook is a repository to browse only while following
 local jam_server = plugin:onlineServers()[#plugin:onlineServers()]
@@ -1132,6 +1135,9 @@ do  -- the followed song scrolls with the host's autoscroll
     responses[state_url] = "S5"
     poll()
     check(a.start == 4950, "a small difference doesn't move the timing")
+    plugin:onSongbookAutoscrollSpeed(0.9)
+    check(a.duration == 200 and a.start == 4950 and toasts[#toasts]:find("sets the speed", 1, true),
+        "speed gestures don't change the followed songbook's autoscroll")
     decoded.S6 = { uid = "repo/song-a", rev = "3", transpose = 0, scroll = { progress = 0.5, duration = 180 } }
     responses[state_url] = "S6"
     poll()

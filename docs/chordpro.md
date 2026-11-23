@@ -50,7 +50,7 @@ transposed like the others.
 ```
 
 Text before the first bar line (`x2 | …`) and after the last one is shown
-beside the grid. With chords hidden the grid isn't shown.
+beside the grid. With chords hidden the grid isn't shown, nor are tabs.
 
 Between chords in a line, more spaces than one keep their width:
 `Kitty alone [C]    [G]` leaves a gap before G, so a pause or the chords

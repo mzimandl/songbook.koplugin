@@ -299,6 +299,11 @@ end
 function Songbook:onSongbookAutoscrollSpeed(factor)
     local a = self.autoscroll
     if not a then return true end
+    if a.synced then
+        -- the followed songbook sets the speed (followScroll() would undo the change)
+        Notification:notify(_("The followed songbook sets the speed"))
+        return true
+    end
     a.duration = math.max(30, math.floor(a.duration * factor / 5 + 0.5) * 5)
     self:anchorAutoscroll()
     self:scheduleAutoscroll()

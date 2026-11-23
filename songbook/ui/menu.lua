@@ -198,7 +198,7 @@ function Songbook:settingsMenu()
         {
             text = _("Diagnostic log"),
             help_text_func = function()
-                return T(_("For finding problems: writes what the songbook does, and every minute its state, to %1. Turn it off when you don't need it."),
+                return T(_("For finding problems: writes what the songbook does, and every 15 seconds its state, to %1. Turn it off when you don't need it."),
                     self.data_dir .. "/diag.log")
             end,
             checked_func = function() return self:get("diag_log") end,

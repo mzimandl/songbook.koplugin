@@ -383,6 +383,11 @@ end
 
 function Songbook:followFailed()
     local f = jam.follow
+    -- just woken up: the Wi-Fi may take a while to come back, failures don't count yet
+    if f.wake_grace and now() < f.wake_grace then
+        C.diag("follow poll failed after waking")
+        return
+    end
     f.failures = f.failures + 1
     C.diag("follow poll failed", f.failures)
     if f.failures >= FOLLOW_MAX_FAILURES then
@@ -585,6 +590,8 @@ end
 -- wakes, once the Wi-Fi is back (WAKE_DELAY). Guests' pages and followers
 -- reconnect by themselves.
 local WAKE_DELAY = 3   -- seconds
+-- seconds after waking in which failed polls don't stop following (Wi-Fi reconnecting)
+local WAKE_GRACE = 45
 
 local function wake_jam()
     local owner = jam.owner
@@ -598,7 +605,7 @@ local function wake_jam()
     local f = jam.follow
     if asleep.follow and f and f.sleeping then
         C.diag("wake: following again")
-        f.sleeping, f.failures = nil, 0
+        f.sleeping, f.failures, f.wake_grace = nil, 0, now() + WAKE_GRACE
         if asleep.library then owner:startLibrary() end
         follow_poll()
     end

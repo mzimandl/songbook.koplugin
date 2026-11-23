@@ -67,7 +67,7 @@ function Songbook:fetchIndex(server)
         return nil, _("This repository needs a newer version of the Songbook plugin.")
     end
     if not songs then return nil, T(_("Cannot load song list: %1"), perr) end
-    if name ~= server.index_name then
+    if name ~= server.index_name and not server.jam then
         local servers = self:getServers()
         for _, s in ipairs(servers) do
             if s.key == server.key then s.index_name = name end
@@ -446,6 +446,10 @@ function Songbook:showServerActions(server, on_changed)
             {
                 { text = _("Edit URL"), callback = close_then(function()
                     self:askServerUrl(_("Song repository URL"), server.url, function(url)
+                        local known = self:findServerByUrl(url)
+                        if known and known.key ~= server.key then
+                            return notify(T(_("This repository is already added: %1"), self:serverName(known)))
+                        end
                         self:updateServer(server.key, { url = url, index_name = false })
                         on_changed()
                         self:loadServerName(server.key, on_changed)

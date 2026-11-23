@@ -2,8 +2,9 @@
 -- tests/run.lua checks that every _("…") in main.lua has an entry here.
 return {
     ["Diagnostic log"] = "Diagnostický záznam",
-    ["For finding problems: writes what the songbook does, and every minute its state, to %1. Turn it off when you don't need it."] =
-        "Pro hledání chyb: zapisuje, co zpěvník dělá, a každou minutu jeho stav do %1. Když ho nepotřebujete, vypněte ho.",
+    ["The followed songbook sets the speed"] = "Rychlost určuje sledovaný zpěvník",
+    ["For finding problems: writes what the songbook does, and every 15 seconds its state, to %1. Turn it off when you don't need it."] =
+        "Pro hledání chyb: zapisuje, co zpěvník dělá, a každých 15 sekund jeho stav do %1. Když ho nepotřebujete, vypněte ho.",
     ["Scroll with the followed songbook"] = "Posouvat se sledovaným zpěvníkem",
     ["While the other songbook autoscrolls the song, this one scrolls along with it. Scrolling by hand or stopping autoscroll pauses it for that song; Start autoscroll resumes it."] =
         "Když druhý zpěvník píseň sám posouvá, posouvá se s ním i tento. Ruční posun nebo zastavení posouvání to pro danou píseň pozastaví; Spustit posouvání to obnoví.",
