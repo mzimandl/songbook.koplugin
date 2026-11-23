@@ -4,7 +4,7 @@ Versions are the `version` in `_meta.lua`; each has a
 [release](https://github.com/mzimandl/songbook.koplugin/releases) with
 `songbook.koplugin.zip`.
 
-## 1.3.3-beta.2
+## 1.3.3-beta.2 – 2026-11-23
 
 - With chords hidden, tabs (`{start_of_tab}`) are hidden too, instead of
   leaving their label.
